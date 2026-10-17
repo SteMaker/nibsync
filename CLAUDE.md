@@ -11,6 +11,7 @@ feature roadmap and where each feature lives.
 - `./gradlew assembleDebug` – build the APK
 - `./gradlew test` – all JVM unit tests (core modules + Robolectric)
 - `./gradlew connectedDebugAndroidTest` – instrumented/app-level tests on the USB tablet
+  (`gradle.properties` keeps the app installed afterwards, so notes on the device survive)
 - `./gradlew installDebug` – install on the tablet
 - `scripts/verify.sh` – everything; `--no-device` skips instrumented tests
 - Regenerate storage golden files only for an intentional format change:
