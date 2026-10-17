@@ -1,0 +1,12 @@
+{
+    "formatVersion": 1,
+    "id": "doc-1",
+    "title": "Notizen äöü ß",
+    "paper": "A5",
+    "orientation": "LANDSCAPE",
+    "background": {
+        "kind": "BLANK",
+        "spacingMm": 7.0
+    },
+    "createdAt": 1700000000000
+}

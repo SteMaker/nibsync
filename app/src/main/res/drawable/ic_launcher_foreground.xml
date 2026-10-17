@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- nib body -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M54,26 C62,34 70,46 70,58 L62,74 L46,74 L38,58 C38,46 46,34 54,26 Z" />
+    <!-- slit and breather hole -->
+    <path
+        android:fillColor="#1A3FA8"
+        android:pathData="M53,30 L55,30 L55,56 L53,56 Z M54,56 m-4,0 a4,4 0,1 0,8 0 a4,4 0,1 0,-8 0" />
+    <!-- grip -->
+    <path
+        android:fillColor="#FFEB3B"
+        android:pathData="M45,76 L63,76 L63,84 L45,84 Z" />
+</vector>
