@@ -1,5 +1,6 @@
 package de.nibsync.canvas
 
+import de.nibsync.document.erase.EraserMode
 import de.nibsync.model.BrushFamily
 import de.nibsync.model.BrushSpec
 
@@ -28,6 +29,12 @@ object PenPalette {
         if (family == BrushFamily.HIGHLIGHTER) highlighterColors else inkColors
 
     /** Three widths per pen in millimetres: fine, medium, broad. */
+    /** Pixel eraser diameters in millimetres. */
+    val eraserSizes: List<Float> = listOf(2f, 5f, 12f)
+
+    /** The object eraser only needs to touch a stroke; a small fixed tip is the most precise. */
+    const val OBJECT_ERASER_DIAMETER_MM: Float = 2f
+
     fun sizes(family: BrushFamily): List<Float> = when (family) {
         BrushFamily.BALLPOINT -> listOf(0.35f, 0.5f, 0.8f)
         BrushFamily.FOUNTAIN_PEN -> listOf(0.5f, 0.8f, 1.2f)
@@ -44,13 +51,24 @@ data class ToolState(
         PenSettings(PenPalette.colors(it).first(), PenPalette.sizes(it)[1])
     },
     val drawWithFinger: Boolean = false,
+    /** When true the pen erases instead of writing; [activePen] is kept for switching back. */
+    val eraserActive: Boolean = false,
+    val eraserMode: EraserMode = EraserMode.OBJECT,
+    val eraserSizeMm: Float = PenPalette.eraserSizes[1],
 ) {
+    val eraserRadiusMm: Float
+        get() = (if (eraserMode == EraserMode.OBJECT) PenPalette.OBJECT_ERASER_DIAMETER_MM else eraserSizeMm) / 2
+
+    fun withEraser(mode: EraserMode = eraserMode) = copy(eraserActive = true, eraserMode = mode)
+
+    fun withEraserSize(mm: Float) = copy(eraserSizeMm = mm)
+
     val activeSettings: PenSettings get() = pens.getValue(activePen)
 
     val activeBrush: BrushSpec
         get() = BrushSpec(activePen, activeSettings.colorArgb, activeSettings.sizeMm)
 
-    fun withPen(pen: BrushFamily) = copy(activePen = pen)
+    fun withPen(pen: BrushFamily) = copy(activePen = pen, eraserActive = false)
 
     fun withColor(argb: Int) = copy(pens = pens + (activePen to activeSettings.copy(colorArgb = argb)))
 

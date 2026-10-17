@@ -3,6 +3,8 @@ package de.nibsync.canvas
 import androidx.lifecycle.ViewModel
 import de.nibsync.document.DocumentSession
 import de.nibsync.document.DocumentState
+import de.nibsync.document.erase.EraseResult
+import de.nibsync.document.erase.EraserMode
 import de.nibsync.model.BrushFamily
 import de.nibsync.model.ShapeRecognizer
 import de.nibsync.model.Stroke
@@ -13,8 +15,8 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 
-/** A recognised shape that was added, and the ids of the strokes it replaced. */
-class CommittedShape(val stroke: Stroke, val replaced: Set<StrokeId>)
+/** Strokes just stored by an edit (shape, erasing) and the ids of the strokes they replaced. */
+class CommittedEdit(val added: List<Stroke>, val removed: Set<StrokeId>)
 
 /**
  * Connects the canvas UI to a [DocumentSession]. The session is owned by the caller (it
@@ -48,12 +50,23 @@ class CanvasViewModel(
      * Called when the pen is held still at the end of a stroke. Returns the clean shape that
      * was added instead of the stroke, or null if no shape was recognised (the stroke goes on).
      */
-    fun commitShape(draft: StrokeDraft): CommittedShape? {
+    fun commitShape(draft: StrokeDraft): CommittedEdit? {
         if (draft.points.isEmpty()) return null
         val recent = session.state.value.strokes.filter { it.layer == draft.layer }.takeLast(RECENT_STROKES)
         val result = recognizer.recognize(draft, recent) ?: return null
         val stroke = session.replaceStrokes(result.replaces, result.replacement)
-        return CommittedShape(stroke, result.replaces)
+        return CommittedEdit(listOf(stroke), result.replaces)
+    }
+
+    fun selectEraser(mode: EraserMode) = _tools.update { it.withEraser(mode) }
+
+    fun selectEraserSize(mm: Float) = _tools.update { it.withEraserSize(mm) }
+
+    /** Stores the outcome of an erase gesture as one undo step. */
+    fun commitErase(result: EraseResult): CommittedEdit? {
+        if (result.isEmpty) return null
+        val added = session.replaceStrokes(result.removed, result.added)
+        return CommittedEdit(added, result.removed)
     }
 
     private companion object {

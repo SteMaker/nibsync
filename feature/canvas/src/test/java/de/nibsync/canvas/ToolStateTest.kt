@@ -56,4 +56,22 @@ class ToolStateTest {
             assertThat(sizes).isInStrictOrder()
         }
     }
+
+    @Test
+    fun eraserRemembersPenAndSwitchesBack() {
+        val s = ToolState().withPen(BrushFamily.BALLPOINT).withEraser()
+        assertThat(s.eraserActive).isTrue()
+        assertThat(s.activePen).isEqualTo(BrushFamily.BALLPOINT)
+        val back = s.withPen(BrushFamily.BALLPOINT)
+        assertThat(back.eraserActive).isFalse()
+    }
+
+    @Test
+    fun objectEraserHasFixedSmallTipAndPixelEraserUsesSelectedSize() {
+        val obj = ToolState().withEraser(de.nibsync.document.erase.EraserMode.OBJECT).withEraserSize(12f)
+        assertThat(obj.eraserRadiusMm).isEqualTo(PenPalette.OBJECT_ERASER_DIAMETER_MM / 2)
+        val px = obj.withEraser(de.nibsync.document.erase.EraserMode.PIXEL)
+        assertThat(px.eraserRadiusMm).isEqualTo(6f)
+        assertThat(PenPalette.eraserSizes).isInStrictOrder()
+    }
 }

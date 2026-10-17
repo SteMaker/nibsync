@@ -87,12 +87,25 @@ class DocumentSession(
      * Adds [draft] (quantized like [addStroke]) and removes the strokes [replaces] in one undo step.
      * Ids that no longer exist are ignored.
      */
-    fun replaceStrokes(replaces: Collection<StrokeId>, draft: StrokeDraft): Stroke {
+    fun replaceStrokes(replaces: Collection<StrokeId>, draft: StrokeDraft): Stroke =
+        replaceStrokes(replaces, listOf(draft)).single()
+
+    /**
+     * Removes [replaces] and adds [drafts] in one undo step (erasing, shape merging). Returns the
+     * added strokes. Ids that no longer exist are ignored.
+     */
+    fun replaceStrokes(replaces: Collection<StrokeId>, drafts: List<StrokeDraft>): List<Stroke> {
         val current = _state.value
         val removed = replaces.mapNotNull { current[it] }
-        val stroke = newStroke(draft)
-        applyEdit(if (removed.isEmpty()) Edit.Added(listOf(stroke)) else Edit.Replaced(removed, listOf(stroke)), record = true)
-        return stroke
+        val added = drafts.map(::newStroke)
+        val edit = when {
+            removed.isEmpty() && added.isEmpty() -> return emptyList()
+            removed.isEmpty() -> Edit.Added(added)
+            added.isEmpty() -> Edit.Removed(removed)
+            else -> Edit.Replaced(removed, added)
+        }
+        applyEdit(edit, record = true)
+        return added
     }
 
     fun removeStrokes(ids: Collection<StrokeId>) {

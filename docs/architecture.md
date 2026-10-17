@@ -49,9 +49,9 @@ highlighter is shown on top (Ink overlay limitation) and drops behind once finis
 
 ## Input
 
-Stylus writes; fingers scroll and pinch-zoom; a toggle enables writing with a finger. Pointers
-cancelled by the system (palm rejection) cancel the stroke. The stylus eraser end is
-reserved for feature F.
+Stylus writes (or erases with the eraser selected); fingers scroll and pinch-zoom; a toggle
+enables writing with a finger. Pointers cancelled by the system (palm rejection) cancel the
+stroke or erase gesture.
 
 ## Shape recognition
 
@@ -69,6 +69,17 @@ points back along it replaces both strokes with one arrow, in a single undo step
 (`DocumentSession.replaceStrokes`). The recognizer is tuned against real arrows recorded on the
 test tablet (`RecordedArrows`).
 
+## Erasers
+
+Two tool bar buttons: the object eraser removes every stroke it touches; the pixel eraser
+(2/5/12 mm) cuts strokes where it touches them and keeps the rest as ordinary strokes with
+the original pen, so the result stays vector data that syncs and can be erased further. The
+eraser hits wherever it touches visible ink (centre-line distance <= eraser radius + half the
+stroke width). Cut edges lie exactly on the eraser's edge with interpolated pressure/tilt.
+`EraseGesture` (platform-neutral) previews the result while erasing; on pen up it is stored
+as one undo step via `DocumentSession.replaceStrokes`. The pen's eraser end (TOOL_TYPE_ERASER)
+always erases.
+
 ## Roadmap
 
 | Step | Feature | Where it plugs in |
@@ -78,7 +89,7 @@ test tablet (`RecordedArrows`).
 | C | Nextcloud sync, concurrent editing | new `sync/nextcloud` mirroring `documents/`; `DocumentSession.applyRemote` |
 | D | Windows | `jvm`/desktop target for `core/*`, Compose Desktop UI, own renderer |
 | E ✅ | Shape recognition | hold the pen still ~0.5 s at the end of a stroke; `core/shapes` |
-| F | Pixel and object eraser | object eraser: `RemoveStrokes` + Ink geometry; pixel eraser: remove + add pieces |
+| F ✅ | Pixel and object eraser | `core/document/erase`; two eraser buttons in the tool bar |
 | G | Lasso: delete, move, copy | Ink dashed-line brush + `PartitionedMesh` coverage; move = remove + add |
 | H | Undo/redo UI | `DocumentSession.undo/redo` and `canUndo/canRedo` exist and are tested |
 | I | Lined/grid backgrounds | `BackgroundSpec` is stored; render in `NoteCanvasView.onDraw` |

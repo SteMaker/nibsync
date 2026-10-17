@@ -50,6 +50,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import de.nibsync.document.erase.EraserMode
 import de.nibsync.model.BrushFamily
 
 /** Test tags used by UI tests. */
@@ -60,6 +61,8 @@ object NoteScreenTags {
     fun color(index: Int) = "color-$index"
     fun size(index: Int) = "size-$index"
     const val FINGER_TOGGLE = "finger-toggle"
+    fun eraserMode(mode: EraserMode) = "eraser-${mode.name}"
+    fun eraserSize(index: Int) = "eraser-size-$index"
 }
 
 @Composable
@@ -73,6 +76,8 @@ fun NoteScreen(viewModel: CanvasViewModel, modifier: Modifier = Modifier, onCanv
             onPen = viewModel::selectPen,
             onColor = viewModel::selectColor,
             onSize = viewModel::selectSize,
+            onEraser = viewModel::selectEraser,
+            onEraserSize = viewModel::selectEraserSize,
             onFingerToggle = viewModel::setDrawWithFinger,
         )
         AndroidView(
@@ -81,6 +86,7 @@ fun NoteScreen(viewModel: CanvasViewModel, modifier: Modifier = Modifier, onCanv
                 NoteCanvasView(context).also {
                     it.onStrokeDrafted = viewModel::commitStroke
                     it.onShapeRequested = viewModel::commitShape
+                    it.onEraseFinished = viewModel::commitErase
                     onCanvasCreated(it)
                 }
             },
@@ -88,6 +94,9 @@ fun NoteScreen(viewModel: CanvasViewModel, modifier: Modifier = Modifier, onCanv
                 view.pageFormat = document.meta.format
                 view.brush = tools.activeBrush
                 view.drawWithFinger = tools.drawWithFinger
+                view.eraserActive = tools.eraserActive
+                view.eraserMode = tools.eraserMode
+                view.eraserRadiusMm = tools.eraserRadiusMm
                 view.setStrokes(document.strokes)
             },
         )
@@ -100,6 +109,8 @@ private fun Toolbar(
     onPen: (BrushFamily) -> Unit,
     onColor: (Int) -> Unit,
     onSize: (Float) -> Unit,
+    onEraser: (EraserMode) -> Unit,
+    onEraserSize: (Float) -> Unit,
     onFingerToggle: (Boolean) -> Unit,
 ) {
     Surface(tonalElevation = 3.dp, modifier = Modifier.fillMaxWidth().testTag(NoteScreenTags.TOOLBAR)) {
@@ -112,7 +123,7 @@ private fun Toolbar(
                 val label = stringResource(penLabel(family))
                 WithTooltip(label) {
                     FilledIconToggleButton(
-                        checked = tools.activePen == family,
+                        checked = !tools.eraserActive && tools.activePen == family,
                         onCheckedChange = { onPen(family) },
                         modifier = Modifier.testTag(NoteScreenTags.pen(family)),
                     ) {
@@ -120,26 +131,23 @@ private fun Toolbar(
                     }
                 }
             }
-            Divider()
-            val colors = PenPalette.colors(tools.activePen)
-            colors.forEachIndexed { index, argb ->
-                ColorSwatch(
-                    argb = argb,
-                    selected = tools.activeSettings.colorArgb == argb,
-                    description = stringResource(R.string.color_n, index + 1),
-                    modifier = Modifier.testTag(NoteScreenTags.color(index)),
-                    onClick = { onColor(argb) },
-                )
+            for (mode in EraserMode.entries) {
+                val label = stringResource(if (mode == EraserMode.OBJECT) R.string.eraser_object else R.string.eraser_pixel)
+                WithTooltip(label) {
+                    FilledIconToggleButton(
+                        checked = tools.eraserActive && tools.eraserMode == mode,
+                        onCheckedChange = { onEraser(mode) },
+                        modifier = Modifier.testTag(NoteScreenTags.eraserMode(mode)),
+                    ) {
+                        Icon(eraserIcon(mode), contentDescription = label)
+                    }
+                }
             }
             Divider()
-            PenPalette.sizes(tools.activePen).forEachIndexed { index, mm ->
-                SizeDot(
-                    diameter = (8 + index * 6).dp,
-                    selected = tools.activeSettings.sizeMm == mm,
-                    description = stringResource(R.string.width_mm, mm),
-                    modifier = Modifier.testTag(NoteScreenTags.size(index)),
-                    onClick = { onSize(mm) },
-                )
+            if (tools.eraserActive) {
+                EraserOptions(tools, onEraserSize)
+            } else {
+                PenOptions(tools, onColor, onSize)
             }
             Divider()
             val fingerLabel = stringResource(R.string.draw_with_finger)
@@ -153,6 +161,45 @@ private fun Toolbar(
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun PenOptions(tools: ToolState, onColor: (Int) -> Unit, onSize: (Float) -> Unit) {
+    PenPalette.colors(tools.activePen).forEachIndexed { index, argb ->
+        ColorSwatch(
+            argb = argb,
+            selected = tools.activeSettings.colorArgb == argb,
+            description = stringResource(R.string.color_n, index + 1),
+            modifier = Modifier.testTag(NoteScreenTags.color(index)),
+            onClick = { onColor(argb) },
+        )
+    }
+    Divider()
+    PenPalette.sizes(tools.activePen).forEachIndexed { index, mm ->
+        SizeDot(
+            diameter = (8 + index * 6).dp,
+            selected = tools.activeSettings.sizeMm == mm,
+            description = stringResource(R.string.width_mm, mm),
+            modifier = Modifier.testTag(NoteScreenTags.size(index)),
+            onClick = { onSize(mm) },
+        )
+    }
+}
+
+@Composable
+private fun EraserOptions(tools: ToolState, onEraserSize: (Float) -> Unit) {
+    // The object eraser has a fixed tip; only the pixel eraser offers sizes.
+    if (tools.eraserMode != EraserMode.PIXEL) return
+    PenPalette.eraserSizes.forEachIndexed { index, mm ->
+        SizeDot(
+            diameter = (8 + index * 6).dp,
+            selected = tools.eraserSizeMm == mm,
+            description = stringResource(R.string.eraser_size_mm, mm),
+            modifier = Modifier.testTag(NoteScreenTags.eraserSize(index)),
+            onClick = { onEraserSize(mm) },
+            hollow = true,
+        )
     }
 }
 
@@ -195,7 +242,14 @@ private fun ColorSwatch(argb: Int, selected: Boolean, description: String, modif
 }
 
 @Composable
-private fun SizeDot(diameter: androidx.compose.ui.unit.Dp, selected: Boolean, description: String, modifier: Modifier, onClick: () -> Unit) {
+private fun SizeDot(
+    diameter: androidx.compose.ui.unit.Dp,
+    selected: Boolean,
+    description: String,
+    modifier: Modifier,
+    onClick: () -> Unit,
+    hollow: Boolean = false,
+) {
     val ring = if (selected) MaterialTheme.colorScheme.primary else Color.Transparent
     Box(
         modifier
@@ -208,7 +262,8 @@ private fun SizeDot(diameter: androidx.compose.ui.unit.Dp, selected: Boolean, de
             },
         contentAlignment = Alignment.Center,
     ) {
-        Box(Modifier.size(diameter).background(MaterialTheme.colorScheme.onSurface, CircleShape))
+        val dot = Modifier.size(diameter)
+        Box(if (hollow) dot.border(2.dp, MaterialTheme.colorScheme.onSurface, CircleShape) else dot.background(MaterialTheme.colorScheme.onSurface, CircleShape))
     }
 }
 

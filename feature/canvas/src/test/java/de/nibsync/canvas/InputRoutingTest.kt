@@ -21,8 +21,16 @@ class InputRoutingTest {
     }
 
     @Test
-    fun eraserEndIsIgnoredForNow() {
-        assertThat(InputRouting.actionFor(MotionEvent.TOOL_TYPE_ERASER, drawWithFinger = true)).isEqualTo(Action.IGNORE)
+    fun eraserEndAlwaysErases() {
+        assertThat(InputRouting.actionFor(MotionEvent.TOOL_TYPE_ERASER, drawWithFinger = false)).isEqualTo(Action.ERASE)
+    }
+
+    @Test
+    fun withEraserSelectedWritingToolsErase() {
+        assertThat(InputRouting.actionFor(MotionEvent.TOOL_TYPE_STYLUS, drawWithFinger = false, eraserActive = true)).isEqualTo(Action.ERASE)
+        assertThat(InputRouting.actionFor(MotionEvent.TOOL_TYPE_FINGER, drawWithFinger = true, eraserActive = true)).isEqualTo(Action.ERASE)
+        // Fingers still navigate unless finger drawing is on.
+        assertThat(InputRouting.actionFor(MotionEvent.TOOL_TYPE_FINGER, drawWithFinger = false, eraserActive = true)).isEqualTo(Action.NAVIGATE)
     }
 
     @Test

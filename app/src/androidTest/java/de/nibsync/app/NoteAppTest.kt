@@ -389,4 +389,62 @@ class NoteAppTest {
         scenario.onActivity { it.session!!.undo() }
         waitUntil("undo restores the shaft only") { strokes().size == 1 && strokes().single().points == shaft.points }
     }
+
+    // ---- erasers --------------------------------------------------------------------------
+
+    @Test
+    fun objectEraserRemovesOnlyTheCrossedStroke() {
+        drag(line(200f, 300f, 900f, 300f))
+        drag(line(200f, 600f, 900f, 600f))
+        waitForStrokes(2)
+        val lower = strokes().maxBy { it.bounds.top }
+
+        compose.onNodeWithTag(NoteScreenTags.eraserMode(de.nibsync.document.erase.EraserMode.OBJECT)).performClick()
+        drag(line(500f, 250f, 520f, 400f))
+        waitForStrokes(1)
+        assertThat(strokes().single()).isEqualTo(lower)
+
+        scenario.onActivity { it.session!!.undo() }
+        waitForStrokes(2)
+
+        // Picking a pen again writes again.
+        compose.onNodeWithTag(NoteScreenTags.pen(BrushFamily.BALLPOINT)).performClick()
+        drag(line(200f, 800f, 600f, 800f))
+        waitForStrokes(3)
+    }
+
+    @Test
+    fun pixelEraserCutsALineInTwo() {
+        drag(line(200f, 300f, 900f, 300f))
+        waitForStrokes(1)
+        val original = strokes().single()
+
+        compose.onNodeWithTag(NoteScreenTags.eraserMode(de.nibsync.document.erase.EraserMode.PIXEL)).performClick()
+        compose.onNodeWithTag(NoteScreenTags.eraserSize(1)).performClick() // 5 mm
+        drag(line(550f, 200f, 550f, 400f))
+        waitForStrokes(2)
+
+        val toDoc = checkNotNull(canvas()).viewport.viewToDocument
+        val cutX = toDoc.mapX(550f)
+        val (left, right) = strokes().sortedBy { it.points.first().x }
+        val reach = 2.5f + original.brush.sizeMm / 2
+        assertThat(left.points.maxOf { it.x }).isWithin(0.3f).of(cutX - reach)
+        assertThat(right.points.minOf { it.x }).isWithin(0.3f).of(cutX + reach)
+        assertThat(left.brush).isEqualTo(original.brush)
+
+        scenario.onActivity { it.session!!.undo() }
+        waitUntil("restored") { strokes().size == 1 && strokes().single().points == original.points }
+    }
+
+    @Test
+    fun erasingDoesNotScrollOrDraw() {
+        drag(line(200f, 300f, 900f, 300f))
+        waitForStrokes(1)
+        compose.onNodeWithTag(NoteScreenTags.eraserMode(de.nibsync.document.erase.EraserMode.OBJECT)).performClick()
+        val scrollBefore = checkNotNull(canvas()).viewport.scrollYMm
+        drag(line(300f, 700f, 800f, 750f)) // erasing empty paper
+        idleFor(500)
+        assertThat(strokes()).hasSize(1)
+        assertThat(checkNotNull(canvas()).viewport.scrollYMm).isEqualTo(scrollBefore)
+    }
 }

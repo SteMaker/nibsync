@@ -13,10 +13,34 @@ if [[ "${1:-}" == "--no-device" ]]; then
 fi
 
 ADB="${ANDROID_HOME:-$HOME/android-sdk}/platform-tools/adb"
-if ! "$ADB" get-state >/dev/null 2>&1; then
-    echo "No device connected (adb devices is empty). Connect the tablet or use --no-device." >&2
+# Not `adb get-state`: that fails as soon as more than one connection exists.
+has_device() { "$ADB" devices | awk -F'\t' 'NR > 1 && $2 == "device"' | grep -q .; }
+if ! has_device; then
+    # Wireless debugging: connect to a device announced via mDNS (its port changes).
+    for target in $("$ADB" mdns services | awk '/_adb-tls-connect/ {print $3}'); do
+        timeout 10 "$ADB" connect "$target" >/dev/null 2>&1 || true
+    done
+fi
+if ! has_device; then
+    echo "No device connected. Connect the tablet by USB, or switch 'Wireless debugging' off and on" >&2
+    echo "on the tablet (it turns itself off when the screen sleeps). Or use --no-device." >&2
     exit 1
 fi
+
+# The same tablet can show up twice (USB + WLAN, or two mDNS names); Gradle would then run every
+# test twice on it. Keep one connection per hardware serial number.
+declare -A seen
+# Names can contain spaces (e.g. "adb-XYZ (2)._adb-tls-connect._tcp"); columns are tab separated.
+while IFS= read -r target; do
+    serial=$("$ADB" -s "$target" shell getprop ro.serialno </dev/null | tr -d '\r')
+    if [[ -n "${seen[$serial]:-}" ]]; then
+        "$ADB" disconnect "$target" >/dev/null 2>&1 || true
+    else
+        seen[$serial]=1
+        # Pin Gradle to this connection, in case mDNS re-adds the duplicate meanwhile.
+        export ANDROID_SERIAL="${ANDROID_SERIAL:-$target}"
+    fi
+done < <("$ADB" devices | awk -F'\t' 'NR > 1 && $2 == "device" {print $1}')
 
 # App-level tests draw on the real screen: it must be on and unlocked.
 "$ADB" shell input keyevent KEYCODE_WAKEUP

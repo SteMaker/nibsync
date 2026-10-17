@@ -24,12 +24,16 @@ import de.nibsync.ink.BrushMapper
 import de.nibsync.ink.InkStrokeCache
 import de.nibsync.ink.StrokeConverter
 import de.nibsync.ink.toMatrix
+import de.nibsync.document.erase.EraseGesture
+import de.nibsync.document.erase.EraseResult
+import de.nibsync.document.erase.EraserMode
 import de.nibsync.model.BrushFamily
 import de.nibsync.model.BrushSpec
 import de.nibsync.model.InputTool
 import de.nibsync.model.PageFormat
 import de.nibsync.model.Stroke
 import de.nibsync.model.StrokeDraft
+import de.nibsync.model.StrokeId
 import de.nibsync.model.StrokePoint
 import de.nibsync.model.geometry.Viewport
 import de.nibsync.shapes.HoldDetector
@@ -53,13 +57,21 @@ class NoteCanvasView(context: Context) : FrameLayout(context) {
     var onStrokeDrafted: (StrokeDraft) -> Stroke? = { null }
 
     /** Receives the stroke drawn so far when the pen is held still; returns the stored shape or null. */
-    var onShapeRequested: (StrokeDraft) -> CommittedShape? = { null }
+    var onShapeRequested: (StrokeDraft) -> CommittedEdit? = { null }
+
+    /** Receives the outcome of an erase gesture; returns what was stored, or null. */
+    var onEraseFinished: (EraseResult) -> CommittedEdit? = { null }
 
     var onViewportChanged: (Viewport) -> Unit = {}
 
     var brush: BrushSpec = BrushSpec(BrushFamily.FOUNTAIN_PEN, Color.BLACK, 0.8f)
 
     var drawWithFinger: Boolean = false
+
+    /** When true the pen erases (see [eraserMode]) instead of writing. */
+    var eraserActive: Boolean = false
+    var eraserMode: EraserMode = EraserMode.OBJECT
+    var eraserRadiusMm: Float = 1f
 
     var pageFormat: PageFormat = PageFormat()
         set(value) {
@@ -101,6 +113,17 @@ class NoteCanvasView(context: Context) : FrameLayout(context) {
     private var strokeDownTime = 0L
     private var holdDetector: HoldDetector? = null
     private val holdCheck = Runnable { checkHold() }
+
+    private var eraseGesture: EraseGesture? = null
+    private var erasingPointerId = NO_POINTER
+    private var eraserX = 0f
+    private var eraserY = 0f
+    private var previewPieceCounter = 0
+    private val eraserPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.STROKE
+        strokeWidth = 2f
+        color = 0xff757575.toInt()
+    }
 
     private val scroller = OverScroller(context)
     private var flingLastX = 0
@@ -184,11 +207,13 @@ class NoteCanvasView(context: Context) : FrameLayout(context) {
         canvas.drawRect(pageLeft, pageTop, pageRight, pageBottom, pagePaint)
 
         val visible = viewport.visibleDocumentRect
+        val shown = eraseGesture?.visible ?: strokes
         canvas.withMatrix(documentToView) {
-            for (stroke in strokes) {
+            for (stroke in shown) {
                 if (stroke.bounds.intersects(visible)) renderer.draw(this, inkCache[stroke], documentToView)
             }
         }
+        if (eraseGesture != null) canvas.drawCircle(eraserX, eraserY, eraserRadiusMm * viewport.scale, eraserPaint)
     }
 
     override fun computeScroll() {
@@ -225,15 +250,22 @@ class NoteCanvasView(context: Context) : FrameLayout(context) {
 
     private fun onPointerDown(event: MotionEvent) {
         val index = event.actionIndex
-        val action = InputRouting.actionFor(event.getToolType(index), drawWithFinger)
-        if (action == InputRouting.Action.DRAW && drawingPointerId == NO_POINTER) {
+        val action = InputRouting.actionFor(event.getToolType(index), drawWithFinger, eraserActive)
+        val busy = drawingPointerId != NO_POINTER || erasingPointerId != NO_POINTER
+        if (action == InputRouting.Action.ERASE && !busy) {
+            if (navigating) {
+                navigating = false
+                scroller.forceFinished(true)
+            }
+            startErase(event, index)
+        } else if (action == InputRouting.Action.DRAW && !busy) {
             // A pen landing during a finger gesture (e.g. resting palm) takes over.
             if (navigating) {
                 navigating = false
                 scroller.forceFinished(true)
             }
             startStroke(event, index)
-        } else if (action == InputRouting.Action.NAVIGATE && drawingPointerId == NO_POINTER &&
+        } else if (action == InputRouting.Action.NAVIGATE && !busy &&
             event.actionMasked == MotionEvent.ACTION_DOWN
         ) {
             navigating = true
@@ -299,13 +331,46 @@ class NoteCanvasView(context: Context) : FrameLayout(context) {
         inProgressStrokesView.cancelStroke(id)
         brushesInProgress.remove(id)
         clearDrawingPointer() // the rest of this gesture is ignored
-        show(listOf(shape.stroke), removed = shape.replaced)
+        show(shape.added, removed = shape.removed)
         performHapticFeedback(
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) HapticFeedbackConstants.CONFIRM else HapticFeedbackConstants.VIRTUAL_KEY,
         )
     }
 
+    private fun startErase(event: MotionEvent, pointerIndex: Int) {
+        erasingPointerId = event.getPointerId(pointerIndex)
+        eraseGesture = EraseGesture(eraserMode, eraserRadiusMm, strokes) { StrokeId("erase-preview-${previewPieceCounter++}") }
+        eraseAlong(event, pointerIndex)
+    }
+
+    private fun eraseAlong(event: MotionEvent, pointerIndex: Int) {
+        val gesture = eraseGesture ?: return
+        val toDoc = viewport.viewToDocument
+        for (h in 0 until event.historySize) {
+            gesture.moveTo(toDoc.mapX(event.getHistoricalX(pointerIndex, h)), toDoc.mapY(event.getHistoricalY(pointerIndex, h)))
+        }
+        eraserX = event.getX(pointerIndex)
+        eraserY = event.getY(pointerIndex)
+        gesture.moveTo(toDoc.mapX(eraserX), toDoc.mapY(eraserY))
+        invalidate()
+    }
+
+    private fun finishErase(commit: Boolean) {
+        val gesture = eraseGesture ?: return
+        eraseGesture = null
+        erasingPointerId = NO_POINTER
+        if (commit && gesture.hasChanges) {
+            onEraseFinished(gesture.result())?.let { show(it.added, it.removed) }
+        }
+        invalidate()
+    }
+
     private fun onMove(event: MotionEvent) {
+        if (eraseGesture != null) {
+            val index = event.findPointerIndex(erasingPointerId)
+            if (index >= 0) eraseAlong(event, index)
+            return
+        }
         val id = drawingStrokeId ?: return
         if (event.findPointerIndex(drawingPointerId) < 0) return
         capture(event, event.findPointerIndex(drawingPointerId))
@@ -318,6 +383,13 @@ class NoteCanvasView(context: Context) : FrameLayout(context) {
     }
 
     private fun onPointerUp(event: MotionEvent) {
+        if (eraseGesture != null) {
+            if (event.getPointerId(event.actionIndex) == erasingPointerId) {
+                eraseAlong(event, event.actionIndex)
+                finishErase(commit = !InputRouting.isCanceled(event))
+            }
+            return
+        }
         val id = drawingStrokeId ?: return
         if (event.getPointerId(event.actionIndex) != drawingPointerId) return
         if (InputRouting.isCanceled(event)) {
@@ -330,6 +402,7 @@ class NoteCanvasView(context: Context) : FrameLayout(context) {
     }
 
     private fun onCancel(event: MotionEvent) {
+        finishErase(commit = false)
         drawingStrokeId?.let {
             inProgressStrokesView.cancelStroke(it, event)
             brushesInProgress.remove(it)
@@ -364,7 +437,7 @@ class NoteCanvasView(context: Context) : FrameLayout(context) {
      * Adds just committed strokes to the display right away. The document state will deliver
      * the same list again; the cache keeps that cheap.
      */
-    private fun show(added: List<Stroke>, removed: Set<de.nibsync.model.StrokeId> = emptySet()) {
+    private fun show(added: List<Stroke>, removed: Set<StrokeId> = emptySet()) {
         if (added.isEmpty() && removed.isEmpty()) return
         val known = strokes.mapTo(HashSet()) { it.id }
         val merged = strokes.filter { it.id !in removed } + added.filter { it.id !in known }

@@ -87,9 +87,9 @@ class CanvasViewModelTest {
     fun recognisedShapeIsAddedInsteadOfTheStroke() = runTest {
         val vm = viewModel { d, _ -> de.nibsync.model.Recognition(d.copy(points = straightened)) }
         val shape = vm.commitShape(draftWith(vm.tools.value.activeBrush))!!
-        assertThat(shape.stroke.points).isEqualTo(straightened)
-        assertThat(shape.replaced).isEmpty()
-        assertThat(vm.document.value.strokes).containsExactly(shape.stroke)
+        assertThat(shape.added.single().points).isEqualTo(straightened)
+        assertThat(shape.removed).isEmpty()
+        assertThat(vm.document.value.strokes).containsExactly(shape.added.single())
     }
 
     @Test
@@ -112,7 +112,7 @@ class CanvasViewModelTest {
         vm.selectPen(BrushFamily.FOUNTAIN_PEN)
         val shape = vm.commitShape(draftWith(vm.tools.value.activeBrush))!!
         assertThat(seen).containsExactly(shaft) // highlighter stroke is on another layer
-        assertThat(shape.replaced).containsExactly(shaft.id)
+        assertThat(shape.removed).containsExactly(shaft.id)
         assertThat(vm.document.value.strokes.map { it.layer }).containsExactly(Layer.MARKER, Layer.INK).inOrder()
         assertThat(vm.document.value[shaft.id]).isNull()
     }
@@ -124,5 +124,32 @@ class CanvasViewModelTest {
         // Undo lives in the session; the shape is one ordinary stroke there.
         assertThat(written).isEmpty() // journal runs asynchronously
         assertThat(vm.document.value.strokeCount).isEqualTo(1)
+    }
+
+    @Test
+    fun erasingIsStoredAsOneUndoStep() = runTest {
+        val vm = viewModel()
+        val a = vm.commitStroke(draftWith(vm.tools.value.activeBrush))!!
+        val b = vm.commitStroke(draftWith(vm.tools.value.activeBrush))!!
+        val piece = draftWith(vm.tools.value.activeBrush)
+        val committed = vm.commitErase(de.nibsync.document.erase.EraseResult(setOf(a.id, b.id), listOf(piece)))!!
+        assertThat(committed.removed).containsExactly(a.id, b.id)
+        assertThat(vm.document.value.strokes).containsExactly(committed.added.single())
+    }
+
+    @Test
+    fun emptyEraseStoresNothing() = runTest {
+        val vm = viewModel()
+        assertThat(vm.commitErase(de.nibsync.document.erase.EraseResult(emptySet(), emptyList()))).isNull()
+    }
+
+    @Test
+    fun selectingTheEraserKeepsThePen() = runTest {
+        val vm = viewModel()
+        vm.selectEraser(de.nibsync.document.erase.EraserMode.PIXEL)
+        vm.selectEraserSize(12f)
+        assertThat(vm.tools.value.eraserActive).isTrue()
+        assertThat(vm.tools.value.eraserRadiusMm).isEqualTo(6f)
+        assertThat(vm.tools.value.activePen).isEqualTo(BrushFamily.FOUNTAIN_PEN)
     }
 }

@@ -6,4 +6,7 @@
     <string name="color_n">Farbe %1$d</string>
     <string name="width_mm">Breite %1$.2f mm</string>
     <string name="draw_with_finger">Mit Finger zeichnen</string>
+    <string name="eraser_object">Radierer: ganze Striche</string>
+    <string name="eraser_pixel">Radierer: teilweise</string>
+    <string name="eraser_size_mm">Radierer %1$.0f mm</string>
 </resources>

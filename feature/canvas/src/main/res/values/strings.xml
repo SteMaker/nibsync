@@ -6,4 +6,7 @@
     <string name="color_n">Colour %1$d</string>
     <string name="width_mm">Width %1$.2f mm</string>
     <string name="draw_with_finger">Draw with finger</string>
+    <string name="eraser_object">Eraser: whole strokes</string>
+    <string name="eraser_pixel">Eraser: partial</string>
+    <string name="eraser_size_mm">Eraser %1$.0f mm</string>
 </resources>
