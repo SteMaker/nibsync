@@ -34,7 +34,7 @@ object BrushMapper {
      */
     const val PRESSURE_FOR_MIN_WIDTH: Float = 0f
     const val PRESSURE_FOR_MAX_WIDTH: Float = 0.5f
-    const val MIN_WIDTH_FACTOR: Float = 0.4f
+    const val MIN_WIDTH_FACTOR: Float = 0.28f
     const val MAX_WIDTH_FACTOR: Float = 1.6f
 
     private val fountainPen by lazy { nibSyncFountainPenV1() }
