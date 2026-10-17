@@ -130,4 +130,35 @@ class InkAdapterTest {
         cache[a]
         assertThat(conversions).isEqualTo(3)
     }
+
+    /** Height of the mesh of a horizontal 1 mm stroke written with constant [pressure]. */
+    private fun widthAt(family: BrushFamily, pressure: Float): Float {
+        val domain = Stroke(
+            id = StrokeId("w"),
+            layer = family.defaultLayer,
+            brush = BrushSpec(family, 0xff000000.toInt(), 1f),
+            tool = InputTool.STYLUS,
+            points = List(40) { i -> StrokePoint(10f + i, 20f, i * 8L, pressure = pressure) },
+            createdAtEpochMs = 0,
+            author = DeviceId("d"),
+        )
+        val box = checkNotNull(StrokeConverter.toInk(domain).shape.computeBoundingBox())
+        return box.yMax - box.yMin
+    }
+
+    @Test
+    fun fountainPenWidthFollowsRealisticPressure() {
+        // Values measured with the HONOR Magic-Pencil 3: light ~0.05, firm ~0.3.
+        val light = widthAt(BrushFamily.FOUNTAIN_PEN, 0.05f)
+        val normal = widthAt(BrushFamily.FOUNTAIN_PEN, 0.25f)
+        val firm = widthAt(BrushFamily.FOUNTAIN_PEN, 0.45f)
+        assertThat(normal).isGreaterThan(light * 1.5f)
+        assertThat(firm).isGreaterThan(normal * 1.3f)
+        assertThat(normal).isWithin(0.15f).of(1f) // nominal width at typical pressure
+    }
+
+    @Test
+    fun ballpointIgnoresPressure() {
+        assertThat(widthAt(BrushFamily.BALLPOINT, 0.45f)).isWithin(0.02f).of(widthAt(BrushFamily.BALLPOINT, 0.05f))
+    }
 }

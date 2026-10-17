@@ -19,10 +19,17 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.BorderColor
-import androidx.compose.material.icons.filled.Create
-import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Draw
+import androidx.compose.material.icons.filled.HistoryEdu
 import androidx.compose.material.icons.filled.TouchApp
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledIconToggleButton
+import androidx.compose.material3.PlainTooltip
+import androidx.compose.material3.Text
+import androidx.compose.material3.TooltipAnchorPosition
+import androidx.compose.material3.TooltipBox
+import androidx.compose.material3.TooltipDefaults
+import androidx.compose.material3.rememberTooltipState
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -101,12 +108,15 @@ private fun Toolbar(
             horizontalArrangement = Arrangement.spacedBy(4.dp),
         ) {
             for (family in BrushFamily.entries) {
-                FilledIconToggleButton(
-                    checked = tools.activePen == family,
-                    onCheckedChange = { onPen(family) },
-                    modifier = Modifier.testTag(NoteScreenTags.pen(family)),
-                ) {
-                    Icon(penIcon(family), contentDescription = stringResource(penLabel(family)))
+                val label = stringResource(penLabel(family))
+                WithTooltip(label) {
+                    FilledIconToggleButton(
+                        checked = tools.activePen == family,
+                        onCheckedChange = { onPen(family) },
+                        modifier = Modifier.testTag(NoteScreenTags.pen(family)),
+                    ) {
+                        Icon(penIcon(family), contentDescription = label)
+                    }
                 }
             }
             Divider()
@@ -131,14 +141,30 @@ private fun Toolbar(
                 )
             }
             Divider()
-            FilledIconToggleButton(
-                checked = tools.drawWithFinger,
-                onCheckedChange = onFingerToggle,
-                modifier = Modifier.testTag(NoteScreenTags.FINGER_TOGGLE),
-            ) {
-                Icon(Icons.Filled.TouchApp, contentDescription = stringResource(R.string.draw_with_finger))
+            val fingerLabel = stringResource(R.string.draw_with_finger)
+            WithTooltip(fingerLabel) {
+                FilledIconToggleButton(
+                    checked = tools.drawWithFinger,
+                    onCheckedChange = onFingerToggle,
+                    modifier = Modifier.testTag(NoteScreenTags.FINGER_TOGGLE),
+                ) {
+                    Icon(Icons.Filled.TouchApp, contentDescription = fingerLabel)
+                }
             }
         }
+    }
+}
+
+/** Shows [text] on long press, so the meaning of an icon can be looked up. */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun WithTooltip(text: String, content: @Composable () -> Unit) {
+    TooltipBox(
+        positionProvider = TooltipDefaults.rememberTooltipPositionProvider(TooltipAnchorPosition.Below),
+        tooltip = { PlainTooltip { Text(text) } },
+        state = rememberTooltipState(),
+    ) {
+        content()
     }
 }
 
@@ -186,8 +212,8 @@ private fun SizeDot(diameter: androidx.compose.ui.unit.Dp, selected: Boolean, de
 }
 
 private fun penIcon(family: BrushFamily): ImageVector = when (family) {
-    BrushFamily.BALLPOINT -> Icons.Filled.Create
-    BrushFamily.FOUNTAIN_PEN -> Icons.Filled.Edit
+    BrushFamily.BALLPOINT -> Icons.Filled.Draw
+    BrushFamily.FOUNTAIN_PEN -> Icons.Filled.HistoryEdu
     BrushFamily.HIGHLIGHTER -> Icons.Filled.BorderColor
 }
 
