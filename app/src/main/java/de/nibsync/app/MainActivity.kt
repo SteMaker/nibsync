@@ -1,6 +1,7 @@
 package de.nibsync.app
 
 import android.os.Bundle
+import android.view.KeyEvent
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -69,6 +70,18 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
+    }
+
+    /** Keyboard shortcuts: Ctrl+Z undo, Ctrl+Y / Ctrl+Shift+Z redo. */
+    override fun onKeyDown(keyCode: Int, event: KeyEvent): Boolean {
+        val s = session
+        if (s != null && event.isCtrlPressed) {
+            when {
+                keyCode == KeyEvent.KEYCODE_Z && !event.isShiftPressed -> { s.undo(); return true }
+                keyCode == KeyEvent.KEYCODE_Z || keyCode == KeyEvent.KEYCODE_Y -> { s.redo(); return true }
+            }
+        }
+        return super.onKeyDown(keyCode, event)
     }
 
     override fun onStop() {

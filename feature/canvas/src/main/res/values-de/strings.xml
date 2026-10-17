@@ -9,4 +9,6 @@
     <string name="eraser_object">Radierer: ganze Striche</string>
     <string name="eraser_pixel">Radierer: teilweise</string>
     <string name="eraser_size_mm">Radierer %1$.0f mm</string>
+    <string name="undo">Rückgängig</string>
+    <string name="redo">Wiederholen</string>
 </resources>

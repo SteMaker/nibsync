@@ -9,4 +9,6 @@
     <string name="eraser_object">Eraser: whole strokes</string>
     <string name="eraser_pixel">Eraser: partial</string>
     <string name="eraser_size_mm">Eraser %1$.0f mm</string>
+    <string name="undo">Undo</string>
+    <string name="redo">Redo</string>
 </resources>

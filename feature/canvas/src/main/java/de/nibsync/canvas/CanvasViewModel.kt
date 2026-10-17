@@ -29,6 +29,13 @@ class CanvasViewModel(
 
     val document: StateFlow<DocumentState> = session.state
 
+    val canUndo: StateFlow<Boolean> = session.canUndo
+    val canRedo: StateFlow<Boolean> = session.canRedo
+
+    fun undo(): Boolean = session.undo()
+
+    fun redo(): Boolean = session.redo()
+
     private val _tools = MutableStateFlow(ToolState())
     val tools: StateFlow<ToolState> = _tools.asStateFlow()
 

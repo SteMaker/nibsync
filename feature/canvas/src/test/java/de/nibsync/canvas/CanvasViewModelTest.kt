@@ -152,4 +152,19 @@ class CanvasViewModelTest {
         assertThat(vm.tools.value.eraserRadiusMm).isEqualTo(6f)
         assertThat(vm.tools.value.activePen).isEqualTo(BrushFamily.FOUNTAIN_PEN)
     }
+
+    @Test
+    fun undoAndRedoFollowTheSession() = runTest {
+        val vm = viewModel()
+        assertThat(vm.canUndo.value).isFalse()
+        vm.commitStroke(draftWith(vm.tools.value.activeBrush))
+        assertThat(vm.canUndo.value).isTrue()
+        assertThat(vm.undo()).isTrue()
+        assertThat(vm.document.value.strokeCount).isEqualTo(0)
+        assertThat(vm.canUndo.value).isFalse()
+        assertThat(vm.canRedo.value).isTrue()
+        assertThat(vm.redo()).isTrue()
+        assertThat(vm.document.value.strokeCount).isEqualTo(1)
+        assertThat(vm.redo()).isFalse()
+    }
 }

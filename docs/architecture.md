@@ -91,5 +91,5 @@ always erases.
 | E ✅ | Shape recognition | hold the pen still ~0.5 s at the end of a stroke; `core/shapes` |
 | F ✅ | Pixel and object eraser | `core/document/erase`; two eraser buttons in the tool bar |
 | G | Lasso: delete, move, copy | Ink dashed-line brush + `PartitionedMesh` coverage; move = remove + add |
-| H | Undo/redo UI | `DocumentSession.undo/redo` and `canUndo/canRedo` exist and are tested |
+| H ✅ | Undo/redo | tool bar buttons, Ctrl+Z / Ctrl+Y / Ctrl+Shift+Z; history per open document and app run |
 | I | Lined/grid backgrounds | `BackgroundSpec` is stored; render in `NoteCanvasView.onDraw` |

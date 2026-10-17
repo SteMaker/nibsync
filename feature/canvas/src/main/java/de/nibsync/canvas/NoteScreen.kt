@@ -18,6 +18,8 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.Redo
+import androidx.compose.material.icons.automirrored.filled.Undo
 import androidx.compose.material.icons.filled.BorderColor
 import androidx.compose.material.icons.filled.Draw
 import androidx.compose.material.icons.filled.HistoryEdu
@@ -31,6 +33,7 @@ import androidx.compose.material3.TooltipBox
 import androidx.compose.material3.TooltipDefaults
 import androidx.compose.material3.rememberTooltipState
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.VerticalDivider
@@ -61,6 +64,8 @@ object NoteScreenTags {
     fun color(index: Int) = "color-$index"
     fun size(index: Int) = "size-$index"
     const val FINGER_TOGGLE = "finger-toggle"
+    const val UNDO = "undo"
+    const val REDO = "redo"
     fun eraserMode(mode: EraserMode) = "eraser-${mode.name}"
     fun eraserSize(index: Int) = "eraser-size-$index"
 }
@@ -69,10 +74,16 @@ object NoteScreenTags {
 fun NoteScreen(viewModel: CanvasViewModel, modifier: Modifier = Modifier, onCanvasCreated: (NoteCanvasView) -> Unit = {}) {
     val document by viewModel.document.collectAsStateWithLifecycle()
     val tools by viewModel.tools.collectAsStateWithLifecycle()
+    val canUndo by viewModel.canUndo.collectAsStateWithLifecycle()
+    val canRedo by viewModel.canRedo.collectAsStateWithLifecycle()
 
     Column(modifier.fillMaxSize()) {
         Toolbar(
             tools = tools,
+            canUndo = canUndo,
+            canRedo = canRedo,
+            onUndo = { viewModel.undo() },
+            onRedo = { viewModel.redo() },
             onPen = viewModel::selectPen,
             onColor = viewModel::selectColor,
             onSize = viewModel::selectSize,
@@ -106,6 +117,10 @@ fun NoteScreen(viewModel: CanvasViewModel, modifier: Modifier = Modifier, onCanv
 @Composable
 private fun Toolbar(
     tools: ToolState,
+    canUndo: Boolean,
+    canRedo: Boolean,
+    onUndo: () -> Unit,
+    onRedo: () -> Unit,
     onPen: (BrushFamily) -> Unit,
     onColor: (Int) -> Unit,
     onSize: (Float) -> Unit,
@@ -119,6 +134,19 @@ private fun Toolbar(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(4.dp),
         ) {
+            val undoLabel = stringResource(R.string.undo)
+            WithTooltip(undoLabel) {
+                IconButton(onClick = onUndo, enabled = canUndo, modifier = Modifier.testTag(NoteScreenTags.UNDO)) {
+                    Icon(Icons.AutoMirrored.Filled.Undo, contentDescription = undoLabel)
+                }
+            }
+            val redoLabel = stringResource(R.string.redo)
+            WithTooltip(redoLabel) {
+                IconButton(onClick = onRedo, enabled = canRedo, modifier = Modifier.testTag(NoteScreenTags.REDO)) {
+                    Icon(Icons.AutoMirrored.Filled.Redo, contentDescription = redoLabel)
+                }
+            }
+            Divider()
             for (family in BrushFamily.entries) {
                 val label = stringResource(penLabel(family))
                 WithTooltip(label) {

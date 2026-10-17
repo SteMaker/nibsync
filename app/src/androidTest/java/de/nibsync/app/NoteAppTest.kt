@@ -8,6 +8,8 @@ import android.os.SystemClock
 import android.view.InputDevice
 import android.view.MotionEvent
 import androidx.compose.ui.test.junit4.createEmptyComposeRule
+import androidx.compose.ui.test.assertIsEnabled
+import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performClick
 import androidx.test.core.app.ActivityScenario
@@ -446,5 +448,66 @@ class NoteAppTest {
         idleFor(500)
         assertThat(strokes()).hasSize(1)
         assertThat(checkNotNull(canvas()).viewport.scrollYMm).isEqualTo(scrollBefore)
+    }
+
+    // ---- undo / redo ----------------------------------------------------------------------
+
+    @Test
+    fun undoAndRedoButtons() {
+        compose.onNodeWithTag(NoteScreenTags.UNDO).assertIsNotEnabled()
+        compose.onNodeWithTag(NoteScreenTags.REDO).assertIsNotEnabled()
+        drag(line(200f, 300f, 900f, 300f))
+        drag(line(200f, 500f, 900f, 500f))
+        waitForStrokes(2)
+        val strokesDrawn = strokes()
+
+        compose.onNodeWithTag(NoteScreenTags.UNDO).assertIsEnabled().performClick()
+        waitForStrokes(1)
+        compose.onNodeWithTag(NoteScreenTags.UNDO).performClick()
+        waitForStrokes(0)
+        compose.onNodeWithTag(NoteScreenTags.UNDO).assertIsNotEnabled()
+
+        compose.onNodeWithTag(NoteScreenTags.REDO).assertIsEnabled().performClick()
+        compose.onNodeWithTag(NoteScreenTags.REDO).performClick()
+        waitForStrokes(2)
+        compose.onNodeWithTag(NoteScreenTags.REDO).assertIsNotEnabled()
+        // Redone strokes look the same as before (copies with new ids).
+        assertThat(strokes().map { it.points }).isEqualTo(strokesDrawn.map { it.points })
+        // The canvas shows them too.
+        waitUntil("canvas updated") { checkNotNull(canvas()).strokes.size == 2 }
+    }
+
+    @Test
+    fun undoAndRedoWithKeyboardShortcuts() {
+        drag(line(200f, 300f, 900f, 300f))
+        waitForStrokes(1)
+        fun press(keyCode: Int, meta: Int) {
+            val now = SystemClock.uptimeMillis()
+            instrumentation.sendKeySync(android.view.KeyEvent(now, now, android.view.KeyEvent.ACTION_DOWN, keyCode, 0, meta))
+            instrumentation.sendKeySync(android.view.KeyEvent(now, now, android.view.KeyEvent.ACTION_UP, keyCode, 0, meta))
+        }
+        val ctrl = android.view.KeyEvent.META_CTRL_ON or android.view.KeyEvent.META_CTRL_LEFT_ON
+        press(android.view.KeyEvent.KEYCODE_Z, ctrl)
+        waitForStrokes(0)
+        press(android.view.KeyEvent.KEYCODE_Y, ctrl)
+        waitForStrokes(1)
+        press(android.view.KeyEvent.KEYCODE_Z, ctrl)
+        waitForStrokes(0)
+        press(android.view.KeyEvent.KEYCODE_Z, ctrl or android.view.KeyEvent.META_SHIFT_ON or android.view.KeyEvent.META_SHIFT_LEFT_ON)
+        waitForStrokes(1)
+    }
+
+    @Test
+    fun undoRevertsAnEraseInOneStep() {
+        drag(line(200f, 300f, 900f, 300f))
+        waitForStrokes(1)
+        compose.onNodeWithTag(NoteScreenTags.eraserMode(de.nibsync.document.erase.EraserMode.PIXEL)).performClick()
+        drag(line(400f, 200f, 400f, 400f))
+        drag(line(700f, 200f, 700f, 400f))
+        waitForStrokes(3)
+        compose.onNodeWithTag(NoteScreenTags.UNDO).performClick()
+        waitForStrokes(2) // only the second cut is undone
+        compose.onNodeWithTag(NoteScreenTags.UNDO).performClick()
+        waitForStrokes(1)
     }
 }
