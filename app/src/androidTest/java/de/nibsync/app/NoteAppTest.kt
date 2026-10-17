@@ -366,4 +366,27 @@ class NoteAppTest {
         scenario.onActivity { it.session!!.undo() }
         waitForStrokes(0)
     }
+
+    @Test
+    fun arrowHeadDrawnOntoALineMakesOneArrow() {
+        // Shaft without holding, then the head as a separate "V" with holding.
+        drawLive(line(200f, 400f, 900f, 405f, steps = 60))
+        waitForStrokes(1)
+        val shaft = strokes().single()
+        val head = line(820f, 340f, 900f, 405f, steps = 15) + line(900f, 405f, 825f, 470f, steps = 15).drop(1)
+        drawLive(head, holdMs = 900)
+        waitUntil("shaft and head merged") {
+            strokes().size == 1 && strokes().single().id != shaft.id
+        }
+        val arrow = strokes().single()
+        val toDoc = checkNotNull(canvas()).viewport.viewToDocument
+        // Snapped horizontal shaft from the tail to the tip, plus head points behind the tip.
+        assertThat(arrow.points.first().y).isEqualTo(arrow.points[1].y)
+        assertThat(arrow.points.first().x).isWithin(2f).of(toDoc.mapX(200f))
+        assertThat(arrow.points.maxOf { it.x }).isWithin(2f).of(toDoc.mapX(900f))
+        assertThat(arrow.bounds.height).isGreaterThan(3f)
+
+        scenario.onActivity { it.session!!.undo() }
+        waitUntil("undo restores the shaft only") { strokes().size == 1 && strokes().single().points == shaft.points }
+    }
 }

@@ -12,6 +12,9 @@ import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
+/** Single-stroke recognition without document context. */
+private fun GeometricShapeRecognizer.recognize(draft: StrokeDraft): StrokeDraft? = recognize(draft, emptyList())?.replacement
+
 class GeometricShapeRecognizerTest {
     private val pen = BrushSpec(BrushFamily.FOUNTAIN_PEN, 0xff000000.toInt(), 0.8f)
 

@@ -17,7 +17,11 @@ object ShapeTracer {
             val back = (shape.tail - shape.tip) * (1.0 / shape.tail.distanceTo(shape.tip))
             val wing1 = shape.tip + Geometry.rotate(back, HEAD_ANGLE) * shape.headLength
             val wing2 = shape.tip + Geometry.rotate(back, -HEAD_ANGLE) * shape.headLength
-            densify(listOf(shape.tail, shape.tip, wing1, shape.tip, wing2))
+            if (shape.closedHead) {
+                densify(listOf(shape.tail, shape.tip, wing1, wing2, shape.tip))
+            } else {
+                densify(listOf(shape.tail, shape.tip, wing1, shape.tip, wing2))
+            }
         }
         is Shape.Triangle -> densify(listOf(shape.a, shape.b, shape.c, shape.a))
         is Shape.Rectangle -> shape.corners.let { densify(it + it.first()) }

@@ -53,7 +53,7 @@ class NoteCanvasView(context: Context) : FrameLayout(context) {
     var onStrokeDrafted: (StrokeDraft) -> Stroke? = { null }
 
     /** Receives the stroke drawn so far when the pen is held still; returns the stored shape or null. */
-    var onShapeRequested: (StrokeDraft) -> Stroke? = { null }
+    var onShapeRequested: (StrokeDraft) -> CommittedShape? = { null }
 
     var onViewportChanged: (Viewport) -> Unit = {}
 
@@ -299,7 +299,7 @@ class NoteCanvasView(context: Context) : FrameLayout(context) {
         inProgressStrokesView.cancelStroke(id)
         brushesInProgress.remove(id)
         clearDrawingPointer() // the rest of this gesture is ignored
-        show(listOf(shape))
+        show(listOf(shape.stroke), removed = shape.replaced)
         performHapticFeedback(
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) HapticFeedbackConstants.CONFIRM else HapticFeedbackConstants.VIRTUAL_KEY,
         )
@@ -364,10 +364,10 @@ class NoteCanvasView(context: Context) : FrameLayout(context) {
      * Adds just committed strokes to the display right away. The document state will deliver
      * the same list again; the cache keeps that cheap.
      */
-    private fun show(added: List<Stroke>) {
-        if (added.isEmpty()) return
+    private fun show(added: List<Stroke>, removed: Set<de.nibsync.model.StrokeId> = emptySet()) {
+        if (added.isEmpty() && removed.isEmpty()) return
         val known = strokes.mapTo(HashSet()) { it.id }
-        val merged = strokes + added.filter { it.id !in known }
+        val merged = strokes.filter { it.id !in removed } + added.filter { it.id !in known }
         strokes = merged.sortedBy { it.layer.zIndex } // stable: keeps creation order per layer
         updateContentBottom()
         invalidate()

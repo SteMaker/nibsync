@@ -67,6 +67,83 @@ object ShapeDetector {
         return loop
     }
 
+    /** Recognises a stroke that is only an arrow head (to be joined with a shaft), or null. */
+    fun detectArrowHead(input: List<Pt>): ArrowHead? {
+        if (input.size < 2) return null
+        val size = Geometry.diagonal(input)
+        if (size < 2.0) return null
+        val points = Geometry.resample(input, size / 100)
+        val length = Geometry.pathLength(points)
+        val loop = if (length > 2 * size) closedLoop(points, size) else null
+        if (loop != null) {
+            val corners = Geometry.corners(loop, epsilon = 0.08 * size, minTurnDeg = 35.0)
+            return if (corners.size == 3) ArrowHead(corners, closed = true) else null
+        }
+        var v = Geometry.simplify(points, 0.08 * size)
+        // Drop little hooks at the ends (pen landing or lifting).
+        while (v.size > 3 && v[0].distanceTo(v[1]) < 0.25 * size) v = v.drop(1)
+        while (v.size > 3 && v[v.lastIndex].distanceTo(v[v.lastIndex - 1]) < 0.25 * size) v = v.dropLast(1)
+        if (v.size != 3) return null
+        val (w1, apex, w2) = v
+        val opening = 180 - Geometry.turnDegrees(w1, apex, w2)
+        if (opening < 15 || opening > 130) return null
+        if (min(apex.distanceTo(w1), apex.distanceTo(w2)) < 0.25 * size) return null
+        return ArrowHead(v, closed = false)
+    }
+
+    /**
+     * Joins [head] with a straight [shaft] stroke if the head sits on one end of it and points
+     * along it. Returns the arrow, or null if they do not belong together.
+     */
+    fun joinArrow(head: ArrowHead, shaft: List<Pt>): Shape.Arrow? {
+        val line = straightStroke(shaft) ?: return null
+        val shaftLength = line.start.distanceTo(line.end)
+        var best: Shape.Arrow? = null
+        var bestDistance = Double.MAX_VALUE
+        for ((end, other) in listOf(line.end to line.start, line.start to line.end)) {
+            val back = (other - end) * (1.0 / shaftLength)
+            val apexes = if (head.closed) head.vertices else listOf(head.vertices[1])
+            for (apex in apexes) {
+                val wings = head.vertices.filter { it != apex }
+                val headLength = wings.map { it.distanceTo(apex) }.average()
+                val distance = apex.distanceTo(end)
+                if (distance > max(3.0, 0.6 * headLength)) continue
+                if (headLength > 0.6 * shaftLength) continue
+                // Both wings must point back along the shaft.
+                if (wings.any { (it - apex).dot(back) < 0.2 * it.distanceTo(apex) }) continue
+                if (distance < bestDistance) {
+                    bestDistance = distance
+                    // The tip is where the head's apex lies along the shaft direction.
+                    val forward = back * -1.0
+                    val tip = end + forward * (apex - end).dot(forward)
+                    val (tail, snappedTip) = snapDirection(other, tip)
+                    best = Shape.Arrow(tail, snappedTip, headLength.coerceAtMost(0.5 * shaftLength), head.closed)
+                }
+            }
+        }
+        return best
+    }
+
+    /**
+     * The straight segment a stroke forms, ignoring little hooks where the pen landed or
+     * lifted, or null if the stroke is not straight.
+     */
+    private fun straightStroke(input: List<Pt>): Shape.Line? {
+        if (input.size < 2) return null
+        val size = Geometry.diagonal(input)
+        if (size < MIN_SIZE_MM) return null
+        val points = Geometry.resample(input, size / 100)
+        var v = Geometry.simplify(points, 0.04 * size)
+        while (v.size > 2 && v[0].distanceTo(v[1]) < 0.12 * size) v = v.drop(1)
+        while (v.size > 2 && v[v.lastIndex].distanceTo(v[v.lastIndex - 1]) < 0.12 * size) v = v.dropLast(1)
+        if (v.size != 2) return null
+        val (a, b) = v
+        val from = points.indexOf(a)
+        val to = points.indexOf(b)
+        if (points.subList(from, to + 1).any { Geometry.distanceToSegment(it, a, b) > 0.06 * a.distanceTo(b) }) return null
+        return Shape.Line(a, b)
+    }
+
     private fun detectLine(points: List<Pt>, length: Double): Shape.Line? {
         val a = points.first()
         val b = points.last()

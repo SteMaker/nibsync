@@ -11,6 +11,9 @@ import de.nibsync.model.StrokeId
 sealed interface Edit {
     data class Added(val strokes: List<Stroke>) : Edit
     data class Removed(val strokes: List<Stroke>) : Edit
+
+    /** [removed] were replaced by [added] in one step (e.g. two strokes merged into one shape). */
+    data class Replaced(val removed: List<Stroke>, val added: List<Stroke>) : Edit
 }
 
 /**
@@ -67,10 +70,11 @@ class UndoManager(private val ids: IdGenerator, private val maxDepth: Int = 200)
 
     private fun invert(edit: Edit): Edit = when (edit) {
         is Edit.Added -> Edit.Removed(edit.strokes.map(::current))
-        is Edit.Removed -> Edit.Added(
-            edit.strokes.map(::current).map { old ->
-                old.copy(id = ids.newStrokeId()).also { restoredAs[old.id] = it }
-            },
-        )
+        is Edit.Removed -> Edit.Added(restore(edit.strokes))
+        is Edit.Replaced -> Edit.Replaced(removed = edit.added.map(::current), added = restore(edit.removed))
+    }
+
+    private fun restore(strokes: List<Stroke>): List<Stroke> = strokes.map(::current).map { old ->
+        old.copy(id = ids.newStrokeId()).also { restoredAs[old.id] = it }
     }
 }

@@ -137,7 +137,7 @@ class PageFormatTest {
     @Test
     fun shapeRecognizerNoneRecognisesNothing() {
         val d = StrokeDraft(PEN, InputTool.STYLUS, listOf(StrokePoint(0f, 0f, 0)))
-        assertEquals(null, ShapeRecognizer.None.recognize(d))
+        assertEquals(null, ShapeRecognizer.None.recognize(d, emptyList()))
         assertNotEquals(PageFormat(PaperSize.A3), PageFormat())
     }
 }

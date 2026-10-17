@@ -78,17 +78,18 @@ class CanvasViewModelTest {
 
     @Test
     fun normalStrokesAreNotRecognised() = runTest {
-        val vm = viewModel { it.copy(points = straightened) }
+        val vm = viewModel { d, _ -> de.nibsync.model.Recognition(d.copy(points = straightened)) }
         val draft = draftWith(vm.tools.value.activeBrush)
         assertThat(vm.commitStroke(draft)!!.points).isEqualTo(draft.points.map { de.nibsync.model.Quantization.quantize(it) })
     }
 
     @Test
     fun recognisedShapeIsAddedInsteadOfTheStroke() = runTest {
-        val vm = viewModel { it.copy(points = straightened) }
-        val shape = vm.commitShape(draftWith(vm.tools.value.activeBrush))
-        assertThat(shape!!.points).isEqualTo(straightened)
-        assertThat(vm.document.value.strokes).containsExactly(shape)
+        val vm = viewModel { d, _ -> de.nibsync.model.Recognition(d.copy(points = straightened)) }
+        val shape = vm.commitShape(draftWith(vm.tools.value.activeBrush))!!
+        assertThat(shape.stroke.points).isEqualTo(straightened)
+        assertThat(shape.replaced).isEmpty()
+        assertThat(vm.document.value.strokes).containsExactly(shape.stroke)
     }
 
     @Test
@@ -99,8 +100,26 @@ class CanvasViewModelTest {
     }
 
     @Test
+    fun shapeMayReplaceRecentStrokesOfItsLayer() = runTest {
+        var seen: List<de.nibsync.model.Stroke> = emptyList()
+        val vm = viewModel { d, recent ->
+            seen = recent
+            de.nibsync.model.Recognition(d.copy(points = straightened), replaces = setOf(recent.last().id))
+        }
+        val shaft = vm.commitStroke(draftWith(vm.tools.value.activeBrush))!!
+        vm.selectPen(BrushFamily.HIGHLIGHTER)
+        vm.commitStroke(draftWith(vm.tools.value.activeBrush))
+        vm.selectPen(BrushFamily.FOUNTAIN_PEN)
+        val shape = vm.commitShape(draftWith(vm.tools.value.activeBrush))!!
+        assertThat(seen).containsExactly(shaft) // highlighter stroke is on another layer
+        assertThat(shape.replaced).containsExactly(shaft.id)
+        assertThat(vm.document.value.strokes.map { it.layer }).containsExactly(Layer.MARKER, Layer.INK).inOrder()
+        assertThat(vm.document.value[shaft.id]).isNull()
+    }
+
+    @Test
     fun shapeCanBeUndone() = runTest {
-        val vm = viewModel { it.copy(points = straightened) }
+        val vm = viewModel { d, _ -> de.nibsync.model.Recognition(d.copy(points = straightened)) }
         vm.commitShape(draftWith(vm.tools.value.activeBrush))
         // Undo lives in the session; the shape is one ordinary stroke there.
         assertThat(written).isEmpty() // journal runs asynchronously

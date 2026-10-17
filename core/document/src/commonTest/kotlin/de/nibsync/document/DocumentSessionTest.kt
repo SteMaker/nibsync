@@ -153,3 +153,34 @@ class UndoChainTest {
         assertEquals(listOf(1f), s.state.value.strokes.map { it.points.first().y })
     }
 }
+
+class ReplaceStrokesTest {
+    @Test
+    fun replaceIsOneUndoStep() = runTest {
+        val written = mutableListOf<DocumentOp>()
+        val s = DocumentSession(DocumentState.empty(META), DEV_A, { written += it }, backgroundScope, clock = { 0L })
+        val shaft = s.addStroke(draft(y = 1f))
+        val merged = s.replaceStrokes(listOf(shaft.id), draft(y = 9f))
+        assertEquals(listOf(merged), s.state.value.strokes)
+
+        assertTrue(s.undo())
+        assertEquals(listOf(1f), s.state.value.strokes.map { it.points.first().y })
+        assertTrue(s.redo())
+        assertEquals(listOf(9f), s.state.value.strokes.map { it.points.first().y })
+        assertTrue(s.undo())
+        assertTrue(s.undo())
+        assertEquals(0, s.state.value.strokeCount)
+
+        s.flush()
+        assertEquals(s.state.value.strokes, DocumentState.empty(META).applyAll(written).strokes)
+    }
+
+    @Test
+    fun replacingMissingStrokesJustAdds() = runTest {
+        val s = DocumentSession(DocumentState.empty(META), DEV_A, {}, backgroundScope, clock = { 0L })
+        s.replaceStrokes(listOf(de.nibsync.model.StrokeId("gone")), draft())
+        assertEquals(1, s.state.value.strokeCount)
+        assertTrue(s.undo())
+        assertEquals(0, s.state.value.strokeCount)
+    }
+}

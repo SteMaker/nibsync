@@ -62,6 +62,13 @@ snap to the axes. The replacement is an ordinary stroke with the same pen, drawn
 stroke's median pressure so it has an even width; it can be undone like any stroke. Without
 the hold gesture handwriting is never touched.
 
+Arrows can be drawn in one stroke (shaft, then the head back and forth) or in two: a straight
+shaft and then the head as its own stroke (an open "V" or a small triangle) with the hold at
+the end. A head whose apex sits on an end of one of the latest strokes of the same layer and
+points back along it replaces both strokes with one arrow, in a single undo step
+(`DocumentSession.replaceStrokes`). The recognizer is tuned against real arrows recorded on the
+test tablet (`RecordedArrows`).
+
 ## Roadmap
 
 | Step | Feature | Where it plugs in |

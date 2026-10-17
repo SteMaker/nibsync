@@ -7,10 +7,14 @@ import de.nibsync.model.BrushFamily
 import de.nibsync.model.ShapeRecognizer
 import de.nibsync.model.Stroke
 import de.nibsync.model.StrokeDraft
+import de.nibsync.model.StrokeId
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
+
+/** A recognised shape that was added, and the ids of the strokes it replaced. */
+class CommittedShape(val stroke: Stroke, val replaced: Set<StrokeId>)
 
 /**
  * Connects the canvas UI to a [DocumentSession]. The session is owned by the caller (it
@@ -44,9 +48,16 @@ class CanvasViewModel(
      * Called when the pen is held still at the end of a stroke. Returns the clean shape that
      * was added instead of the stroke, or null if no shape was recognised (the stroke goes on).
      */
-    fun commitShape(draft: StrokeDraft): Stroke? {
+    fun commitShape(draft: StrokeDraft): CommittedShape? {
         if (draft.points.isEmpty()) return null
-        val shape = recognizer.recognize(draft) ?: return null
-        return session.addStroke(shape)
+        val recent = session.state.value.strokes.filter { it.layer == draft.layer }.takeLast(RECENT_STROKES)
+        val result = recognizer.recognize(draft, recent) ?: return null
+        val stroke = session.replaceStrokes(result.replaces, result.replacement)
+        return CommittedShape(stroke, result.replaces)
+    }
+
+    private companion object {
+        /** How many of the latest strokes a multi-stroke shape (arrow head + shaft) may join. */
+        const val RECENT_STROKES = 10
     }
 }

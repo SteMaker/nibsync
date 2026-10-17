@@ -66,7 +66,13 @@ class DocumentSession(
      * the storage grid ([Quantization]) so the stroke looks the same after reloading.
      */
     fun addStroke(draft: StrokeDraft): Stroke {
-        val stroke = Stroke(
+        val stroke = newStroke(draft)
+        applyEdit(Edit.Added(listOf(stroke)), record = true)
+        return stroke
+    }
+
+    private fun newStroke(draft: StrokeDraft): Stroke {
+        return Stroke(
             id = ids.newStrokeId(),
             layer = draft.layer,
             brush = draft.brush,
@@ -75,7 +81,17 @@ class DocumentSession(
             createdAtEpochMs = clock(),
             author = device,
         )
-        applyEdit(Edit.Added(listOf(stroke)), record = true)
+    }
+
+    /**
+     * Adds [draft] (quantized like [addStroke]) and removes the strokes [replaces] in one undo step.
+     * Ids that no longer exist are ignored.
+     */
+    fun replaceStrokes(replaces: Collection<StrokeId>, draft: StrokeDraft): Stroke {
+        val current = _state.value
+        val removed = replaces.mapNotNull { current[it] }
+        val stroke = newStroke(draft)
+        applyEdit(if (removed.isEmpty()) Edit.Added(listOf(stroke)) else Edit.Replaced(removed, listOf(stroke)), record = true)
         return stroke
     }
 
@@ -113,15 +129,23 @@ class DocumentSession(
         pending.close()
     }
 
-    private fun applyEdit(edit: Edit, record: Boolean) {
+    /** Applies one op with the next Lamport stamp and queues it for the journal. */
+    private fun emit(makeOp: (OpStamp) -> DocumentOp) {
         val current = _state.value
-        val stamp = OpStamp(current.clock + 1, device)
-        val op = when (edit) {
-            is Edit.Added -> DocumentOp.AddStrokes(stamp, edit.strokes)
-            is Edit.Removed -> DocumentOp.RemoveStrokes(stamp, edit.strokes.map { it.id }.toSet())
-        }
+        val op = makeOp(OpStamp(current.clock + 1, device))
         _state.value = current.apply(op)
         pending.trySend(Pending.Write(op))
+    }
+
+    private fun applyEdit(edit: Edit, record: Boolean) {
+        when (edit) {
+            is Edit.Added -> emit { DocumentOp.AddStrokes(it, edit.strokes) }
+            is Edit.Removed -> emit { DocumentOp.RemoveStrokes(it, edit.strokes.map { s -> s.id }.toSet()) }
+            is Edit.Replaced -> {
+                emit { DocumentOp.RemoveStrokes(it, edit.removed.map { s -> s.id }.toSet()) }
+                emit { DocumentOp.AddStrokes(it, edit.added) }
+            }
+        }
         if (record) undo.record(edit)
         _canUndo.value = undo.canUndo
         _canRedo.value = undo.canRedo
