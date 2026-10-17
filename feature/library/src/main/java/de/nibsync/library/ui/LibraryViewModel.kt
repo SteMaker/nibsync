@@ -35,6 +35,20 @@ class LibraryViewModel(
     /** Folder new chapters and documents are created in; null = none selected. */
     val selectedFolder: StateFlow<NodeId?> = _selectedFolder.asStateFlow()
 
+    private val _highlighted = MutableStateFlow<NodeId?>(null)
+
+    /** The one entry shown as selected: the folder or document tapped last. */
+    val highlighted: StateFlow<NodeId?> = _highlighted.asStateFlow()
+
+    /**
+     * A document was opened: it becomes the highlighted entry and its folder the place for new
+     * entries, without being highlighted itself.
+     */
+    fun onDocumentOpened(id: NodeId) {
+        _highlighted.value = id
+        tree.value[id]?.parent?.let { _selectedFolder.value = it }
+    }
+
     /** Lines to show: books and the content of every expanded folder, in tree order. */
     fun rows(tree: LibraryTree, expanded: Set<NodeId>): List<TreeRow> {
         val out = ArrayList<TreeRow>()
@@ -50,8 +64,9 @@ class LibraryViewModel(
 
     /** Tapping a folder selects it and opens or closes it. */
     fun onFolderTapped(id: NodeId) {
-        val wasSelected = _selectedFolder.value == id
+        val wasSelected = _selectedFolder.value == id && _highlighted.value == id
         _selectedFolder.value = id
+        _highlighted.value = id
         // A first tap on a closed folder opens it; tapping the selected folder again toggles it.
         _expanded.update { if (id !in it) it + id else if (wasSelected) it - id else it }
     }
@@ -87,11 +102,13 @@ class LibraryViewModel(
         beforeDelete(affected.filter { !it.isFolder }.map { it.id.asDocumentId }.toSet())
         library.delete(id)
         if (_selectedFolder.value in removed) _selectedFolder.value = null
+        if (_highlighted.value in removed) _highlighted.value = null
         _expanded.update { it - removed }
     }
 
     private fun selectAndOpen(id: NodeId) {
         _selectedFolder.value = id
+        _highlighted.value = id
         _expanded.update { it + id }
     }
 }

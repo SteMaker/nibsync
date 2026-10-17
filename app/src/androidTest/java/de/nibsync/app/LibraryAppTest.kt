@@ -10,6 +10,7 @@ import androidx.compose.ui.test.junit4.createEmptyComposeRule
 import androidx.compose.ui.test.longClick
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.performTextReplacement
 import androidx.compose.ui.test.performTouchInput
 import androidx.test.core.app.ActivityScenario
@@ -218,5 +219,21 @@ class LibraryAppTest {
             instrumentation.sendPointerSync(e)
             e.recycle()
         }
+    }
+
+    @Test
+    fun nameFieldStartsEmptySoTypingGivesExactlyTheName() {
+        openDrawer()
+        compose.onNodeWithTag(LibraryTags.NEW_BOOK).performClick()
+        compose.onNodeWithTag(LibraryTags.NAME_FIELD).performTextInput(bookTitle) // typed, not replaced
+        compose.onNodeWithTag(LibraryTags.CONFIRM).performClick()
+        waitUntil("book with exactly the typed name") { tree().books.any { it.title == bookTitle } }
+
+        // Confirming without typing uses the suggested name.
+        compose.onNodeWithTag(LibraryTags.NEW_FOLDER).performClick()
+        compose.onNodeWithTag(LibraryTags.CONFIRM).performClick()
+        val book = tree().books.first { it.title == bookTitle }
+        waitUntil("default chapter name") { tree().childrenOf(book.id).isNotEmpty() }
+        assertThat(tree().childrenOf(book.id).single().title).isAnyOf("Neues Kapitel", "New chapter")
     }
 }

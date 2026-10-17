@@ -126,7 +126,10 @@ class MainActivity : ComponentActivity() {
                 ) {
                     Surface(Modifier.fillMaxSize()) {
                         val openLibrary: () -> Unit = {
-                            documentId?.let { libraryVm.reveal(NodeId(it.value)) }
+                            documentId?.let {
+                                libraryVm.reveal(NodeId(it.value))
+                                libraryVm.onDocumentOpened(NodeId(it.value))
+                            }
                             scope.launch { drawerState.open() }
                         }
                         val docId = documentId

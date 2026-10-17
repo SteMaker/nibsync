@@ -95,4 +95,31 @@ class LibraryViewModelTest {
         assertThat(vm.tree.value.books).isEmpty()
         assertThat(vm.expanded.value).doesNotContain(chapter.id)
     }
+
+    @Test
+    fun onlyTheLastTappedEntryIsHighlighted() = runTest {
+        val vm = vm()
+        val book = vm.tree.value.books.single().id
+        val doc = vm.tree.value.documents.single().id
+        vm.onDocumentOpened(doc)
+        assertThat(vm.highlighted.value).isEqualTo(doc)
+        // Its folder is where new entries go, without being highlighted.
+        assertThat(vm.selectedFolder.value).isEqualTo(book)
+        vm.onFolderTapped(book)
+        assertThat(vm.highlighted.value).isEqualTo(book)
+        vm.onDocumentOpened(doc)
+        assertThat(vm.highlighted.value).isEqualTo(doc)
+    }
+
+    @Test
+    fun tappingTheParentOfTheOpenDocumentFirstOnlyHighlightsIt() = runTest {
+        val vm = vm()
+        val book = vm.tree.value.books.single().id
+        vm.onFolderTapped(book) // open
+        vm.onDocumentOpened(vm.tree.value.documents.single().id)
+        vm.onFolderTapped(book) // highlights the book, keeps it open
+        assertThat(vm.expanded.value).contains(book)
+        vm.onFolderTapped(book) // now closes it
+        assertThat(vm.expanded.value).doesNotContain(book)
+    }
 }

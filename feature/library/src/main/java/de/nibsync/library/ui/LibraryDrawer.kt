@@ -37,6 +37,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -44,6 +45,10 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.text.TextRange
+import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -95,6 +100,7 @@ fun LibraryDrawer(
     val tree by viewModel.tree.collectAsStateWithLifecycle()
     val expanded by viewModel.expanded.collectAsStateWithLifecycle()
     val selectedFolder by viewModel.selectedFolder.collectAsStateWithLifecycle()
+    val highlightedId by viewModel.highlighted.collectAsStateWithLifecycle()
     val scope = rememberCoroutineScope()
     var dialog by remember { mutableStateOf<Dialog?>(null) }
     var menuFor by remember { mutableStateOf<NodeId?>(null) }
@@ -112,14 +118,21 @@ fun LibraryDrawer(
         LazyColumn(Modifier.weight(1f)) {
             items(viewModel.rows(tree, expanded), key = { it.node.id.value }) { row ->
                 val node = row.node
-                val highlighted = if (node.isFolder) node.id == selectedFolder else node.id == currentDocument
+                val highlighted = node.id == highlightedId
                 Box {
                     Row(
                         Modifier
                             .fillMaxWidth()
                             .background(if (highlighted) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surface)
                             .combinedClickable(
-                                onClick = { if (node.isFolder) viewModel.onFolderTapped(node.id) else onOpenDocument(node.id) },
+                                onClick = {
+                                    if (node.isFolder) {
+                                        viewModel.onFolderTapped(node.id)
+                                    } else {
+                                        viewModel.onDocumentOpened(node.id)
+                                        onOpenDocument(node.id)
+                                    }
+                                },
                                 onLongClick = { menuFor = node.id },
                             )
                             .padding(start = (8 + row.depth * 24).dp, end = 16.dp, top = 10.dp, bottom = 10.dp)
@@ -189,16 +202,21 @@ fun LibraryDrawer(
 
     when (val d = dialog) {
         null -> Unit
-        Dialog.NewBook -> NameDialog(stringResource(R.string.new_book), stringResource(R.string.default_book_name), onDismiss = { dialog = null }) { name ->
+        Dialog.NewBook -> NameDialog(stringResource(R.string.new_book), placeholder = stringResource(R.string.default_book_name), onDismiss = { dialog = null }) { name ->
             scope.launch { viewModel.createBook(name) }
         }
-        Dialog.NewFolder -> NameDialog(stringResource(R.string.new_folder), stringResource(R.string.default_folder_name), onDismiss = { dialog = null }) { name ->
+        Dialog.NewFolder -> NameDialog(stringResource(R.string.new_folder), placeholder = stringResource(R.string.default_folder_name), onDismiss = { dialog = null }) { name ->
             scope.launch { viewModel.createFolder(name) }
         }
         Dialog.NewDocument -> NewDocumentDialog(onDismiss = { dialog = null }) { name, format ->
-            scope.launch { viewModel.createDocument(name, format)?.let { onOpenDocument(it.id) } }
+            scope.launch {
+                viewModel.createDocument(name, format)?.let {
+                    viewModel.onDocumentOpened(it.id)
+                    onOpenDocument(it.id)
+                }
+            }
         }
-        is Dialog.Rename -> NameDialog(stringResource(R.string.rename), d.node.title, onDismiss = { dialog = null }) { name ->
+        is Dialog.Rename -> NameDialog(stringResource(R.string.rename), placeholder = d.node.title, initial = d.node.title, onDismiss = { dialog = null }) { name ->
             scope.launch { viewModel.rename(d.node.id, name) }
         }
         is Dialog.Delete -> AlertDialog(
@@ -215,9 +233,16 @@ fun LibraryDrawer(
     }
 }
 
+/**
+ * Asks for a name. The field starts empty (except when renaming) with [placeholder] as hint,
+ * which is also used when nothing is entered. The keyboard opens right away.
+ */
 @Composable
-private fun NameDialog(title: String, initial: String, onDismiss: () -> Unit, onConfirm: (String) -> Unit) {
-    var name by remember { mutableStateOf(initial) }
+private fun NameDialog(title: String, placeholder: String, initial: String = "", onDismiss: () -> Unit, onConfirm: (String) -> Unit) {
+    // Renaming starts with the whole old name selected, so typing replaces it.
+    var name by remember { mutableStateOf(TextFieldValue(initial, TextRange(0, initial.length))) }
+    val focus = remember { FocusRequester() }
+    LaunchedEffect(Unit) { focus.requestFocus() }
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(title) },
@@ -227,13 +252,13 @@ private fun NameDialog(title: String, initial: String, onDismiss: () -> Unit, on
                 onValueChange = { name = it },
                 singleLine = true,
                 label = { Text(stringResource(R.string.name)) },
-                modifier = Modifier.testTag(LibraryTags.NAME_FIELD),
+                placeholder = { Text(placeholder) },
+                modifier = Modifier.focusRequester(focus).testTag(LibraryTags.NAME_FIELD),
             )
         },
         confirmButton = {
             TextButton(
-                onClick = { onDismiss(); onConfirm(name) },
-                enabled = name.isNotBlank(),
+                onClick = { onDismiss(); onConfirm(name.text.ifBlank { placeholder }) },
                 modifier = Modifier.testTag(LibraryTags.CONFIRM),
             ) { Text(stringResource(R.string.ok)) }
         },
@@ -247,6 +272,8 @@ private fun NewDocumentDialog(onDismiss: () -> Unit, onConfirm: (String, PageFor
     val defaultName = stringResource(R.string.default_document_name)
     var paper by remember { mutableStateOf(PaperSize.A4) }
     var orientation by remember { mutableStateOf(Orientation.PORTRAIT) }
+    val focus = remember { FocusRequester() }
+    LaunchedEffect(Unit) { focus.requestFocus() }
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(stringResource(R.string.new_document)) },
@@ -258,7 +285,7 @@ private fun NewDocumentDialog(onDismiss: () -> Unit, onConfirm: (String, PageFor
                     singleLine = true,
                     label = { Text(stringResource(R.string.name)) },
                     placeholder = { Text(defaultName) },
-                    modifier = Modifier.testTag(LibraryTags.NAME_FIELD),
+                    modifier = Modifier.focusRequester(focus).testTag(LibraryTags.NAME_FIELD),
                 )
                 Text(stringResource(R.string.paper_width))
                 Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
