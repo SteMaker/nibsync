@@ -54,7 +54,7 @@ class NoteAppTest {
 
     @After
     fun cleanUp() {
-        scenario.close()
+        if (::scenario.isInitialized) scenario.close()
         runBlocking {
             app.container.closeSession(documentId)
             app.container.repository.delete(documentId)
@@ -123,13 +123,19 @@ class NoteAppTest {
     private fun line(x0: Float, y0: Float, x1: Float, y1: Float, steps: Int = 30) =
         List(steps + 1) { i -> (x0 + (x1 - x0) * i / steps) to (y0 + (y1 - y0) * i / steps) }
 
+    /** Waits via the compose rule, which keeps recomposition (driven by its test clock) going. */
     private fun waitUntil(what: String, timeoutMs: Long = 5000, condition: () -> Boolean) {
-        val end = SystemClock.uptimeMillis() + timeoutMs
-        while (!condition()) {
-            check(SystemClock.uptimeMillis() < end) { "Timed out waiting for: $what" }
-            instrumentation.waitForIdleSync()
-            Thread.sleep(50)
+        try {
+            compose.waitUntil(timeoutMs) { condition() }
+        } catch (e: androidx.compose.ui.test.ComposeTimeoutException) {
+            throw AssertionError("Timed out waiting for: $what", e)
         }
+    }
+
+    /** Lets time pass without blocking recomposition. */
+    private fun idleFor(ms: Long) {
+        val end = SystemClock.uptimeMillis() + ms
+        waitUntil("$ms ms passed", ms + 2000) { SystemClock.uptimeMillis() >= end }
     }
 
     private fun waitForStrokes(count: Int) = waitUntil("$count strokes") { strokes().size == count }
@@ -163,7 +169,7 @@ class NoteAppTest {
         val height = view.height.toFloat()
         drag(line(400f, height * 0.8f, 400f, height * 0.2f, steps = 20), toolType = MotionEvent.TOOL_TYPE_FINGER, stepMs = 16)
         waitUntil("scrolled") { view.viewport.scrollYMm > 0f }
-        Thread.sleep(500) // give a wrongly started stroke time to show up
+        idleFor(500) // give a wrongly started stroke time to show up
         assertThat(strokes()).isEmpty()
     }
 
@@ -242,8 +248,7 @@ class NoteAppTest {
         repeat(3) {
             drag(line(400f, height * 0.9f, 400f, height * 0.1f, steps = 10), toolType = MotionEvent.TOOL_TYPE_FINGER, stepMs = 30)
         }
-        instrumentation.waitForIdleSync()
-        Thread.sleep(800) // let a fling settle
+        idleFor(800) // let a fling settle
         val docHeightBefore = view.viewport.documentHeightMm
 
         drag(line(200f, height - 40f, 600f, height - 30f))

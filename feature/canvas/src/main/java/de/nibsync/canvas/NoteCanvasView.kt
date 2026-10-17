@@ -150,6 +150,8 @@ class NoteCanvasView(context: Context) : FrameLayout(context) {
     }
 
     override fun onDraw(canvas: Canvas) {
+        // Hosts like Compose's AndroidView do not clip children, so stay inside our bounds.
+        canvas.clipRect(0, 0, width, height)
         canvas.drawColor(deskColor)
         if (!viewport.hasSize) return
         val transform = viewport.documentToView
