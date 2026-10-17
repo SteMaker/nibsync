@@ -26,6 +26,7 @@ import de.nibsync.canvas.NoteCanvasView
 import de.nibsync.canvas.NoteScreen
 import de.nibsync.document.DocumentSession
 import de.nibsync.model.DocumentId
+import de.nibsync.shapes.GeometricShapeRecognizer
 import kotlinx.coroutines.launch
 
 /**
@@ -62,7 +63,7 @@ class MainActivity : ComponentActivity() {
                     if (current == null) {
                         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
                     } else {
-                        val vm = viewModel(key = documentId.value) { CanvasViewModel(current) }
+                        val vm = viewModel(key = documentId.value) { CanvasViewModel(current, GeometricShapeRecognizer()) }
                         NoteScreen(vm, Modifier.safeDrawingPadding(), onCanvasCreated = { canvasView = it })
                     }
                 }

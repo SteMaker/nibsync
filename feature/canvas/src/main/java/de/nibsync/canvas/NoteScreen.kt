@@ -80,6 +80,7 @@ fun NoteScreen(viewModel: CanvasViewModel, modifier: Modifier = Modifier, onCanv
             factory = { context ->
                 NoteCanvasView(context).also {
                     it.onStrokeDrafted = viewModel::commitStroke
+                    it.onShapeRequested = viewModel::commitShape
                     onCanvasCreated(it)
                 }
             },

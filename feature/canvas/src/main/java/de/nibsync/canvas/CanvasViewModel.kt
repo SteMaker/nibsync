@@ -37,6 +37,16 @@ class CanvasViewModel(
     /** Called on the UI thread when a stroke has been completed on the canvas. */
     fun commitStroke(draft: StrokeDraft): Stroke? {
         if (draft.points.isEmpty()) return null
-        return session.addStroke(recognizer.recognize(draft))
+        return session.addStroke(draft)
+    }
+
+    /**
+     * Called when the pen is held still at the end of a stroke. Returns the clean shape that
+     * was added instead of the stroke, or null if no shape was recognised (the stroke goes on).
+     */
+    fun commitShape(draft: StrokeDraft): Stroke? {
+        if (draft.points.isEmpty()) return null
+        val shape = recognizer.recognize(draft) ?: return null
+        return session.addStroke(shape)
     }
 }

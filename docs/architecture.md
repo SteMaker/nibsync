@@ -6,6 +6,7 @@
 app/              Android app: wiring (AppContainer), MainActivity
 feature/canvas/   Endless page (NoteCanvasView), tool bar (Compose), CanvasViewModel
 ink/android/      Adapter domain <-> androidx.ink (brushes, stroke conversion, mesh cache)
+core/shapes/      Shape recognition (lines, arrows, triangles, rectangles, ellipses), hold detection
 core/storage/     File format (meta.json + per-device op logs), repository, device id
 core/document/    Ops, mergeable DocumentState, UndoManager, DocumentSession
 core/model/       Domain types: Stroke, BrushSpec, Layer, PageFormat, Viewport geometry
@@ -52,6 +53,15 @@ Stylus writes; fingers scroll and pinch-zoom; a toggle enables writing with a fi
 cancelled by the system (palm rejection) cancel the stroke. The stylus eraser end is
 reserved for feature F.
 
+## Shape recognition
+
+Drawing a shape and holding the pen still for 0.5 s (`HoldDetector`) replaces the stroke, while
+the pen is still down, with a clean line, arrow, triangle, rectangle/square or ellipse/circle
+(`ShapeDetector`, thresholds relative to the drawing's size). Nearly horizontal/vertical shapes
+snap to the axes. The replacement is an ordinary stroke with the same pen, drawn with the
+stroke's median pressure so it has an even width; it can be undone like any stroke. Without
+the hold gesture handwriting is never touched.
+
 ## Roadmap
 
 | Step | Feature | Where it plugs in |
@@ -60,7 +70,7 @@ reserved for feature F.
 | B | Books with nested chapters, documents with DIN A width, page breaks | new `core/library`, `feature/library`; `PageFormat.pageHeightMm` for page breaks |
 | C | Nextcloud sync, concurrent editing | new `sync/nextcloud` mirroring `documents/`; `DocumentSession.applyRemote` |
 | D | Windows | `jvm`/desktop target for `core/*`, Compose Desktop UI, own renderer |
-| E | Shape recognition | implement `ShapeRecognizer` (already called for every new stroke) |
+| E ✅ | Shape recognition | hold the pen still ~0.5 s at the end of a stroke; `core/shapes` |
 | F | Pixel and object eraser | object eraser: `RemoveStrokes` + Ink geometry; pixel eraser: remove + add pieces |
 | G | Lasso: delete, move, copy | Ink dashed-line brush + `PartitionedMesh` coverage; move = remove + add |
 | H | Undo/redo UI | `DocumentSession.undo/redo` and `canUndo/canRedo` exist and are tested |

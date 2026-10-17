@@ -120,6 +120,60 @@ class NoteAppTest {
         }
     }
 
+    /**
+     * Draws [points] in real time (so the app's hold timer sees real time passing), then
+     * optionally keeps the pen still at the last point for [holdMs] before lifting it.
+     */
+    private fun drawLive(points: List<Pair<Float, Float>>, holdMs: Long = 0) {
+        val view = checkNotNull(canvas())
+        val origin = IntArray(2).also { loc -> scenario.onActivity { view.getLocationOnScreen(loc) } }
+        val source = InputDevice.SOURCE_STYLUS or InputDevice.SOURCE_TOUCHSCREEN
+        val down = SystemClock.uptimeMillis()
+        fun send(action: Int, x: Float, y: Float) {
+            val props = MotionEvent.PointerProperties().apply {
+                id = 0
+                toolType = MotionEvent.TOOL_TYPE_STYLUS
+            }
+            val coords = MotionEvent.PointerCoords().apply {
+                this.x = origin[0] + x
+                this.y = origin[1] + y
+                pressure = 0.2f
+                size = 0.1f
+            }
+            val event = MotionEvent.obtain(down, SystemClock.uptimeMillis(), action, 1, arrayOf(props), arrayOf(coords), 0, 0, 1f, 1f, 0, 0, source, 0)
+            instrumentation.sendPointerSync(event)
+            event.recycle()
+        }
+        points.forEachIndexed { i, (x, y) ->
+            send(if (i == 0) MotionEvent.ACTION_DOWN else MotionEvent.ACTION_MOVE, x, y)
+            Thread.sleep(4)
+        }
+        val (lx, ly) = points.last()
+        val holdEnd = SystemClock.uptimeMillis() + holdMs
+        var jitter = 0
+        while (SystemClock.uptimeMillis() < holdEnd) {
+            // A resting pen still reports tiny movements.
+            send(MotionEvent.ACTION_MOVE, lx + (jitter++ % 2), ly)
+            Thread.sleep(30)
+        }
+        send(MotionEvent.ACTION_UP, lx, ly)
+    }
+
+    /** A hand-drawn looking rectangle (wobbly edges) in canvas pixels. */
+    private fun wobblyRectangle(left: Float, top: Float, right: Float, bottom: Float): List<Pair<Float, Float>> {
+        val corners = listOf(left to top, right to top, right to bottom, left to bottom, left + 3 to top + 4)
+        return corners.zipWithNext().flatMap { (a, b) ->
+            List(40) { i ->
+                val t = i / 40f
+                val wobble = 6f * kotlin.math.sin(t * Math.PI.toFloat())
+                val dx = b.first - a.first
+                val dy = b.second - a.second
+                val len = kotlin.math.hypot(dx, dy)
+                (a.first + dx * t - dy / len * wobble) to (a.second + dy * t + dx / len * wobble)
+            }
+        } + corners.last()
+    }
+
     private fun line(x0: Float, y0: Float, x1: Float, y1: Float, steps: Int = 30) =
         List(steps + 1) { i -> (x0 + (x1 - x0) * i / steps) to (y0 + (y1 - y0) * i / steps) }
 
@@ -254,5 +308,62 @@ class NoteAppTest {
         drag(line(200f, height - 40f, 600f, height - 30f))
         waitForStrokes(1)
         waitUntil("document grew") { view.viewport.documentHeightMm > docHeightBefore }
+    }
+
+    // ---- shape recognition (hold the pen still at the end) -------------------------------
+
+    @Test
+    fun holdingThePenTurnsARectangleIntoACleanOne() {
+        drawLive(wobblyRectangle(200f, 200f, 900f, 600f), holdMs = 900)
+        waitForStrokes(1)
+        val stroke = strokes().single()
+        val b = stroke.bounds
+        val inset = stroke.brush.sizeMm / 2
+        // Every point lies exactly on the outline of an axis-aligned rectangle.
+        for (p in stroke.points) {
+            val onVertical = kotlin.math.abs(p.x - (b.left + inset)) < 0.02f || kotlin.math.abs(p.x - (b.right - inset)) < 0.02f
+            val onHorizontal = kotlin.math.abs(p.y - (b.top + inset)) < 0.02f || kotlin.math.abs(p.y - (b.bottom - inset)) < 0.02f
+            assertThat(onVertical || onHorizontal).isTrue()
+        }
+        // Size matches what was drawn (700 x 400 px).
+        val scale = checkNotNull(canvas()).viewport.scale
+        assertThat((b.width - 2 * inset) * scale).isWithin(40f).of(700f)
+        assertThat((b.height - 2 * inset) * scale).isWithin(40f).of(400f)
+        // Even pressure, so the fountain pen draws an even line.
+        assertThat(stroke.points.map { it.pressure }.toSet()).hasSize(1)
+    }
+
+    @Test
+    fun withoutHoldingTheStrokeStaysHandwritten() {
+        drawLive(wobblyRectangle(200f, 200f, 900f, 600f), holdMs = 0)
+        waitForStrokes(1)
+        idleFor(800)
+        val stroke = strokes().single()
+        assertThat(stroke.points.size).isGreaterThan(150) // raw input, not a 4-sided outline
+        val b = stroke.bounds
+        val inset = stroke.brush.sizeMm / 2
+        val offOutline = stroke.points.count { p ->
+            listOf(p.x - b.left - inset, b.right - inset - p.x, p.y - b.top - inset, b.bottom - inset - p.y).minOf { kotlin.math.abs(it) } > 0.1f
+        }
+        assertThat(offOutline).isGreaterThan(20)
+    }
+
+    @Test
+    fun holdingOnHandwritingKeepsIt() {
+        val zigzag = listOf(200f to 300f, 260f to 500f, 320f to 320f, 380f to 500f, 440f to 300f)
+            .zipWithNext().flatMap { (a, b) -> line(a.first, a.second, b.first, b.second, steps = 15).dropLast(1) } + (440f to 300f)
+        drawLive(zigzag, holdMs = 900)
+        waitForStrokes(1)
+        assertThat(strokes().single().points.size).isAtLeast(zigzag.size - 5)
+    }
+
+    @Test
+    fun recognisedShapeCanBeUndone() {
+        drawLive(line(200f, 300f, 900f, 310f, steps = 60), holdMs = 900)
+        waitForStrokes(1)
+        val line = strokes().single()
+        assertThat(line.points.first().y).isEqualTo(line.points.last().y) // snapped horizontal
+        scenario.onActivity { it.session!!.undo() }
+        waitForStrokes(0)
     }
 }

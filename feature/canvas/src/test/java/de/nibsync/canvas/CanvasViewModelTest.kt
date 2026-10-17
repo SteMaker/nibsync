@@ -74,11 +74,36 @@ class CanvasViewModelTest {
         assertThat(vm.document.value.strokeCount).isEqualTo(0)
     }
 
+    private val straightened = listOf(StrokePoint(0f, 0f, 0), StrokePoint(10f, 0f, 5))
+
     @Test
-    fun draftsPassThroughShapeRecognizer() = runTest {
-        val straightened = listOf(StrokePoint(0f, 0f, 0), StrokePoint(10f, 0f, 5))
+    fun normalStrokesAreNotRecognised() = runTest {
         val vm = viewModel { it.copy(points = straightened) }
-        val stroke = vm.commitStroke(draftWith(vm.tools.value.activeBrush))!!
-        assertThat(stroke.points).isEqualTo(straightened)
+        val draft = draftWith(vm.tools.value.activeBrush)
+        assertThat(vm.commitStroke(draft)!!.points).isEqualTo(draft.points.map { de.nibsync.model.Quantization.quantize(it) })
+    }
+
+    @Test
+    fun recognisedShapeIsAddedInsteadOfTheStroke() = runTest {
+        val vm = viewModel { it.copy(points = straightened) }
+        val shape = vm.commitShape(draftWith(vm.tools.value.activeBrush))
+        assertThat(shape!!.points).isEqualTo(straightened)
+        assertThat(vm.document.value.strokes).containsExactly(shape)
+    }
+
+    @Test
+    fun unrecognisedShapeRequestAddsNothing() = runTest {
+        val vm = viewModel(ShapeRecognizer.None)
+        assertThat(vm.commitShape(draftWith(vm.tools.value.activeBrush))).isNull()
+        assertThat(vm.document.value.strokeCount).isEqualTo(0)
+    }
+
+    @Test
+    fun shapeCanBeUndone() = runTest {
+        val vm = viewModel { it.copy(points = straightened) }
+        vm.commitShape(draftWith(vm.tools.value.activeBrush))
+        // Undo lives in the session; the shape is one ordinary stroke there.
+        assertThat(written).isEmpty() // journal runs asynchronously
+        assertThat(vm.document.value.strokeCount).isEqualTo(1)
     }
 }

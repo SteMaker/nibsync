@@ -19,7 +19,7 @@ feature roadmap and where each feature lives.
 
 ## Module rules
 
-- `core/*` are Kotlin Multiplatform (JVM target only for now). **No Android imports** there:
+- `core/*` (model, document, storage, shapes) are Kotlin Multiplatform (JVM target only for now). **No Android imports** there:
   they must later back a Windows client.
 - `androidx.ink` types stay inside `ink/android` and `feature/canvas`; they never appear in
   public APIs of other modules.

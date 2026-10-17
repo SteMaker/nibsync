@@ -6,7 +6,10 @@ import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Matrix
 import android.graphics.Paint
+import android.os.Build
+import android.os.SystemClock
 import android.view.GestureDetector
+import android.view.HapticFeedbackConstants
 import android.view.MotionEvent
 import android.view.ScaleGestureDetector
 import android.widget.FrameLayout
@@ -23,10 +26,13 @@ import de.nibsync.ink.StrokeConverter
 import de.nibsync.ink.toMatrix
 import de.nibsync.model.BrushFamily
 import de.nibsync.model.BrushSpec
+import de.nibsync.model.InputTool
 import de.nibsync.model.PageFormat
 import de.nibsync.model.Stroke
 import de.nibsync.model.StrokeDraft
+import de.nibsync.model.StrokePoint
 import de.nibsync.model.geometry.Viewport
+import de.nibsync.shapes.HoldDetector
 import kotlin.math.roundToInt
 import androidx.ink.strokes.Stroke as InkStroke
 
@@ -36,12 +42,18 @@ import androidx.ink.strokes.Stroke as InkStroke
  *
  * Coordinates: strokes are stored in millimetres ("document space"); [viewport] maps them to
  * view pixels. The stylus writes, fingers scroll and pinch-zoom (see [InputRouting]).
+ *
+ * Holding the pen still at the end of a stroke asks [onShapeRequested] for a clean shape; if
+ * one comes back it replaces the stroke immediately, while the pen is still down.
  */
 @SuppressLint("ViewConstructor")
 class NoteCanvasView(context: Context) : FrameLayout(context) {
 
     /** Receives a finished stroke and returns it as stored in the document (or null if rejected). */
     var onStrokeDrafted: (StrokeDraft) -> Stroke? = { null }
+
+    /** Receives the stroke drawn so far when the pen is held still; returns the stored shape or null. */
+    var onShapeRequested: (StrokeDraft) -> Stroke? = { null }
 
     var onViewportChanged: (Viewport) -> Unit = {}
 
@@ -82,6 +94,13 @@ class NoteCanvasView(context: Context) : FrameLayout(context) {
     private var drawingPointerId = NO_POINTER
     private var drawingStrokeId: InProgressStrokeId? = null
     private var navigating = false
+
+    // Input of the stroke being drawn, in document coordinates, for shape recognition.
+    private val capturedPoints = ArrayList<StrokePoint>()
+    private var capturedTool = InputTool.UNKNOWN
+    private var strokeDownTime = 0L
+    private var holdDetector: HoldDetector? = null
+    private val holdCheck = Runnable { checkHold() }
 
     private val scroller = OverScroller(context)
     private var flingLastX = 0
@@ -230,11 +249,66 @@ class NoteCanvasView(context: Context) : FrameLayout(context) {
         brushesInProgress[id] = spec
         drawingPointerId = pointerId
         drawingStrokeId = id
+
+        capturedPoints.clear()
+        capturedTool = toolOf(event.getToolType(pointerIndex))
+        strokeDownTime = event.eventTime
+        holdDetector = HoldDetector(toleranceMm = HOLD_TOLERANCE_DP * resources.displayMetrics.density / viewport.scale)
+        capture(event, pointerIndex)
+    }
+
+    private fun capture(event: MotionEvent, pointerIndex: Int) {
+        val toDoc = viewport.viewToDocument
+        val detector = holdDetector ?: return
+        fun add(x: Float, y: Float, time: Long, pressure: Float, tilt: Float, orientation: Float) {
+            val p = StrokePoint(
+                x = toDoc.mapX(x),
+                y = toDoc.mapY(y),
+                timeMs = time - strokeDownTime,
+                pressure = pressure.coerceIn(0f, 1f),
+                tiltRad = if (capturedTool == InputTool.STYLUS) tilt else StrokePoint.NO_VALUE,
+                orientationRad = if (capturedTool == InputTool.STYLUS) normalizeOrientation(orientation) else StrokePoint.NO_VALUE,
+            )
+            capturedPoints += p
+            detector.onSample(p.x, p.y, time)
+        }
+        for (h in 0 until event.historySize) {
+            add(
+                event.getHistoricalX(pointerIndex, h), event.getHistoricalY(pointerIndex, h), event.getHistoricalEventTime(h),
+                event.getHistoricalPressure(pointerIndex, h),
+                event.getHistoricalAxisValue(MotionEvent.AXIS_TILT, pointerIndex, h),
+                event.getHistoricalAxisValue(MotionEvent.AXIS_ORIENTATION, pointerIndex, h),
+            )
+        }
+        add(
+            event.getX(pointerIndex), event.getY(pointerIndex), event.eventTime, event.getPressure(pointerIndex),
+            event.getAxisValue(MotionEvent.AXIS_TILT, pointerIndex), event.getAxisValue(MotionEvent.AXIS_ORIENTATION, pointerIndex),
+        )
+        removeCallbacks(holdCheck)
+        postDelayed(holdCheck, (detector.holdDeadlineMs - SystemClock.uptimeMillis()).coerceAtLeast(0))
+    }
+
+    private fun checkHold() {
+        val id = drawingStrokeId ?: return
+        val detector = holdDetector ?: return
+        if (!detector.consumeHold(SystemClock.uptimeMillis())) return
+        val spec = brushesInProgress[id] ?: return
+        // Leave out the samples taken while resting; they only add jitter at the end.
+        val points = capturedPoints.subList(0, detector.anchorSampleCount.coerceAtMost(capturedPoints.size)).toList()
+        val shape = onShapeRequested(StrokeDraft(spec, capturedTool, points)) ?: return
+        inProgressStrokesView.cancelStroke(id)
+        brushesInProgress.remove(id)
+        clearDrawingPointer() // the rest of this gesture is ignored
+        show(listOf(shape))
+        performHapticFeedback(
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) HapticFeedbackConstants.CONFIRM else HapticFeedbackConstants.VIRTUAL_KEY,
+        )
     }
 
     private fun onMove(event: MotionEvent) {
         val id = drawingStrokeId ?: return
         if (event.findPointerIndex(drawingPointerId) < 0) return
+        capture(event, event.findPointerIndex(drawingPointerId))
         val predicted = predictor.predict()
         try {
             inProgressStrokesView.addToStroke(event, drawingPointerId, id, predicted)
@@ -266,6 +340,8 @@ class NoteCanvasView(context: Context) : FrameLayout(context) {
     private fun clearDrawingPointer() {
         drawingPointerId = NO_POINTER
         drawingStrokeId = null
+        holdDetector = null
+        removeCallbacks(holdCheck)
     }
 
     /** True while a stroke is being written or not yet handed over from the overlay. */
@@ -279,20 +355,40 @@ class NoteCanvasView(context: Context) : FrameLayout(context) {
             inkCache.put(stroke.id, ink)
             added += stroke
         }
-        if (added.isNotEmpty()) {
-            // Show the strokes in the same frame the overlay drops them to avoid flicker. The
-            // document state will deliver the same list again; the cache keeps that cheap.
-            val known = this.strokes.mapTo(HashSet()) { it.id }
-            val merged = this.strokes + added.filter { it.id !in known }
-            this.strokes = merged.sortedBy { it.layer.zIndex } // stable: keeps creation order per layer
-            updateContentBottom()
-            invalidate()
-        }
+        // Show the strokes in the same frame the overlay drops them to avoid flicker.
+        show(added)
         inProgressStrokesView.removeFinishedStrokes(strokes.keys)
     }
+
+    /**
+     * Adds just committed strokes to the display right away. The document state will deliver
+     * the same list again; the cache keeps that cheap.
+     */
+    private fun show(added: List<Stroke>) {
+        if (added.isEmpty()) return
+        val known = strokes.mapTo(HashSet()) { it.id }
+        val merged = strokes + added.filter { it.id !in known }
+        strokes = merged.sortedBy { it.layer.zIndex } // stable: keeps creation order per layer
+        updateContentBottom()
+        invalidate()
+    }
+
+    private fun toolOf(toolType: Int): InputTool = when (toolType) {
+        MotionEvent.TOOL_TYPE_STYLUS -> InputTool.STYLUS
+        MotionEvent.TOOL_TYPE_FINGER -> InputTool.TOUCH
+        MotionEvent.TOOL_TYPE_MOUSE -> InputTool.MOUSE
+        else -> InputTool.UNKNOWN
+    }
+
+    /** Android reports orientation in -pi..pi; the model uses 0..2pi. */
+    private fun normalizeOrientation(rad: Float): Float =
+        if (rad < 0f) rad + (2 * Math.PI).toFloat() else rad
 
     private companion object {
         const val NO_POINTER = -1
         const val SHADOW_PX = 4f
+
+        /** How far the pen may wander while "holding still", in dp on screen. */
+        const val HOLD_TOLERANCE_DP = 4f
     }
 }
