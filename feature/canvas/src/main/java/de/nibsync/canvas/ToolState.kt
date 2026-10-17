@@ -44,6 +44,9 @@ object PenPalette {
 
 data class PenSettings(val colorArgb: Int, val sizeMm: Float)
 
+/** What the pen does on the page. */
+enum class Tool { PEN, ERASER, LASSO }
+
 /** Tool bar state. Every pen type remembers its own colour and width. */
 data class ToolState(
     val activePen: BrushFamily = BrushFamily.FOUNTAIN_PEN,
@@ -51,15 +54,20 @@ data class ToolState(
         PenSettings(PenPalette.colors(it).first(), PenPalette.sizes(it)[1])
     },
     val drawWithFinger: Boolean = false,
-    /** When true the pen erases instead of writing; [activePen] is kept for switching back. */
-    val eraserActive: Boolean = false,
+    /** The pen's current job; [activePen] is kept while erasing or selecting, for switching back. */
+    val tool: Tool = Tool.PEN,
     val eraserMode: EraserMode = EraserMode.OBJECT,
     val eraserSizeMm: Float = PenPalette.eraserSizes[1],
 ) {
     val eraserRadiusMm: Float
         get() = (if (eraserMode == EraserMode.OBJECT) PenPalette.OBJECT_ERASER_DIAMETER_MM else eraserSizeMm) / 2
 
-    fun withEraser(mode: EraserMode = eraserMode) = copy(eraserActive = true, eraserMode = mode)
+    val eraserActive: Boolean get() = tool == Tool.ERASER
+    val lassoActive: Boolean get() = tool == Tool.LASSO
+
+    fun withEraser(mode: EraserMode = eraserMode) = copy(tool = Tool.ERASER, eraserMode = mode)
+
+    fun withLasso() = copy(tool = Tool.LASSO)
 
     fun withEraserSize(mm: Float) = copy(eraserSizeMm = mm)
 
@@ -68,7 +76,7 @@ data class ToolState(
     val activeBrush: BrushSpec
         get() = BrushSpec(activePen, activeSettings.colorArgb, activeSettings.sizeMm)
 
-    fun withPen(pen: BrushFamily) = copy(activePen = pen, eraserActive = false)
+    fun withPen(pen: BrushFamily) = copy(activePen = pen, tool = Tool.PEN)
 
     fun withColor(argb: Int) = copy(pens = pens + (activePen to activeSettings.copy(colorArgb = argb)))
 

@@ -21,6 +21,10 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Redo
 import androidx.compose.material.icons.automirrored.filled.Undo
 import androidx.compose.material.icons.filled.BorderColor
+import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.material.icons.filled.ContentPaste
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.HighlightAlt
 import androidx.compose.material.icons.filled.Draw
 import androidx.compose.material.icons.filled.HistoryEdu
 import androidx.compose.material.icons.filled.TouchApp
@@ -39,6 +43,9 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.VerticalDivider
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clipToBounds
@@ -65,6 +72,10 @@ object NoteScreenTags {
     fun size(index: Int) = "size-$index"
     const val FINGER_TOGGLE = "finger-toggle"
     const val UNDO = "undo"
+    const val LASSO = "lasso"
+    const val DELETE_SELECTION = "delete-selection"
+    const val COPY_SELECTION = "copy-selection"
+    const val PASTE = "paste"
     const val REDO = "redo"
     fun eraserMode(mode: EraserMode) = "eraser-${mode.name}"
     fun eraserSize(index: Int) = "eraser-size-$index"
@@ -76,6 +87,9 @@ fun NoteScreen(viewModel: CanvasViewModel, modifier: Modifier = Modifier, onCanv
     val tools by viewModel.tools.collectAsStateWithLifecycle()
     val canUndo by viewModel.canUndo.collectAsStateWithLifecycle()
     val canRedo by viewModel.canRedo.collectAsStateWithLifecycle()
+    val selection by viewModel.selection.collectAsStateWithLifecycle()
+    val clip by viewModel.clipboard.content.collectAsStateWithLifecycle()
+    var canvasView by remember { mutableStateOf<NoteCanvasView?>(null) }
 
     Column(modifier.fillMaxSize()) {
         Toolbar(
@@ -89,6 +103,20 @@ fun NoteScreen(viewModel: CanvasViewModel, modifier: Modifier = Modifier, onCanv
             onSize = viewModel::selectSize,
             onEraser = viewModel::selectEraser,
             onEraserSize = viewModel::selectEraserSize,
+            hasSelection = selection.isNotEmpty(),
+            canPaste = clip != null,
+            onLasso = viewModel::selectLasso,
+            onDeleteSelection = viewModel::deleteSelection,
+            onCopySelection = viewModel::copySelection,
+            onPaste = {
+                // Into the middle of what is visible, kept on the page.
+                canvasView?.viewport?.let { v ->
+                    val r = v.visibleDocumentRect
+                    val half = (clip?.width ?: 0f) / 2
+                    val cx = ((r.left + r.right) / 2).coerceIn(half, maxOf(half, v.pageWidthMm - half))
+                    viewModel.paste(cx, (r.top + r.bottom) / 2)
+                }
+            },
             onFingerToggle = viewModel::setDrawWithFinger,
         )
         AndroidView(
@@ -98,6 +126,10 @@ fun NoteScreen(viewModel: CanvasViewModel, modifier: Modifier = Modifier, onCanv
                     it.onStrokeDrafted = viewModel::commitStroke
                     it.onShapeRequested = viewModel::commitShape
                     it.onEraseFinished = viewModel::commitErase
+                    it.onLassoFinished = viewModel::selectByLasso
+                    it.onSelectionMoved = viewModel::moveSelection
+                    it.onSelectionCleared = viewModel::clearSelection
+                    canvasView = it
                     onCanvasCreated(it)
                 }
             },
@@ -105,7 +137,8 @@ fun NoteScreen(viewModel: CanvasViewModel, modifier: Modifier = Modifier, onCanv
                 view.pageFormat = document.meta.format
                 view.brush = tools.activeBrush
                 view.drawWithFinger = tools.drawWithFinger
-                view.eraserActive = tools.eraserActive
+                view.tool = tools.tool
+                view.selection = selection
                 view.eraserMode = tools.eraserMode
                 view.eraserRadiusMm = tools.eraserRadiusMm
                 view.setStrokes(document.strokes)
@@ -126,6 +159,12 @@ private fun Toolbar(
     onSize: (Float) -> Unit,
     onEraser: (EraserMode) -> Unit,
     onEraserSize: (Float) -> Unit,
+    hasSelection: Boolean,
+    canPaste: Boolean,
+    onLasso: () -> Unit,
+    onDeleteSelection: () -> Unit,
+    onCopySelection: () -> Unit,
+    onPaste: () -> Unit,
     onFingerToggle: (Boolean) -> Unit,
 ) {
     Surface(tonalElevation = 3.dp, modifier = Modifier.fillMaxWidth().testTag(NoteScreenTags.TOOLBAR)) {
@@ -171,11 +210,21 @@ private fun Toolbar(
                     }
                 }
             }
+            val lassoLabel = stringResource(R.string.lasso)
+            WithTooltip(lassoLabel) {
+                FilledIconToggleButton(
+                    checked = tools.lassoActive,
+                    onCheckedChange = { onLasso() },
+                    modifier = Modifier.testTag(NoteScreenTags.LASSO),
+                ) {
+                    Icon(Icons.Filled.HighlightAlt, contentDescription = lassoLabel)
+                }
+            }
             Divider()
-            if (tools.eraserActive) {
-                EraserOptions(tools, onEraserSize)
-            } else {
-                PenOptions(tools, onColor, onSize)
+            when (tools.tool) {
+                Tool.ERASER -> EraserOptions(tools, onEraserSize)
+                Tool.LASSO -> SelectionActions(hasSelection, canPaste, onDeleteSelection, onCopySelection, onPaste)
+                Tool.PEN -> PenOptions(tools, onColor, onSize)
             }
             Divider()
             val fingerLabel = stringResource(R.string.draw_with_finger)
@@ -212,6 +261,31 @@ private fun PenOptions(tools: ToolState, onColor: (Int) -> Unit, onSize: (Float)
             modifier = Modifier.testTag(NoteScreenTags.size(index)),
             onClick = { onSize(mm) },
         )
+    }
+}
+
+@Composable
+private fun SelectionActions(
+    hasSelection: Boolean,
+    canPaste: Boolean,
+    onDelete: () -> Unit,
+    onCopy: () -> Unit,
+    onPaste: () -> Unit,
+) {
+    val actions = listOf(
+        Triple(R.string.delete_selection, Icons.Filled.Delete, NoteScreenTags.DELETE_SELECTION) to (hasSelection to onDelete),
+        Triple(R.string.copy_selection, Icons.Filled.ContentCopy, NoteScreenTags.COPY_SELECTION) to (hasSelection to onCopy),
+        Triple(R.string.paste, Icons.Filled.ContentPaste, NoteScreenTags.PASTE) to (canPaste to onPaste),
+    )
+    for ((look, behaviour) in actions) {
+        val (labelRes, icon, tag) = look
+        val (enabled, onClick) = behaviour
+        val label = stringResource(labelRes)
+        WithTooltip(label) {
+            IconButton(onClick = onClick, enabled = enabled, modifier = Modifier.testTag(tag)) {
+                Icon(icon, contentDescription = label)
+            }
+        }
     }
 }
 

@@ -80,6 +80,16 @@ stroke width). Cut edges lie exactly on the eraser's edge with interpolated pres
 as one undo step via `DocumentSession.replaceStrokes`. The pen's eraser end (TOOL_TYPE_ERASER)
 always erases.
 
+## Lasso selection
+
+With the lasso tool the pen draws a freehand loop; strokes with at least half of their points
+inside are selected (`Lasso`, even-odd test) and framed. Dragging inside the frame with pen or
+finger moves the selection (one undo step; moved strokes are new strokes with fresh ids and
+stay selected); a finger outside still scrolls, a tap outside clears the selection. Delete,
+copy and paste are tool bar actions. The clipboard (`StrokeClipboard`) keeps strokes relative
+to their centre and pastes into the middle of the visible page; it is meant to be shared
+app-wide so that pasting into other documents works once there are several (feature B).
+
 ## Roadmap
 
 | Step | Feature | Where it plugs in |
@@ -90,6 +100,6 @@ always erases.
 | D | Windows | `jvm`/desktop target for `core/*`, Compose Desktop UI, own renderer |
 | E ✅ | Shape recognition | hold the pen still ~0.5 s at the end of a stroke; `core/shapes` |
 | F ✅ | Pixel and object eraser | `core/document/erase`; two eraser buttons in the tool bar |
-| G | Lasso: delete, move, copy | Ink dashed-line brush + `PartitionedMesh` coverage; move = remove + add |
+| G ✅ | Lasso: delete, move, copy/paste | `core/document/select`; lasso tool + actions in the tool bar |
 | H ✅ | Undo/redo | tool bar buttons, Ctrl+Z / Ctrl+Y / Ctrl+Shift+Z; history per open document and app run |
 | I | Lined/grid backgrounds | `BackgroundSpec` is stored; render in `NoteCanvasView.onDraw` |

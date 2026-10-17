@@ -74,4 +74,14 @@ class ToolStateTest {
         assertThat(px.eraserRadiusMm).isEqualTo(6f)
         assertThat(PenPalette.eraserSizes).isInStrictOrder()
     }
+
+    @Test
+    fun toolsExcludeEachOther() {
+        val lasso = ToolState().withEraser().withLasso()
+        assertThat(lasso.lassoActive).isTrue()
+        assertThat(lasso.eraserActive).isFalse()
+        val eraser = lasso.withEraser()
+        assertThat(eraser.lassoActive).isFalse()
+        assertThat(eraser.withPen(BrushFamily.BALLPOINT).tool).isEqualTo(Tool.PEN)
+    }
 }

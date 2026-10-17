@@ -27,10 +27,17 @@ class InputRoutingTest {
 
     @Test
     fun withEraserSelectedWritingToolsErase() {
-        assertThat(InputRouting.actionFor(MotionEvent.TOOL_TYPE_STYLUS, drawWithFinger = false, eraserActive = true)).isEqualTo(Action.ERASE)
-        assertThat(InputRouting.actionFor(MotionEvent.TOOL_TYPE_FINGER, drawWithFinger = true, eraserActive = true)).isEqualTo(Action.ERASE)
+        assertThat(InputRouting.actionFor(MotionEvent.TOOL_TYPE_STYLUS, drawWithFinger = false, tool = Tool.ERASER)).isEqualTo(Action.ERASE)
+        assertThat(InputRouting.actionFor(MotionEvent.TOOL_TYPE_FINGER, drawWithFinger = true, tool = Tool.ERASER)).isEqualTo(Action.ERASE)
         // Fingers still navigate unless finger drawing is on.
-        assertThat(InputRouting.actionFor(MotionEvent.TOOL_TYPE_FINGER, drawWithFinger = false, eraserActive = true)).isEqualTo(Action.NAVIGATE)
+        assertThat(InputRouting.actionFor(MotionEvent.TOOL_TYPE_FINGER, drawWithFinger = false, tool = Tool.ERASER)).isEqualTo(Action.NAVIGATE)
+    }
+
+    @Test
+    fun withLassoSelectedWritingToolsSelect() {
+        assertThat(InputRouting.actionFor(MotionEvent.TOOL_TYPE_STYLUS, drawWithFinger = false, tool = Tool.LASSO)).isEqualTo(Action.SELECT)
+        assertThat(InputRouting.actionFor(MotionEvent.TOOL_TYPE_FINGER, drawWithFinger = false, tool = Tool.LASSO)).isEqualTo(Action.NAVIGATE)
+        assertThat(InputRouting.actionFor(MotionEvent.TOOL_TYPE_ERASER, drawWithFinger = false, tool = Tool.LASSO)).isEqualTo(Action.ERASE)
     }
 
     @Test

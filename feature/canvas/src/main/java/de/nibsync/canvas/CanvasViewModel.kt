@@ -5,6 +5,9 @@ import de.nibsync.document.DocumentSession
 import de.nibsync.document.DocumentState
 import de.nibsync.document.erase.EraseResult
 import de.nibsync.document.erase.EraserMode
+import de.nibsync.document.select.ClipContent
+import de.nibsync.document.select.Lasso
+import de.nibsync.document.select.translated
 import de.nibsync.model.BrushFamily
 import de.nibsync.model.ShapeRecognizer
 import de.nibsync.model.Stroke
@@ -25,6 +28,7 @@ class CommittedEdit(val added: List<Stroke>, val removed: Set<StrokeId>)
 class CanvasViewModel(
     private val session: DocumentSession,
     private val recognizer: ShapeRecognizer = ShapeRecognizer.None,
+    val clipboard: StrokeClipboard = StrokeClipboard(),
 ) : ViewModel() {
 
     val document: StateFlow<DocumentState> = session.state
@@ -32,14 +36,69 @@ class CanvasViewModel(
     val canUndo: StateFlow<Boolean> = session.canUndo
     val canRedo: StateFlow<Boolean> = session.canRedo
 
-    fun undo(): Boolean = session.undo()
+    fun undo(): Boolean = session.undo().also { pruneSelection() }
 
-    fun redo(): Boolean = session.redo()
+    fun redo(): Boolean = session.redo().also { pruneSelection() }
+
+    private val _selection = MutableStateFlow<Set<StrokeId>>(emptySet())
+
+    /** Strokes selected with the lasso. Only non-empty while the lasso tool is active. */
+    val selection: StateFlow<Set<StrokeId>> = _selection.asStateFlow()
+
+    fun selectLasso() = _tools.update { it.withLasso() }
+
+    /** Selects the strokes enclosed by [polygon] (x0, y0, x1, y1, ... in mm). */
+    fun selectByLasso(polygon: FloatArray) {
+        _selection.value = Lasso.select(session.state.value.strokes, polygon)
+    }
+
+    fun clearSelection() {
+        _selection.value = emptySet()
+    }
+
+    fun deleteSelection() {
+        val ids = _selection.value
+        if (ids.isEmpty()) return
+        session.removeStrokes(ids)
+        clearSelection()
+    }
+
+    fun copySelection() {
+        val doc = session.state.value
+        ClipContent.of(_selection.value.mapNotNull { doc[it] }.sortedBy { doc.strokes.indexOf(it) })?.let(clipboard::set)
+    }
+
+    /** Pastes the clipboard centred at ([cx], [cy]) mm; the pasted strokes become the selection. */
+    fun paste(cx: Float, cy: Float): CommittedEdit? {
+        val clip = clipboard.content.value ?: return null
+        val added = session.replaceStrokes(emptySet(), clip.placedAt(cx, cy))
+        _tools.update { it.withLasso() }
+        _selection.value = added.mapTo(LinkedHashSet()) { it.id }
+        return CommittedEdit(added, emptySet())
+    }
+
+    /** Moves the selected strokes by ([dx], [dy]) mm in one undo step; the moved copies stay selected. */
+    fun moveSelection(dx: Float, dy: Float): CommittedEdit? {
+        val doc = session.state.value
+        val selected = doc.strokes.filter { it.id in _selection.value }
+        if (selected.isEmpty() || (dx == 0f && dy == 0f)) return null
+        val added = session.replaceStrokes(selected.map { it.id }, selected.map { it.translated(dx, dy) })
+        _selection.value = added.mapTo(LinkedHashSet()) { it.id }
+        return CommittedEdit(added, selected.mapTo(HashSet()) { it.id })
+    }
+
+    private fun pruneSelection() {
+        val doc = session.state.value
+        _selection.value = _selection.value.filterTo(LinkedHashSet()) { it in doc }
+    }
 
     private val _tools = MutableStateFlow(ToolState())
     val tools: StateFlow<ToolState> = _tools.asStateFlow()
 
-    fun selectPen(pen: BrushFamily) = _tools.update { it.withPen(pen) }
+    fun selectPen(pen: BrushFamily) {
+        _tools.update { it.withPen(pen) }
+        clearSelection()
+    }
 
     fun selectColor(argb: Int) = _tools.update { it.withColor(argb) }
 
@@ -65,7 +124,10 @@ class CanvasViewModel(
         return CommittedEdit(listOf(stroke), result.replaces)
     }
 
-    fun selectEraser(mode: EraserMode) = _tools.update { it.withEraser(mode) }
+    fun selectEraser(mode: EraserMode) {
+        _tools.update { it.withEraser(mode) }
+        clearSelection()
+    }
 
     fun selectEraserSize(mm: Float) = _tools.update { it.withEraserSize(mm) }
 

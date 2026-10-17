@@ -15,6 +15,7 @@ import android.view.ScaleGestureDetector
 import android.widget.FrameLayout
 import android.widget.OverScroller
 import androidx.core.graphics.withMatrix
+import androidx.core.graphics.withTranslation
 import androidx.ink.authoring.InProgressStrokeId
 import androidx.ink.authoring.InProgressStrokesFinishedListener
 import androidx.ink.authoring.InProgressStrokesView
@@ -27,6 +28,7 @@ import de.nibsync.ink.toMatrix
 import de.nibsync.document.erase.EraseGesture
 import de.nibsync.document.erase.EraseResult
 import de.nibsync.document.erase.EraserMode
+import de.nibsync.document.select.boundsOf
 import de.nibsync.model.BrushFamily
 import de.nibsync.model.BrushSpec
 import de.nibsync.model.InputTool
@@ -64,12 +66,34 @@ class NoteCanvasView(context: Context) : FrameLayout(context) {
 
     var onViewportChanged: (Viewport) -> Unit = {}
 
+    /** A lasso was drawn: polygon x0, y0, x1, y1, ... in document mm. */
+    var onLassoFinished: (FloatArray) -> Unit = {}
+
+    /** The selection was dragged by (dx, dy) mm; returns what was stored, or null. */
+    var onSelectionMoved: (Float, Float) -> CommittedEdit? = { _, _ -> null }
+
+    /** Starting a new lasso drops the current selection. */
+    var onSelectionCleared: () -> Unit = {}
+
+    /** Ids of the selected strokes, framed on the page and draggable. */
+    var selection: Set<StrokeId> = emptySet()
+        set(value) {
+            if (value == field) return
+            field = value
+            invalidate()
+        }
+
     var brush: BrushSpec = BrushSpec(BrushFamily.FOUNTAIN_PEN, Color.BLACK, 0.8f)
 
     var drawWithFinger: Boolean = false
 
-    /** When true the pen erases (see [eraserMode]) instead of writing. */
-    var eraserActive: Boolean = false
+    /** What the pen does: write, erase (see [eraserMode]) or select with the lasso. */
+    var tool: Tool = Tool.PEN
+        set(value) {
+            if (value == field) return
+            field = value
+            invalidate()
+        }
     var eraserMode: EraserMode = EraserMode.OBJECT
     var eraserRadiusMm: Float = 1f
 
@@ -119,6 +143,22 @@ class NoteCanvasView(context: Context) : FrameLayout(context) {
     private var eraserX = 0f
     private var eraserY = 0f
     private var previewPieceCounter = 0
+
+    // Lasso path being drawn (document mm) and selection being dragged.
+    private var lassoPath: ArrayList<Float>? = null
+    private var lassoPointerId = NO_POINTER
+    private var movePointerId = NO_POINTER
+    private var moveStartX = 0f
+    private var moveStartY = 0f
+    private var moveDx = 0f
+    private var moveDy = 0f
+    private val selectionPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.STROKE
+        strokeWidth = 3f
+        color = 0xff1a3fa8.toInt()
+        pathEffect = android.graphics.DashPathEffect(floatArrayOf(18f, 12f), 0f)
+    }
+    private val lassoDrawPath = android.graphics.Path()
     private val eraserPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Paint.Style.STROKE
         strokeWidth = 2f
@@ -208,12 +248,33 @@ class NoteCanvasView(context: Context) : FrameLayout(context) {
 
         val visible = viewport.visibleDocumentRect
         val shown = eraseGesture?.visible ?: strokes
+        val moving = movePointerId != NO_POINTER
         canvas.withMatrix(documentToView) {
             for (stroke in shown) {
-                if (stroke.bounds.intersects(visible)) renderer.draw(this, inkCache[stroke], documentToView)
+                if (moving && stroke.id in selection) {
+                    withTranslation(moveDx, moveDy) { renderer.draw(this, inkCache[stroke], documentToView) }
+                } else if (stroke.bounds.intersects(visible)) {
+                    renderer.draw(this, inkCache[stroke], documentToView)
+                }
             }
         }
         if (eraseGesture != null) canvas.drawCircle(eraserX, eraserY, eraserRadiusMm * viewport.scale, eraserPaint)
+        selectionBounds()?.let { b ->
+            canvas.drawRect(
+                transform.mapX(b.left + moveDx), transform.mapY(b.top + moveDy),
+                transform.mapX(b.right + moveDx), transform.mapY(b.bottom + moveDy),
+                selectionPaint,
+            )
+        }
+        lassoPath?.let { path ->
+            lassoDrawPath.reset()
+            for (i in path.indices step 2) {
+                val x = transform.mapX(path[i])
+                val y = transform.mapY(path[i + 1])
+                if (i == 0) lassoDrawPath.moveTo(x, y) else lassoDrawPath.lineTo(x, y)
+            }
+            canvas.drawPath(lassoDrawPath, selectionPaint)
+        }
     }
 
     override fun computeScroll() {
@@ -250,9 +311,24 @@ class NoteCanvasView(context: Context) : FrameLayout(context) {
 
     private fun onPointerDown(event: MotionEvent) {
         val index = event.actionIndex
-        val action = InputRouting.actionFor(event.getToolType(index), drawWithFinger, eraserActive)
-        val busy = drawingPointerId != NO_POINTER || erasingPointerId != NO_POINTER
-        if (action == InputRouting.Action.ERASE && !busy) {
+        val toolType = event.getToolType(index)
+        val action = InputRouting.actionFor(toolType, drawWithFinger, tool)
+        val busy = drawingPointerId != NO_POINTER || erasingPointerId != NO_POINTER ||
+            lassoPointerId != NO_POINTER || movePointerId != NO_POINTER
+        // Stylus or finger on the selection drags it.
+        if (!busy && event.actionMasked == MotionEvent.ACTION_DOWN && toolType != MotionEvent.TOOL_TYPE_ERASER &&
+            hitsSelection(event.getX(index), event.getY(index))
+        ) {
+            startMove(event, index)
+            return
+        }
+        if (action == InputRouting.Action.SELECT && !busy) {
+            if (navigating) {
+                navigating = false
+                scroller.forceFinished(true)
+            }
+            startLasso(event, index)
+        } else if (action == InputRouting.Action.ERASE && !busy) {
             if (navigating) {
                 navigating = false
                 scroller.forceFinished(true)
@@ -337,6 +413,80 @@ class NoteCanvasView(context: Context) : FrameLayout(context) {
         )
     }
 
+    private fun selectionBounds(): de.nibsync.model.geometry.Rect? {
+        if (selection.isEmpty()) return null
+        val b = boundsOf(strokes.filter { it.id in selection }) ?: return null
+        return de.nibsync.model.geometry.Rect(b.left - SELECTION_PADDING_MM, b.top - SELECTION_PADDING_MM, b.right + SELECTION_PADDING_MM, b.bottom + SELECTION_PADDING_MM)
+    }
+
+    private fun hitsSelection(x: Float, y: Float): Boolean {
+        val b = selectionBounds() ?: return false
+        val toDoc = viewport.viewToDocument
+        return b.contains(toDoc.mapX(x), toDoc.mapY(y))
+    }
+
+    private fun startMove(event: MotionEvent, pointerIndex: Int) {
+        val toDoc = viewport.viewToDocument
+        movePointerId = event.getPointerId(pointerIndex)
+        moveStartX = toDoc.mapX(event.getX(pointerIndex))
+        moveStartY = toDoc.mapY(event.getY(pointerIndex))
+        moveDx = 0f
+        moveDy = 0f
+    }
+
+    private fun startLasso(event: MotionEvent, pointerIndex: Int) {
+        lassoPointerId = event.getPointerId(pointerIndex)
+        lassoPath = ArrayList()
+        selection = emptySet()
+        onSelectionCleared()
+        extendLasso(event, pointerIndex)
+    }
+
+    private fun extendLasso(event: MotionEvent, pointerIndex: Int) {
+        val path = lassoPath ?: return
+        val toDoc = viewport.viewToDocument
+        for (h in 0 until event.historySize) {
+            path += toDoc.mapX(event.getHistoricalX(pointerIndex, h))
+            path += toDoc.mapY(event.getHistoricalY(pointerIndex, h))
+        }
+        path += toDoc.mapX(event.getX(pointerIndex))
+        path += toDoc.mapY(event.getY(pointerIndex))
+        invalidate()
+    }
+
+    private fun finishSelectionGesture(event: MotionEvent?, commit: Boolean) {
+        lassoPath?.let { path ->
+            lassoPath = null
+            lassoPointerId = NO_POINTER
+            if (commit) onLassoFinished(path.toFloatArray())
+        }
+        if (movePointerId != NO_POINTER) {
+            if (commit && event != null) {
+                val index = event.findPointerIndex(movePointerId)
+                if (index >= 0) updateMove(event, index)
+            }
+            movePointerId = NO_POINTER
+            val dx = moveDx
+            val dy = moveDy
+            moveDx = 0f
+            moveDy = 0f
+            if (commit && (dx * dx + dy * dy) > MIN_MOVE_MM * MIN_MOVE_MM) {
+                onSelectionMoved(dx, dy)?.let {
+                    show(it.added, it.removed)
+                    selection = it.added.mapTo(LinkedHashSet()) { s -> s.id }
+                }
+            }
+        }
+        invalidate()
+    }
+
+    private fun updateMove(event: MotionEvent, pointerIndex: Int) {
+        val toDoc = viewport.viewToDocument
+        moveDx = toDoc.mapX(event.getX(pointerIndex)) - moveStartX
+        moveDy = toDoc.mapY(event.getY(pointerIndex)) - moveStartY
+        invalidate()
+    }
+
     private fun startErase(event: MotionEvent, pointerIndex: Int) {
         erasingPointerId = event.getPointerId(pointerIndex)
         eraseGesture = EraseGesture(eraserMode, eraserRadiusMm, strokes) { StrokeId("erase-preview-${previewPieceCounter++}") }
@@ -366,6 +516,16 @@ class NoteCanvasView(context: Context) : FrameLayout(context) {
     }
 
     private fun onMove(event: MotionEvent) {
+        if (lassoPath != null) {
+            val index = event.findPointerIndex(lassoPointerId)
+            if (index >= 0) extendLasso(event, index)
+            return
+        }
+        if (movePointerId != NO_POINTER) {
+            val index = event.findPointerIndex(movePointerId)
+            if (index >= 0) updateMove(event, index)
+            return
+        }
         if (eraseGesture != null) {
             val index = event.findPointerIndex(erasingPointerId)
             if (index >= 0) eraseAlong(event, index)
@@ -383,6 +543,11 @@ class NoteCanvasView(context: Context) : FrameLayout(context) {
     }
 
     private fun onPointerUp(event: MotionEvent) {
+        val pointerId = event.getPointerId(event.actionIndex)
+        if (pointerId == lassoPointerId || pointerId == movePointerId) {
+            finishSelectionGesture(event, commit = !InputRouting.isCanceled(event))
+            return
+        }
         if (eraseGesture != null) {
             if (event.getPointerId(event.actionIndex) == erasingPointerId) {
                 eraseAlong(event, event.actionIndex)
@@ -403,6 +568,7 @@ class NoteCanvasView(context: Context) : FrameLayout(context) {
 
     private fun onCancel(event: MotionEvent) {
         finishErase(commit = false)
+        finishSelectionGesture(null, commit = false)
         drawingStrokeId?.let {
             inProgressStrokesView.cancelStroke(it, event)
             brushesInProgress.remove(it)
@@ -460,6 +626,12 @@ class NoteCanvasView(context: Context) : FrameLayout(context) {
     private companion object {
         const val NO_POINTER = -1
         const val SHADOW_PX = 4f
+
+        /** Space between the selected strokes and the selection frame, mm. */
+        const val SELECTION_PADDING_MM = 2f
+
+        /** Smaller drags of the selection are treated as taps. */
+        const val MIN_MOVE_MM = 0.2f
 
         /** How far the pen may wander while "holding still", in dp on screen. */
         const val HOLD_TOLERANCE_DP = 4f

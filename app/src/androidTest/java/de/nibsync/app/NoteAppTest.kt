@@ -481,6 +481,16 @@ class NoteAppTest {
     fun undoAndRedoWithKeyboardShortcuts() {
         drag(line(200f, 300f, 900f, 300f))
         waitForStrokes(1)
+        // Key events go to the focused window. If another app holds the focus (e.g. a floating
+        // window on the tablet), this test cannot run; report it as skipped, not failed.
+        val focused = runCatching {
+            waitUntil("window focus", timeoutMs = 2000) {
+                var has = false
+                scenario.onActivity { has = it.hasWindowFocus() }
+                has
+            }
+        }.isSuccess
+        org.junit.Assume.assumeTrue("NibSync has no keyboard focus (another window holds it)", focused)
         fun press(keyCode: Int, meta: Int) {
             val now = SystemClock.uptimeMillis()
             instrumentation.sendKeySync(android.view.KeyEvent(now, now, android.view.KeyEvent.ACTION_DOWN, keyCode, 0, meta))
@@ -509,5 +519,97 @@ class NoteAppTest {
         waitForStrokes(2) // only the second cut is undone
         compose.onNodeWithTag(NoteScreenTags.UNDO).performClick()
         waitForStrokes(1)
+    }
+
+    // ---- lasso ----------------------------------------------------------------------------
+
+    /** A closed loop around the rectangle (canvas pixels). */
+    private fun loop(left: Float, top: Float, right: Float, bottom: Float) =
+        line(left, top, right, top, 10) + line(right, top, right, bottom, 10).drop(1) +
+            line(right, bottom, left, bottom, 10).drop(1) + line(left, bottom, left, top, 10).drop(1)
+
+    private fun selection(): Set<de.nibsync.model.StrokeId> = checkNotNull(canvas()).selection
+
+    /** Two lines: one at y = 300 (inside the lasso used below) and one at y = 700. */
+    private fun drawTwoLinesAndLassoTheUpperOne(): Pair<de.nibsync.model.Stroke, de.nibsync.model.Stroke> {
+        drag(line(300f, 300f, 700f, 300f))
+        drag(line(300f, 700f, 700f, 700f))
+        waitForStrokes(2)
+        val upper = strokes().minBy { it.bounds.top }
+        val lower = strokes().maxBy { it.bounds.top }
+        compose.onNodeWithTag(NoteScreenTags.LASSO).performClick()
+        drag(loop(250f, 250f, 750f, 350f))
+        waitUntil("selected") { selection() == setOf(upper.id) }
+        return upper to lower
+    }
+
+    @Test
+    fun lassoSelectsAndDeletes() {
+        compose.onNodeWithTag(NoteScreenTags.LASSO).performClick()
+        compose.onNodeWithTag(NoteScreenTags.DELETE_SELECTION).assertIsNotEnabled()
+        compose.onNodeWithTag(NoteScreenTags.pen(BrushFamily.FOUNTAIN_PEN)).performClick()
+        val (_, lower) = drawTwoLinesAndLassoTheUpperOne()
+        compose.onNodeWithTag(NoteScreenTags.DELETE_SELECTION).assertIsEnabled().performClick()
+        waitForStrokes(1)
+        assertThat(strokes().single()).isEqualTo(lower)
+        compose.onNodeWithTag(NoteScreenTags.UNDO).performClick()
+        waitForStrokes(2)
+    }
+
+    @Test
+    fun selectionCanBeDraggedWithThePen() {
+        val (upper, lower) = drawTwoLinesAndLassoTheUpperOne()
+        val scale = checkNotNull(canvas()).viewport.scale
+        drag(line(500f, 300f, 600f, 500f, steps = 20)) // grab inside the selection
+        waitUntil("moved") { strokes().none { it.id == upper.id } && strokes().size == 2 }
+        val moved = strokes().first { it.id != lower.id }
+        assertThat(moved.points.first().x - upper.points.first().x).isWithin(1f).of(100f / scale)
+        assertThat(moved.points.first().y - upper.points.first().y).isWithin(1f).of(200f / scale)
+        assertThat(selection()).containsExactly(moved.id) // still selected for further moves
+        compose.onNodeWithTag(NoteScreenTags.UNDO).performClick()
+        waitUntil("back") { strokes().any { it.points == upper.points } }
+    }
+
+    @Test
+    fun selectionCanBeDraggedWithAFinger() {
+        val (upper, _) = drawTwoLinesAndLassoTheUpperOne()
+        val scrollBefore = checkNotNull(canvas()).viewport.scrollYMm
+        drag(line(500f, 300f, 500f, 450f, steps = 20), toolType = MotionEvent.TOOL_TYPE_FINGER)
+        waitUntil("moved") { strokes().none { it.id == upper.id } && strokes().size == 2 }
+        assertThat(checkNotNull(canvas()).viewport.scrollYMm).isEqualTo(scrollBefore) // did not scroll
+    }
+
+    @Test
+    fun fingerOutsideTheSelectionStillScrolls() {
+        drawTwoLinesAndLassoTheUpperOne()
+        val view = checkNotNull(canvas())
+        drag(line(500f, view.height * 0.8f, 500f, view.height * 0.3f, steps = 20), toolType = MotionEvent.TOOL_TYPE_FINGER, stepMs = 16)
+        waitUntil("scrolled") { view.viewport.scrollYMm > 0f }
+        assertThat(strokes()).hasSize(2)
+    }
+
+    @Test
+    fun copyAndPasteSelection() {
+        val (upper, _) = drawTwoLinesAndLassoTheUpperOne()
+        compose.onNodeWithTag(NoteScreenTags.PASTE).assertIsNotEnabled()
+        compose.onNodeWithTag(NoteScreenTags.COPY_SELECTION).performClick()
+        val before = strokes().map { it.id }.toSet()
+        compose.onNodeWithTag(NoteScreenTags.PASTE).assertIsEnabled().performClick()
+        waitForStrokes(3)
+        val pasted = strokes().single { it.id !in before }
+        assertThat(selection()).containsExactly(pasted.id)
+        assertThat(pasted.brush).isEqualTo(upper.brush)
+        // Pasted into the middle of the visible page.
+        val visible = checkNotNull(canvas()).viewport.visibleDocumentRect
+        val cy = (pasted.bounds.top + pasted.bounds.bottom) / 2
+        assertThat(cy).isWithin(1f).of((visible.top + visible.bottom) / 2)
+    }
+
+    @Test
+    fun tappingOutsideClearsTheSelection() {
+        drawTwoLinesAndLassoTheUpperOne()
+        drag(listOf(900f to 900f, 901f to 900f))
+        waitUntil("cleared") { selection().isEmpty() }
+        compose.onNodeWithTag(NoteScreenTags.DELETE_SELECTION).assertIsNotEnabled()
     }
 }

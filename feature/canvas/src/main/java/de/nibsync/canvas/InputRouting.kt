@@ -8,13 +8,18 @@ import android.view.MotionEvent
  * Writing with a finger can be enabled for devices without a pen.
  */
 object InputRouting {
-    enum class Action { DRAW, ERASE, NAVIGATE, IGNORE }
+    enum class Action { DRAW, ERASE, SELECT, NAVIGATE, IGNORE }
 
     /**
-     * @param eraserActive the eraser tool is selected: everything that would write erases.
+     * @param tool the selected tool: with the eraser or lasso, everything that would write
+     *   erases or selects instead.
      */
-    fun actionFor(toolType: Int, drawWithFinger: Boolean, eraserActive: Boolean = false): Action {
-        val write = if (eraserActive) Action.ERASE else Action.DRAW
+    fun actionFor(toolType: Int, drawWithFinger: Boolean, tool: Tool = Tool.PEN): Action {
+        val write = when (tool) {
+            Tool.PEN -> Action.DRAW
+            Tool.ERASER -> Action.ERASE
+            Tool.LASSO -> Action.SELECT
+        }
         return when (toolType) {
             MotionEvent.TOOL_TYPE_STYLUS -> write
             MotionEvent.TOOL_TYPE_FINGER -> if (drawWithFinger) write else Action.NAVIGATE

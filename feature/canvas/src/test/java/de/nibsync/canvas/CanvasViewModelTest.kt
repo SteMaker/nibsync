@@ -167,4 +167,86 @@ class CanvasViewModelTest {
         assertThat(vm.document.value.strokeCount).isEqualTo(1)
         assertThat(vm.redo()).isFalse()
     }
+
+    // ---- lasso selection -------------------------------------------------------------------
+
+    /** A short horizontal stroke at height [y] from x = 10 to 20 mm. */
+    private fun lineAt(y: Float) = StrokeDraft(
+        de.nibsync.model.BrushSpec(BrushFamily.BALLPOINT, 0xff000000.toInt(), 0.5f), InputTool.STYLUS,
+        List(21) { i -> StrokePoint(10f + i * 0.5f, y, i * 5L, 0.5f) },
+    )
+
+    private fun box(l: Float, t: Float, r: Float, b: Float) = floatArrayOf(l, t, r, t, r, b, l, b)
+
+    @Test
+    fun lassoSelectsAndDeletes() = runTest {
+        val vm = viewModel()
+        val a = vm.commitStroke(lineAt(10f))!!
+        val b = vm.commitStroke(lineAt(40f))!!
+        vm.selectLasso()
+        vm.selectByLasso(box(0f, 0f, 30f, 20f))
+        assertThat(vm.selection.value).containsExactly(a.id)
+        vm.deleteSelection()
+        assertThat(vm.document.value.strokes).containsExactly(b)
+        assertThat(vm.selection.value).isEmpty()
+        vm.undo()
+        assertThat(vm.document.value.strokeCount).isEqualTo(2)
+    }
+
+    @Test
+    fun movingTheSelectionIsOneUndoStepAndKeepsItSelected() = runTest {
+        val vm = viewModel()
+        vm.commitStroke(lineAt(10f))
+        vm.commitStroke(lineAt(15f))
+        vm.selectLasso()
+        vm.selectByLasso(box(0f, 0f, 30f, 20f))
+        val moved = vm.moveSelection(5f, 100f)!!
+        assertThat(moved.added).hasSize(2)
+        assertThat(vm.selection.value).isEqualTo(moved.added.map { it.id }.toSet())
+        assertThat(vm.document.value.strokes.map { it.points.first().y }).containsExactly(110f, 115f).inOrder()
+        assertThat(vm.document.value.strokes.map { it.points.first().x }).containsExactly(15f, 15f)
+        vm.undo()
+        assertThat(vm.document.value.strokes.map { it.points.first().y }).containsExactly(10f, 15f).inOrder()
+        assertThat(vm.selection.value).isEmpty() // moved copies are gone
+    }
+
+    @Test
+    fun copyAndPasteAtAnotherPlace() = runTest {
+        val vm = viewModel()
+        vm.commitStroke(lineAt(10f))
+        vm.selectLasso()
+        vm.selectByLasso(box(0f, 0f, 30f, 20f))
+        assertThat(vm.clipboard.content.value).isNull()
+        vm.copySelection()
+        val pasted = vm.paste(100f, 200f)!!
+        val p = pasted.added.single().points
+        assertThat((p.first().x + p.last().x) / 2).isWithin(0.01f).of(100f)
+        assertThat(p.first().y).isWithin(0.01f).of(200f)
+        assertThat(vm.document.value.strokeCount).isEqualTo(2)
+        assertThat(vm.selection.value).containsExactly(pasted.added.single().id)
+        // Paste again: clipboard keeps its content.
+        vm.paste(50f, 50f)
+        assertThat(vm.document.value.strokeCount).isEqualTo(3)
+    }
+
+    @Test
+    fun switchingToolsDropsTheSelection() = runTest {
+        val vm = viewModel()
+        vm.commitStroke(lineAt(10f))
+        vm.selectLasso()
+        vm.selectByLasso(box(0f, 0f, 30f, 20f))
+        vm.selectPen(BrushFamily.BALLPOINT)
+        assertThat(vm.selection.value).isEmpty()
+    }
+
+    @Test
+    fun emptyLassoClearsSelection() = runTest {
+        val vm = viewModel()
+        vm.commitStroke(lineAt(10f))
+        vm.selectLasso()
+        vm.selectByLasso(box(0f, 0f, 30f, 20f))
+        vm.selectByLasso(box(100f, 100f, 120f, 120f))
+        assertThat(vm.selection.value).isEmpty()
+        assertThat(vm.moveSelection(1f, 1f)).isNull()
+    }
 }

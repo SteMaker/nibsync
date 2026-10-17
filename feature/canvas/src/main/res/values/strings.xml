@@ -11,4 +11,8 @@
     <string name="eraser_size_mm">Eraser %1$.0f mm</string>
     <string name="undo">Undo</string>
     <string name="redo">Redo</string>
+    <string name="lasso">Lasso: select</string>
+    <string name="delete_selection">Delete selection</string>
+    <string name="copy_selection">Copy selection</string>
+    <string name="paste">Paste</string>
 </resources>
