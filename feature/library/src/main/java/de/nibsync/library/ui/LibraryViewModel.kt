@@ -1,0 +1,97 @@
+package de.nibsync.library.ui
+
+import androidx.lifecycle.ViewModel
+import de.nibsync.library.Library
+import de.nibsync.library.LibraryNode
+import de.nibsync.library.LibraryTree
+import de.nibsync.library.NodeId
+import de.nibsync.model.DocumentId
+import de.nibsync.model.PageFormat
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
+
+/** One visible line of the tree. */
+data class TreeRow(val node: LibraryNode, val depth: Int, val expanded: Boolean, val hasChildren: Boolean)
+
+/**
+ * State of the library drawer: which folders are open and which folder is selected as the
+ * place for new entries. The actions are suspending; the UI launches them.
+ */
+class LibraryViewModel(
+    private val library: Library,
+    /** Called with the documents about to be deleted, e.g. to close their editing sessions. */
+    private val beforeDelete: suspend (Set<DocumentId>) -> Unit = {},
+) : ViewModel() {
+
+    val tree: StateFlow<LibraryTree> = library.tree
+
+    private val _expanded = MutableStateFlow<Set<NodeId>>(emptySet())
+    val expanded: StateFlow<Set<NodeId>> = _expanded.asStateFlow()
+
+    private val _selectedFolder = MutableStateFlow<NodeId?>(null)
+
+    /** Folder new chapters and documents are created in; null = none selected. */
+    val selectedFolder: StateFlow<NodeId?> = _selectedFolder.asStateFlow()
+
+    /** Lines to show: books and the content of every expanded folder, in tree order. */
+    fun rows(tree: LibraryTree, expanded: Set<NodeId>): List<TreeRow> {
+        val out = ArrayList<TreeRow>()
+        fun add(node: LibraryNode, depth: Int) {
+            val children = if (node.isFolder) tree.childrenOf(node.id) else emptyList()
+            val open = node.id in expanded
+            out += TreeRow(node, depth, open, children.isNotEmpty())
+            if (open) children.forEach { add(it, depth + 1) }
+        }
+        tree.books.forEach { add(it, 0) }
+        return out
+    }
+
+    /** Tapping a folder selects it and opens or closes it. */
+    fun onFolderTapped(id: NodeId) {
+        val wasSelected = _selectedFolder.value == id
+        _selectedFolder.value = id
+        // A first tap on a closed folder opens it; tapping the selected folder again toggles it.
+        _expanded.update { if (id !in it) it + id else if (wasSelected) it - id else it }
+    }
+
+    /** Shows the document in the tree: opens all folders above it. */
+    fun reveal(id: NodeId) {
+        val path = tree.value.pathTo(id)
+        _expanded.update { it + path.dropLast(1).map { n -> n.id } }
+    }
+
+    suspend fun createBook(title: String): LibraryNode =
+        library.createBook(title).also { selectAndOpen(it.id) }
+
+    suspend fun createFolder(title: String): LibraryNode? {
+        val parent = _selectedFolder.value ?: return null
+        return library.createFolder(parent, title).also {
+            _expanded.update { e -> e + parent }
+            selectAndOpen(it.id)
+        }
+    }
+
+    /** Creates a document in the selected folder; returns it so the caller can open it. */
+    suspend fun createDocument(title: String, format: PageFormat): LibraryNode? {
+        val parent = _selectedFolder.value ?: return null
+        return library.createDocument(parent, title, format).also { _expanded.update { e -> e + parent } }
+    }
+
+    suspend fun rename(id: NodeId, title: String) = library.rename(id, title)
+
+    suspend fun delete(id: NodeId) {
+        val affected = tree.value.descendantsOf(id) + listOfNotNull(tree.value[id])
+        val removed = affected.map { it.id }.toSet()
+        beforeDelete(affected.filter { !it.isFolder }.map { it.id.asDocumentId }.toSet())
+        library.delete(id)
+        if (_selectedFolder.value in removed) _selectedFolder.value = null
+        _expanded.update { it - removed }
+    }
+
+    private fun selectAndOpen(id: NodeId) {
+        _selectedFolder.value = id
+        _expanded.update { it + id }
+    }
+}

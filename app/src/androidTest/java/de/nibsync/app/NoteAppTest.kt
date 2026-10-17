@@ -481,20 +481,14 @@ class NoteAppTest {
     fun undoAndRedoWithKeyboardShortcuts() {
         drag(line(200f, 300f, 900f, 300f))
         waitForStrokes(1)
-        // Key events go to the focused window. If another app holds the focus (e.g. a floating
-        // window on the tablet), this test cannot run; report it as skipped, not failed.
-        val focused = runCatching {
-            waitUntil("window focus", timeoutMs = 2000) {
-                var has = false
-                scenario.onActivity { has = it.hasWindowFocus() }
-                has
-            }
-        }.isSuccess
-        org.junit.Assume.assumeTrue("NibSync has no keyboard focus (another window holds it)", focused)
+        // Delivered straight to the activity: which window the system routes hardware keys to
+        // depends on the device (other floating apps can hold the focus), not on NibSync.
         fun press(keyCode: Int, meta: Int) {
             val now = SystemClock.uptimeMillis()
-            instrumentation.sendKeySync(android.view.KeyEvent(now, now, android.view.KeyEvent.ACTION_DOWN, keyCode, 0, meta))
-            instrumentation.sendKeySync(android.view.KeyEvent(now, now, android.view.KeyEvent.ACTION_UP, keyCode, 0, meta))
+            scenario.onActivity {
+                it.dispatchKeyEvent(android.view.KeyEvent(now, now, android.view.KeyEvent.ACTION_DOWN, keyCode, 0, meta))
+                it.dispatchKeyEvent(android.view.KeyEvent(now, now, android.view.KeyEvent.ACTION_UP, keyCode, 0, meta))
+            }
         }
         val ctrl = android.view.KeyEvent.META_CTRL_ON or android.view.KeyEvent.META_CTRL_LEFT_ON
         press(android.view.KeyEvent.KEYCODE_Z, ctrl)

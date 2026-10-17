@@ -131,13 +131,17 @@ class DocumentSession(
         _state.value = _state.value.applyAll(ops)
     }
 
-    /** Suspends until all ops issued so far have been handed to the journal. */
+    /**
+     * Suspends until all ops issued so far have been handed to the journal. Returns at once for
+     * a closed session (e.g. its document was deleted), where nothing more is written.
+     */
     suspend fun flush() {
         val done = CompletableDeferred<Unit>()
-        pending.send(Pending.Barrier(done))
+        if (pending.trySend(Pending.Barrier(done)).isFailure) return
         done.await()
     }
 
+    /** Stops writing; ops still queued are written, later edits only change the in-memory state. */
     fun close() {
         pending.close()
     }

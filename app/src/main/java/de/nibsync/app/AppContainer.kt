@@ -1,6 +1,9 @@
 package de.nibsync.app
 
+import de.nibsync.canvas.StrokeClipboard
 import de.nibsync.document.DocumentSession
+import de.nibsync.library.FileLibraryRepository
+import de.nibsync.library.Library
 import de.nibsync.model.DeviceId
 import de.nibsync.model.DocumentId
 import de.nibsync.model.DocumentMeta
@@ -30,6 +33,32 @@ class AppContainer(
 
     val repository: DocumentRepository = FileDocumentRepository(fs, documentsRoot, Dispatchers.IO)
 
+    val libraryRoot: Path = localRoot / "library"
+
+    val library = Library(
+        nodes = FileLibraryRepository(fs, libraryRoot, Dispatchers.IO),
+        documents = repository,
+        clock = System::currentTimeMillis,
+    )
+    private var libraryLoaded = false
+    private val libraryLock = Mutex()
+
+    /** Shared by all documents, so strokes can be copied from one document into another. */
+    val clipboard = StrokeClipboard()
+
+    /** Loads the library once per process; notes from before the library existed are adopted. */
+    suspend fun ensureLibraryLoaded(bookTitle: String, documentTitle: String) = libraryLock.withLock {
+        if (!libraryLoaded) {
+            library.load(bookTitle, documentTitle, legacyDocument = LEGACY_DOCUMENT)
+            libraryLoaded = true
+        }
+    }
+
+    /** Closes open sessions of the documents before they are deleted, so nothing is written back. */
+    suspend fun beforeDelete(documents: Set<DocumentId>) {
+        documents.forEach { closeSession(it) }
+    }
+
     private val sessions = HashMap<DocumentId, DocumentSession>()
     private val sessionLock = Mutex()
 
@@ -48,6 +77,11 @@ class AppContainer(
         )
         sessions[id] = session
         session
+    }
+
+    companion object {
+        /** The single document of app versions before the library. */
+        val LEGACY_DOCUMENT = DocumentId("default")
     }
 
     /** Closes the session and forgets it; the next [openSession] reloads from storage. */

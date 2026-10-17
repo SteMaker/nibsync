@@ -87,6 +87,14 @@ class NoteCanvasView(context: Context) : FrameLayout(context) {
 
     var drawWithFinger: Boolean = false
 
+    /** Shows where pages of [pageFormat] would end, as dashed lines with page numbers. */
+    var showPageBreaks: Boolean = false
+        set(value) {
+            if (value == field) return
+            field = value
+            invalidate()
+        }
+
     /** What the pen does: write, erase (see [eraserMode]) or select with the lasso. */
     var tool: Tool = Tool.PEN
         set(value) {
@@ -124,6 +132,17 @@ class NoteCanvasView(context: Context) : FrameLayout(context) {
     private val pagePaint = Paint().apply { color = Color.WHITE }
     private val pageShadowPaint = Paint().apply { color = 0x22000000 }
     private val deskColor = 0xffe0e0e0.toInt()
+    private val pageBreakPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.STROKE
+        strokeWidth = 2f
+        color = 0xff9e9e9e.toInt()
+        pathEffect = android.graphics.DashPathEffect(floatArrayOf(14f, 10f), 0f)
+    }
+    private val pageNumberPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = 0xff9e9e9e.toInt()
+        textSize = 28f
+        textAlign = Paint.Align.RIGHT
+    }
 
     private val predictor = MotionEventPredictor.newInstance(this)
     private val brushesInProgress = HashMap<InProgressStrokeId, BrushSpec>()
@@ -246,6 +265,8 @@ class NoteCanvasView(context: Context) : FrameLayout(context) {
         canvas.drawRect(pageLeft + SHADOW_PX, pageTop + SHADOW_PX, pageRight + SHADOW_PX, pageBottom + SHADOW_PX, pageShadowPaint)
         canvas.drawRect(pageLeft, pageTop, pageRight, pageBottom, pagePaint)
 
+        if (showPageBreaks) drawPageBreaks(canvas, pageLeft, pageRight)
+
         val visible = viewport.visibleDocumentRect
         val shown = eraseGesture?.visible ?: strokes
         val moving = movePointerId != NO_POINTER
@@ -276,6 +297,22 @@ class NoteCanvasView(context: Context) : FrameLayout(context) {
             canvas.drawPath(lassoDrawPath, selectionPaint)
         }
     }
+
+    private fun drawPageBreaks(canvas: Canvas, left: Float, right: Float) {
+        val transform = viewport.documentToView
+        val pageHeight = viewport.pageHeightMmOrNull() ?: return
+        val visible = viewport.visibleDocumentRect
+        var page = maxOf(1, (visible.top / pageHeight).toInt())
+        while (page * pageHeight <= minOf(visible.bottom, viewport.documentHeightMm)) {
+            val y = transform.mapY(page * pageHeight)
+            canvas.drawLine(left, y, right, y, pageBreakPaint)
+            // Number of the page that starts below the line.
+            canvas.drawText("${page + 1}", right - pageNumberPaint.textSize, y + pageNumberPaint.textSize * 1.3f, pageNumberPaint)
+            page++
+        }
+    }
+
+    private fun Viewport.pageHeightMmOrNull(): Float? = pageFormat.pageHeightMm.takeIf { it > 0f }
 
     override fun computeScroll() {
         if (scroller.computeScrollOffset()) {

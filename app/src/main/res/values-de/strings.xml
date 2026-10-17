@@ -1,4 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="default_document_title">Notizen</string>
+    <string name="default_book_title">Notizen</string>
+    <string name="no_document">Noch kein Dokument. Lege in der Bibliothek ein Buch und ein Dokument an.</string>
+    <string name="open_library">Bibliothek öffnen</string>
 </resources>

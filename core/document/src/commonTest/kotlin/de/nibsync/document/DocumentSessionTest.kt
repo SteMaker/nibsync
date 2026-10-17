@@ -184,3 +184,18 @@ class ReplaceStrokesTest {
         assertEquals(0, s.state.value.strokeCount)
     }
 }
+
+class ClosedSessionTest {
+    @Test
+    fun closedSessionIgnoresFlushAndFurtherWrites() = runTest {
+        val written = mutableListOf<DocumentOp>()
+        val s = DocumentSession(DocumentState.empty(META), DEV_A, { written += it }, backgroundScope, clock = { 0L })
+        s.addStroke(draft())
+        s.flush()
+        s.close()
+        s.flush() // must not throw
+        s.addStroke(draft()) // e.g. drawing into a document that was just deleted
+        s.flush()
+        assertEquals(1, written.size)
+    }
+}

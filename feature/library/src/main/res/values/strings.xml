@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="library">Library</string>
+    <string name="new_book">New book</string>
+    <string name="new_folder">New folder</string>
+    <string name="new_document">New document</string>
+    <string name="default_book_name">New book</string>
+    <string name="default_folder_name">New chapter</string>
+    <string name="default_document_name">New document</string>
+    <string name="create_in">Create in: %1$s</string>
+    <string name="select_folder_hint">Select a book or folder to create something in it</string>
+    <string name="rename">Rename</string>
+    <string name="delete">Delete</string>
+    <string name="delete_title">Delete \"%1$s\"?</string>
+    <string name="delete_folder_text">Everything in it is deleted too.</string>
+    <string name="delete_document_text">The document and its notes are deleted.</string>
+    <string name="name">Name</string>
+    <string name="ok">OK</string>
+    <string name="create">Create</string>
+    <string name="cancel">Cancel</string>
+    <string name="paper_width">Page width</string>
+    <string name="portrait">Portrait</string>
+    <string name="landscape">Landscape</string>
+    <string name="width_info">%1$d mm wide, endless length</string>
+</resources>

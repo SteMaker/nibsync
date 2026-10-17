@@ -15,4 +15,6 @@
     <string name="delete_selection">Auswahl löschen</string>
     <string name="copy_selection">Auswahl kopieren</string>
     <string name="paste">Einfügen</string>
+    <string name="library_menu">Bibliothek</string>
+    <string name="page_breaks">Seitenumbrüche anzeigen</string>
 </resources>

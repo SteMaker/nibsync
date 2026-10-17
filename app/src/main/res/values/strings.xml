@@ -2,4 +2,7 @@
 <resources>
     <string name="app_name" translatable="false">NibSync</string>
     <string name="default_document_title">Notes</string>
+    <string name="default_book_title">Notes</string>
+    <string name="no_document">No document yet. Create a book and a document in the library.</string>
+    <string name="open_library">Open library</string>
 </resources>

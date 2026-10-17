@@ -3,9 +3,11 @@
 ## Modules
 
 ```
-app/              Android app: wiring (AppContainer), MainActivity
+app/              Android app: wiring (AppContainer), MainActivity with the library drawer
+feature/library/  Library drawer (tree of books/chapters/documents), LibraryViewModel
 feature/canvas/   Endless page (NoteCanvasView), tool bar (Compose), CanvasViewModel
 ink/android/      Adapter domain <-> androidx.ink (brushes, stroke conversion, mesh cache)
+core/library/     Library tree: books, nested chapters, documents; one file per node
 core/shapes/      Shape recognition (lines, arrows, triangles, rectangles, ellipses), hold detection
 core/storage/     File format (meta.json + per-device op logs), repository, device id
 core/document/    Ops, mergeable DocumentState, UndoManager, DocumentSession
@@ -34,12 +36,26 @@ input (x, y, t, pressure, tilt, orientation in millimetres) plus a platform-neut
 - Points are quantized (1/100 mm, 1/4096 pressure, 1/1000 rad) before entering a
   document, so all devices hold bit-identical strokes.
 
-Storage layout (`filesDir/documents/` on Android):
+Storage layout (`filesDir/` on Android; `documents/` and `library/` are what gets synced):
 
 ```
-<documentId>/meta.json
-<documentId>/ops/<deviceId>.oplog     "NSOL" v1 header + length-prefixed CBOR records
+documents/<documentId>/meta.json
+documents/<documentId>/ops/<deviceId>.oplog   "NSOL" v1 header + length-prefixed CBOR records
+library/<nodeId>.json                         one file per book / chapter / document entry
+device-id                                     local only
 ```
+
+## Library
+
+Books are top-level folders; folders nest to any depth and hold folders and documents
+(folders first, then by title). A document entry's node id is its document id. Every node is
+its own file, so devices creating different entries never touch the same file; deleting marks
+nodes as tombstones (`deleted`) so a sync cannot bring them back, and removes the documents'
+stored content. The drawer opens from the menu button (top left; no swipe gesture, it would
+fight with writing at the edge). Tapping a folder selects it as the place for "New folder" /
+"New document" (name, A0-A6, portrait/landscape); long press renames or deletes. The last
+opened document and the page-break toggle are device settings. The single document of earlier
+versions (`default`) was adopted into a first book on upgrade.
 
 ## Layers
 
@@ -95,7 +111,7 @@ app-wide so that pasting into other documents works once there are several (feat
 | Step | Feature | Where it plugs in |
 |------|---------|-------------------|
 | A ✅ | Pressure-sensitive handwriting, pen types, highlighter behind ink | done |
-| B | Books with nested chapters, documents with DIN A width, page breaks | new `core/library`, `feature/library`; `PageFormat.pageHeightMm` for page breaks |
+| B ✅ | Books with nested chapters, documents with DIN A width, page breaks | `core/library`, `feature/library`; menu button top left |
 | C | Nextcloud sync, concurrent editing | new `sync/nextcloud` mirroring `documents/`; `DocumentSession.applyRemote` |
 | D | Windows | `jvm`/desktop target for `core/*`, Compose Desktop UI, own renderer |
 | E ✅ | Shape recognition | hold the pen still ~0.5 s at the end of a stroke; `core/shapes` |

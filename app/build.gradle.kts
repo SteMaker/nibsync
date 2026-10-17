@@ -45,6 +45,8 @@ dependencies {
     implementation(project(":core:storage"))
     implementation(project(":feature:canvas"))
     implementation(project(":core:shapes"))
+    implementation(project(":feature:library"))
+    implementation(libs.androidx.lifecycle.runtime.compose)
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.activity.compose)
     implementation(libs.androidx.lifecycle.viewmodel.compose)

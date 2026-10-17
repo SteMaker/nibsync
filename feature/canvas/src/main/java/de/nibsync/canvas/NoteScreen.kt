@@ -25,6 +25,8 @@ import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.ContentPaste
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.HighlightAlt
+import androidx.compose.material.icons.filled.InsertPageBreak
+import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.Draw
 import androidx.compose.material.icons.filled.HistoryEdu
 import androidx.compose.material.icons.filled.TouchApp
@@ -72,6 +74,8 @@ object NoteScreenTags {
     fun size(index: Int) = "size-$index"
     const val FINGER_TOGGLE = "finger-toggle"
     const val UNDO = "undo"
+    const val MENU = "menu"
+    const val PAGE_BREAKS = "page-breaks"
     const val LASSO = "lasso"
     const val DELETE_SELECTION = "delete-selection"
     const val COPY_SELECTION = "copy-selection"
@@ -82,7 +86,14 @@ object NoteScreenTags {
 }
 
 @Composable
-fun NoteScreen(viewModel: CanvasViewModel, modifier: Modifier = Modifier, onCanvasCreated: (NoteCanvasView) -> Unit = {}) {
+fun NoteScreen(
+    viewModel: CanvasViewModel,
+    modifier: Modifier = Modifier,
+    onMenu: (() -> Unit)? = null,
+    showPageBreaks: Boolean = false,
+    onTogglePageBreaks: ((Boolean) -> Unit)? = null,
+    onCanvasCreated: (NoteCanvasView) -> Unit = {},
+) {
     val document by viewModel.document.collectAsStateWithLifecycle()
     val tools by viewModel.tools.collectAsStateWithLifecycle()
     val canUndo by viewModel.canUndo.collectAsStateWithLifecycle()
@@ -93,6 +104,9 @@ fun NoteScreen(viewModel: CanvasViewModel, modifier: Modifier = Modifier, onCanv
 
     Column(modifier.fillMaxSize()) {
         Toolbar(
+            onMenu = onMenu,
+            showPageBreaks = showPageBreaks,
+            onTogglePageBreaks = onTogglePageBreaks,
             tools = tools,
             canUndo = canUndo,
             canRedo = canRedo,
@@ -137,6 +151,7 @@ fun NoteScreen(viewModel: CanvasViewModel, modifier: Modifier = Modifier, onCanv
                 view.pageFormat = document.meta.format
                 view.brush = tools.activeBrush
                 view.drawWithFinger = tools.drawWithFinger
+                view.showPageBreaks = showPageBreaks
                 view.tool = tools.tool
                 view.selection = selection
                 view.eraserMode = tools.eraserMode
@@ -149,6 +164,9 @@ fun NoteScreen(viewModel: CanvasViewModel, modifier: Modifier = Modifier, onCanv
 
 @Composable
 private fun Toolbar(
+    onMenu: (() -> Unit)?,
+    showPageBreaks: Boolean,
+    onTogglePageBreaks: ((Boolean) -> Unit)?,
     tools: ToolState,
     canUndo: Boolean,
     canRedo: Boolean,
@@ -173,6 +191,15 @@ private fun Toolbar(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(4.dp),
         ) {
+            if (onMenu != null) {
+                val menuLabel = stringResource(R.string.library_menu)
+                WithTooltip(menuLabel) {
+                    IconButton(onClick = onMenu, modifier = Modifier.testTag(NoteScreenTags.MENU)) {
+                        Icon(Icons.Filled.Menu, contentDescription = menuLabel)
+                    }
+                }
+                Divider()
+            }
             val undoLabel = stringResource(R.string.undo)
             WithTooltip(undoLabel) {
                 IconButton(onClick = onUndo, enabled = canUndo, modifier = Modifier.testTag(NoteScreenTags.UNDO)) {
@@ -227,6 +254,18 @@ private fun Toolbar(
                 Tool.PEN -> PenOptions(tools, onColor, onSize)
             }
             Divider()
+            if (onTogglePageBreaks != null) {
+                val breaksLabel = stringResource(R.string.page_breaks)
+                WithTooltip(breaksLabel) {
+                    FilledIconToggleButton(
+                        checked = showPageBreaks,
+                        onCheckedChange = onTogglePageBreaks,
+                        modifier = Modifier.testTag(NoteScreenTags.PAGE_BREAKS),
+                    ) {
+                        Icon(Icons.Filled.InsertPageBreak, contentDescription = breaksLabel)
+                    }
+                }
+            }
             val fingerLabel = stringResource(R.string.draw_with_finger)
             WithTooltip(fingerLabel) {
                 FilledIconToggleButton(
