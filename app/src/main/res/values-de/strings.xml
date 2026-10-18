@@ -42,5 +42,5 @@
     <string name="clients_built_in">eingebauter Wert</string>
     <string name="clients_none">nicht gesetzt</string>
     <string name="clients_save">Übernehmen</string>
-    <string name="sync_google_not_registered">Google Drive ist für diese App noch nicht eingerichtet: Im Google-Cloud-Projekt fehlt der Android-Client (Paketname und SHA-1).</string>
+    <string name="sync_google_not_registered">Google Drive ist für diese App noch nicht eingerichtet. Lege im Google-Cloud-Projekt (Google Auth Platform → Clients) einen Client vom Typ „Android“ an, mit Paketname %1$s und SHA-1 %2$s. Die Google Drive API muss aktiviert und dein Konto als Testnutzer eingetragen sein. Ein neuer Client kann ein paar Minuten brauchen, bis er wirkt.</string>
 </resources>

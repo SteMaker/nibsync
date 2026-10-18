@@ -30,7 +30,8 @@ the app win. Without an id the service shows "no client id".
      (`keytool -list -v -keystore ~/.android/debug.keystore -storepass android` for debug
      builds). Nothing to enter on the tablet: Google recognises the app by package and
      certificate. Google Drive is offered whenever Google Play services are present; without
-     this client, connecting reports that it is missing.
+     this client Google answers `UNREGISTERED_ON_API_CONSOLE` (or DEVELOPER_ERROR) after the
+     account is chosen, and the app then shows the package name and the SHA-1 to register.
 4. Publish the app (Audience) so logins do not expire after 7 days (testing mode).
 
 ## How the logins work

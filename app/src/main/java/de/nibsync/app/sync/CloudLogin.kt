@@ -78,6 +78,26 @@ suspend fun googleAccount(accessToken: String): String = withContext(Dispatchers
     }
 }
 
+/**
+ * Whether Google refused because no Android OAuth client matches this app's package and signing
+ * certificate: DEVELOPER_ERROR, or (after choosing the account) "UNREGISTERED_ON_API_CONSOLE".
+ */
+fun isUnregisteredApp(statusCode: Int, message: String?): Boolean =
+    statusCode == com.google.android.gms.common.api.CommonStatusCodes.DEVELOPER_ERROR ||
+        message.orEmpty().contains("UNREGISTERED_ON_API_CONSOLE")
+
+/** SHA-1 of this app's signing certificate as the Google Cloud console expects it (AA:BB:...). */
+fun signingSha1(context: Context): String {
+    val pm = context.packageManager
+    val cert = if (android.os.Build.VERSION.SDK_INT >= 28) {
+        pm.getPackageInfo(context.packageName, android.content.pm.PackageManager.GET_SIGNING_CERTIFICATES).signingInfo?.apkContentsSigners?.firstOrNull()
+    } else {
+        @Suppress("DEPRECATION")
+        pm.getPackageInfo(context.packageName, android.content.pm.PackageManager.GET_SIGNATURES).signatures?.firstOrNull()
+    } ?: return "?"
+    return java.security.MessageDigest.getInstance("SHA-1").digest(cert.toByteArray()).joinToString(":") { "%02X".format(it) }
+}
+
 /** Configuration after the user granted access (Google handles the tokens on the device). */
 suspend fun googleConfig(accessToken: String): SyncConfig = GoogleDriveConfig(googleAccount(accessToken), refreshToken = "")
 

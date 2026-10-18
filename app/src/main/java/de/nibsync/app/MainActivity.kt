@@ -48,6 +48,8 @@ import de.nibsync.app.sync.CloudConnectDialog
 import de.nibsync.app.sync.SyncStatusLine
 import de.nibsync.app.sync.googleAuthorize
 import de.nibsync.app.sync.googleConfig
+import de.nibsync.app.sync.isUnregisteredApp
+import de.nibsync.app.sync.signingSha1
 import de.nibsync.app.sync.oneDriveLogin
 import de.nibsync.sync.client.SyncConfig
 import de.nibsync.sync.client.SyncService
@@ -104,20 +106,17 @@ class MainActivity : ComponentActivity() {
     /** Logs in with OneDrive (browser) or Google Drive (Google's sign-in on the device). */
     private suspend fun cloudLogin(service: SyncService): SyncConfig = when (service) {
         SyncService.ONEDRIVE -> oneDriveLogin(this, sync.clients.value)
-        SyncService.GOOGLE_DRIVE -> {
-            var result = try {
-                googleAuthorize(this)
-            } catch (e: com.google.android.gms.common.api.ApiException) {
-                // DEVELOPER_ERROR: no Android OAuth client for this package and certificate.
-                if (e.statusCode == com.google.android.gms.common.api.CommonStatusCodes.DEVELOPER_ERROR) error(getString(R.string.sync_google_not_registered))
-                throw e
-            }
+        SyncService.GOOGLE_DRIVE -> try {
+            var result = googleAuthorize(this)
             if (result.hasResolution()) {
                 val answer = kotlinx.coroutines.CompletableDeferred<Intent?>().also { googleConsentAnswer = it }
                 googleConsent.launch(IntentSenderRequest.Builder(result.pendingIntent!!.intentSender).build())
                 result = Identity.getAuthorizationClient(this).getAuthorizationResultFromIntent(answer.await())
             }
             googleConfig(result.accessToken ?: error("No access"))
+        } catch (e: com.google.android.gms.common.api.ApiException) {
+            if (!isUnregisteredApp(e.statusCode, e.message)) throw e
+            error(getString(R.string.sync_google_not_registered, packageName, signingSha1(this)))
         }
         SyncService.NEXTCLOUD -> error("Nextcloud has its own dialog")
     }
