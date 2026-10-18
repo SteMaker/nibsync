@@ -1,8 +1,9 @@
 # Setting up OneDrive and Google Drive
 
-NibSync talks to OneDrive and Google Drive as a registered OAuth app. The registrations belong
-to whoever builds the app; their ids go into `cloud.properties` (not checked in, see
-`cloud.properties.example`). Without them the services show "not set up".
+NibSync talks to OneDrive and Google Drive as a registered OAuth app. The client ids are
+entered in the app's settings ("Own app registration", kept per device, not synced), or built
+in from `cloud.properties` (not checked in, see `cloud.properties.example`); values entered in
+the app win. Without an id the service shows "no client id".
 
 ## Microsoft (OneDrive)
 
@@ -13,7 +14,8 @@ to whoever builds the app; their ids go into `cloud.properties` (not checked in,
    client flows": yes.
 3. API permissions → Microsoft Graph → delegated: `Files.ReadWrite.AppFolder`,
    `offline_access` (NibSync then only sees its folder "Apps/NibSync").
-4. `onedrive.clientId` = the Application (client) ID.
+4. The Application (client) ID goes into the settings on the tablet and the PC (or
+   `onedrive.clientId`).
 
 ## Google (Google Drive)
 
@@ -21,11 +23,14 @@ to whoever builds the app; their ids go into `cloud.properties` (not checked in,
 2. Google Auth Platform: app name, audience "External", test users, data access scope
    `https://www.googleapis.com/auth/drive.file` (NibSync only sees files it created).
 3. Clients:
-   - "Desktop app" → `google.desktop.clientId` and `google.desktop.clientSecret` (not secret
-     for desktop apps by Google's design).
+   - "Desktop app" → client id and secret into the PC app's settings (or
+     `google.desktop.clientId`, `google.desktop.clientSecret`); the secret is not secret for
+     desktop apps by Google's design.
    - "Android": package `de.nibsync.app`, SHA-1 of the signing certificate
      (`keytool -list -v -keystore ~/.android/debug.keystore -storepass android` for debug
-     builds) → `google.android=true`. The app needs Google Play services.
+     builds). Nothing to enter on the tablet: Google recognises the app by package and
+     certificate. Google Drive is offered whenever Google Play services are present; without
+     this client, connecting reports that it is missing.
 4. Publish the app (Audience) so logins do not expire after 7 days (testing mode).
 
 ## How the logins work

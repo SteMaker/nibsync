@@ -61,8 +61,11 @@ fun App(
     openBrowser: (String) -> Boolean = ::openInBrowser,
     /** Logs in with OneDrive or Google Drive (browser); tests replace it. */
     cloudLogin: suspend (de.nibsync.sync.client.SyncService) -> de.nibsync.sync.client.SyncConfig = { service ->
-        DesktopCloudLogin.run(service, desktopCloudClients(), openBrowser, strings)
+        DesktopCloudLogin.run(service, sync!!.clients.value, openBrowser, strings)
     },
+    /** Where the OAuth clients the user enters are kept; null hides that settings section. */
+    clientsStore: DesktopClientsStore? = null,
+    builtInClients: de.nibsync.sync.client.CloudClients = de.nibsync.sync.client.CloudClients(),
 ) {
     MaterialTheme(colorScheme = lightColorScheme(primary = Color(0xff1a3fa8))) {
         // Shortcuts also from here, so they work in tests without a window (the window passes
@@ -79,9 +82,19 @@ fun App(
             var showSettings by remember { mutableStateOf(false) }
             var connecting by remember { mutableStateOf<de.nibsync.sync.client.SyncService?>(null) }
             if (showSettings && sync != null) {
+                var userClients by remember { mutableStateOf(clientsStore?.load()) }
+                // Observed, so the list of services updates when new client ids are applied.
+                val clients by sync.clients.collectAsState()
                 SettingsDialog(
                     sync, strings, openBrowser,
-                    connect = { service -> if (sync.available(service)) ({ connecting = service }) else null },
+                    connect = { service -> if (clients.let { sync.available(service) }) ({ connecting = service }) else null },
+                    userClients = userClients,
+                    builtInClients = builtInClients,
+                    onUserClients = { entered ->
+                        clientsStore?.save(entered)
+                        userClients = entered
+                        sync.updateClients(builtInClients.overriddenBy(entered))
+                    },
                     onClose = { showSettings = false },
                 )
             }

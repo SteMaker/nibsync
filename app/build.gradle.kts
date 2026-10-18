@@ -19,7 +19,6 @@ android {
     defaultConfig {
         applicationId = "de.nibsync.app"
         buildConfigField("String", "ONEDRIVE_CLIENT_ID", "\"${cloudProperties.getProperty("onedrive.clientId", "")}\"")
-        buildConfigField("boolean", "GOOGLE_ON_DEVICE", cloudProperties.getProperty("google.android", "false"))
         minSdk = libs.versions.minSdk.get().toInt()
         targetSdk = libs.versions.targetSdk.get().toInt()
         versionCode = 1

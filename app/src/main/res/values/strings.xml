@@ -33,8 +33,15 @@
     <string name="sync_service_onedrive">OneDrive</string>
     <string name="sync_service_google">Google Drive</string>
     <string name="sync_choose_service">Choose a service to sync with:</string>
-    <string name="sync_service_unavailable">Not set up in this version yet</string>
+    <string name="sync_service_unavailable">No client id: enter it below under “Own app registration”</string>
     <string name="sync_connect_nextcloud">Connect to Nextcloud</string>
     <string name="sync_connect_to">Connect to %1$s</string>
     <string name="sync_login_again">Try again</string>
+    <string name="clients_title">Own app registration (OneDrive)</string>
+    <string name="clients_hint">OneDrive client id from the Microsoft Entra portal (guide: docs/cloud-setup.md); empty uses the built-in value. Google Drive needs no id on the tablet.</string>
+    <string name="clients_onedrive_id">OneDrive: application (client) id</string>
+    <string name="clients_built_in">built-in value</string>
+    <string name="clients_none">not set</string>
+    <string name="clients_save">Apply</string>
+    <string name="sync_google_not_registered">Google Drive is not set up for this app yet: the Android client (package and SHA-1) is missing in the Google Cloud project.</string>
 </resources>

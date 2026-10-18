@@ -13,9 +13,10 @@ import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import java.util.UUID
 
 /**
- * The OAuth clients this build is registered with (see docs/cloud-setup.md); a null id means
- * that service is not set up. On Android Google Drive works without an id in the app: Google
- * recognises the app by package name and signing certificate ([googleOnDevice]).
+ * The OAuth clients NibSync uses (see docs/cloud-setup.md): built in from cloud.properties
+ * and/or entered by the user in the settings. A null or blank id means that service is not set
+ * up. On Android Google Drive needs no id in the app: Google recognises the app by package name
+ * and signing certificate ([googleOnDevice]).
  */
 data class CloudClients(
     val oneDriveClientId: String? = null,
@@ -23,10 +24,35 @@ data class CloudClients(
     val googleDesktopSecret: String? = null,
     val googleOnDevice: Boolean = false,
 ) {
+    /** These clients with every non-blank value of [user] taking precedence. */
+    fun overriddenBy(user: CloudClients) = CloudClients(
+        oneDriveClientId = user.oneDriveClientId.orBlankTo(oneDriveClientId),
+        googleDesktopClientId = user.googleDesktopClientId.orBlankTo(googleDesktopClientId),
+        googleDesktopSecret = user.googleDesktopSecret.orBlankTo(googleDesktopSecret),
+        googleOnDevice = googleOnDevice || user.googleOnDevice,
+    )
+
+    private fun String?.orBlankTo(fallback: String?) = this?.trim()?.takeIf { it.isNotEmpty() } ?: fallback
+
+    /** As key/value pairs for local storage (device-specific, not synced). */
+    fun toMap(): Map<String, String> = listOfNotNull(
+        oneDriveClientId?.let { "onedrive.clientId" to it },
+        googleDesktopClientId?.let { "google.desktop.clientId" to it },
+        googleDesktopSecret?.let { "google.desktop.clientSecret" to it },
+    ).toMap()
+
     val oneDrive: OAuthClient? get() = oneDriveClientId?.takeIf { it.isNotBlank() }?.let { oneDriveOAuth(it) }
     val googleDesktop: OAuthClient? get() = googleDesktopClientId?.takeIf { it.isNotBlank() }?.let { googleOAuth(it, googleDesktopSecret) }
 
     companion object {
+        fun fromMap(map: Map<String, String?>) = CloudClients(
+            oneDriveClientId = map["onedrive.clientId"],
+            googleDesktopClientId = map["google.desktop.clientId"],
+            googleDesktopSecret = map["google.desktop.clientSecret"],
+        )
+
+        val KEYS = listOf("onedrive.clientId", "google.desktop.clientId", "google.desktop.clientSecret")
+
         fun oneDriveOAuth(clientId: String, endpoints: OAuthEndpoints = OAuthEndpoints.MICROSOFT) =
             OAuthClient(endpoints, clientId, OneDriveRemoteStore.SCOPES)
 

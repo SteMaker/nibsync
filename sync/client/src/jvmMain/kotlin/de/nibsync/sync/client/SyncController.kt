@@ -117,8 +117,8 @@ class SyncController(
     private val host: SyncHost,
     private val store: SyncConfigStore,
     private val scope: CoroutineScope,
-    /** The OAuth clients this build has, for OneDrive and Google Drive. */
-    private val clients: CloudClients = CloudClients(),
+    /** The OAuth clients for OneDrive and Google Drive (the user can change them, see [updateClients]). */
+    clients: CloudClients = CloudClients(),
     /** On Android: access tokens for Google Drive from Google's sign-in. */
     private val googleTokens: de.nibsync.sync.cloud.AccessTokens? = null,
     /** The remote store for a configuration (tests replace it). */
@@ -126,13 +126,28 @@ class SyncController(
     private val clock: () -> Long = System::currentTimeMillis,
 ) {
     private val remoteFor: (SyncConfig) -> RemoteStore =
-        remoteFor ?: { CloudStores.storeFor(it, clients, googleTokens, ::rememberLogin) }
+        remoteFor ?: { CloudStores.storeFor(it, _clients.value, googleTokens, ::rememberLogin) }
 
-    /** Which services can be connected in this build. */
-    fun available(service: SyncService): Boolean = when (service) {
-        SyncService.NEXTCLOUD -> true
-        SyncService.ONEDRIVE -> clients.oneDrive != null
-        SyncService.GOOGLE_DRIVE -> clients.googleOnDevice || clients.googleDesktop != null
+    private val _clients = MutableStateFlow(clients)
+
+    /** The OAuth clients in use. */
+    val clients: StateFlow<CloudClients> = _clients.asStateFlow()
+
+    /** New OAuth clients (entered in the settings); a running OneDrive/Google sync uses them right away. */
+    fun updateClients(clients: CloudClients) {
+        if (clients == _clients.value) return
+        _clients.value = clients
+        if (_config.value?.service != SyncService.NEXTCLOUD) rebuildEngine()
+    }
+
+    /** Which services can be connected with the current OAuth clients. */
+    fun available(service: SyncService): Boolean {
+        val c = _clients.value
+        return when (service) {
+            SyncService.NEXTCLOUD -> true
+            SyncService.ONEDRIVE -> c.oneDrive != null
+            SyncService.GOOGLE_DRIVE -> c.googleOnDevice || c.googleDesktop != null
+        }
     }
     private val _status = MutableStateFlow<SyncStatus>(SyncStatus.NotConfigured)
     val status: StateFlow<SyncStatus> = _status.asStateFlow()

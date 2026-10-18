@@ -1,5 +1,6 @@
-# OAuth clients for OneDrive and Google Drive (see docs/cloud-setup.md). Copy to
-# cloud.properties (not checked in) and fill in; empty values leave the service unavailable.
+# Built-in OAuth clients for OneDrive and Google Drive (see docs/cloud-setup.md). Optional:
+# the ids can also be entered in the app's settings. Copy to cloud.properties (not checked
+# in) and fill in; empty values leave the service unavailable unless entered in the app.
 
 # Microsoft Entra app registration: Application (client) ID
 onedrive.clientId=
@@ -9,6 +10,3 @@ onedrive.clientId=
 google.desktop.clientId=
 google.desktop.clientSecret=
 
-# true once the Google Cloud OAuth client of type "Android" (package de.nibsync.app with the
-# signing certificate's SHA-1) exists
-google.android=false

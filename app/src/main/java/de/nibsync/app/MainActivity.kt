@@ -103,9 +103,15 @@ class MainActivity : ComponentActivity() {
 
     /** Logs in with OneDrive (browser) or Google Drive (Google's sign-in on the device). */
     private suspend fun cloudLogin(service: SyncService): SyncConfig = when (service) {
-        SyncService.ONEDRIVE -> oneDriveLogin(this, (application as NibSyncApp).cloudClients)
+        SyncService.ONEDRIVE -> oneDriveLogin(this, sync.clients.value)
         SyncService.GOOGLE_DRIVE -> {
-            var result = googleAuthorize(this)
+            var result = try {
+                googleAuthorize(this)
+            } catch (e: com.google.android.gms.common.api.ApiException) {
+                // DEVELOPER_ERROR: no Android OAuth client for this package and certificate.
+                if (e.statusCode == com.google.android.gms.common.api.CommonStatusCodes.DEVELOPER_ERROR) error(getString(R.string.sync_google_not_registered))
+                throw e
+            }
             if (result.hasResolution()) {
                 val answer = kotlinx.coroutines.CompletableDeferred<Intent?>().also { googleConsentAnswer = it }
                 googleConsent.launch(IntentSenderRequest.Builder(result.pendingIntent!!.intentSender).build())
@@ -172,9 +178,20 @@ class MainActivity : ComponentActivity() {
                     )
                 }
                 if (showSettings) {
+                    val app = application as NibSyncApp
+                    var userClients by remember { mutableStateOf(app.cloudClientsStore.load()) }
+                    // Observed, so the list of services updates when new client ids are applied.
+                    val clients by sync.clients.collectAsStateWithLifecycle()
                     SettingsScreen(
                         sync = sync,
-                        connect = { service -> if (sync.available(service)) ({ connecting = service }) else null },
+                        connect = { service -> if (clients.let { sync.available(service) }) ({ connecting = service }) else null },
+                        userClients = userClients,
+                        builtInClients = app.builtInClients,
+                        onUserClients = { entered ->
+                            app.cloudClientsStore.save(entered)
+                            userClients = entered
+                            sync.updateClients(app.builtInClients.overriddenBy(entered))
+                        },
                         showPageBreaks = showPageBreaks,
                         onShowPageBreaks = {
                             showPageBreaks = it
