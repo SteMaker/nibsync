@@ -1,5 +1,8 @@
 package de.nibsync.app.sync
 
+import de.nibsync.sync.client.SyncConfig
+import de.nibsync.sync.client.SyncController
+import de.nibsync.sync.client.SyncStatus
 import android.content.Intent
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column

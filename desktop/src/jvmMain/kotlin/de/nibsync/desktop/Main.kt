@@ -4,7 +4,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Window
 import androidx.compose.ui.window.application
 import androidx.compose.ui.window.rememberWindowState
+import de.nibsync.sync.client.SyncController
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeoutOrNull
 import okio.Path.Companion.toPath
 
 /**
@@ -17,17 +19,25 @@ fun main(args: Array<String>) {
     val settings = Settings(container.fs, dataDir / "settings.properties")
     val strings = Strings()
     val keys = KeyRouter()
+    val sync = SyncController(container, DesktopSyncStore(java.nio.file.Path.of(dataDir.toString(), "sync-account.properties")), container.appScope)
     application {
         Window(
             onCloseRequest = {
-                runBlocking { container.closeAll() }
+                runBlocking {
+                    container.closeAll()
+                    // Push what was written last; do not hang if the server is unreachable.
+                    withTimeoutOrNull(FINAL_SYNC_TIMEOUT_MS) { sync.runOnce() }
+                }
                 exitApplication()
             },
             title = strings.appName,
             state = rememberWindowState(width = 1400.dp, height = 900.dp),
             onPreviewKeyEvent = keys::onKey,
         ) {
-            App(container, settings, strings, keys)
+            App(container, settings, strings, keys, sync)
         }
     }
 }
+
+/** How long closing the window may wait for the last sync. */
+private const val FINAL_SYNC_TIMEOUT_MS = 10_000L

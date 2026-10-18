@@ -15,6 +15,7 @@ ui/background/    Paper pattern picker and preview, used by canvas and library d
 ink/android/      Adapter domain <-> androidx.ink (brushes, stroke conversion, mesh cache)
 core/sync/        Sync engine (platform-neutral) against a RemoteStore
 sync/webdav/      RemoteStore for Nextcloud/WebDAV (OkHttp), Nextcloud login flow v2
+sync/client/      SyncController: account, status, periodic/change-triggered runs (Android + PC)
 core/library/     Library tree: books, nested chapters, documents; one file per node
 core/shapes/      Shape recognition (lines, arrows, triangles, rectangles, ellipses), hold detection
 core/storage/     File format (meta.json + per-device op logs), repository, device id
@@ -208,7 +209,12 @@ it. Ink is Android-only, so `StrokePainter` redraws strokes from their points (b
 highlighter constant width, fountain pen with BrushMapper's pressure curve and end taper).
 Text boxes use the same embedded fonts (loaded from `feature/text/src/main/res/font`) and the
 same paragraph layout as `RichTextLayout`. Plan: D1 viewing ✅, D2 text boxes ✅, D3
-Nextcloud sync, D4 drawing/erasing/lasso/pictures, D5 packages.
+Nextcloud sync ✅, D4 drawing/erasing/lasso/pictures, D5 packages.
+
+Sync on the PC is the same `SyncController` as on Android (module `sync/client`; the apps
+provide a `SyncHost` with their open documents and a `SyncConfigStore`). The PC keeps the
+login in `<data>/sync-account.properties` (owner-only permissions), logs in with Login Flow v2
+in the default browser, syncs on start, every 10 s, after changes and once more on close.
 
 Text on the PC (`NoteController`): a click on free paper starts a text box at the click
 (120 mm wide or up to the margin), a click on a box opens it, Esc closes it; Ctrl+B/I format,

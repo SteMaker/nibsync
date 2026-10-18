@@ -35,11 +35,19 @@ import androidx.compose.ui.graphics.Color
 import de.nibsync.document.DocumentSession
 import de.nibsync.library.NodeId
 import de.nibsync.model.DocumentId
+import de.nibsync.sync.client.SyncController
 import java.io.File
 
 /** The main window content: library on the left, the open document on the right. */
 @Composable
-fun App(container: DesktopContainer, settings: Settings, strings: Strings = Strings(), keys: KeyRouter = KeyRouter()) {
+fun App(
+    container: DesktopContainer,
+    settings: Settings,
+    strings: Strings = Strings(),
+    keys: KeyRouter = KeyRouter(),
+    sync: SyncController? = null,
+    openBrowser: (String) -> Boolean = ::openInBrowser,
+) {
     MaterialTheme(colorScheme = lightColorScheme(primary = Color(0xff1a3fa8))) {
         // Shortcuts also from here, so they work in tests without a window (the window passes
         // keys on first; a key is handled only once).
@@ -48,6 +56,8 @@ fun App(container: DesktopContainer, settings: Settings, strings: Strings = Stri
             LaunchedEffect(Unit) {
                 container.library.load(strings.defaultBook, strings.defaultDocument)
                 ready = true
+                // Only now: the sync compares the loaded library with the server.
+                sync?.start()
             }
             val tree by container.library.tree.collectAsState()
             var documentId by remember { mutableStateOf<DocumentId?>(null) }
@@ -67,6 +77,7 @@ fun App(container: DesktopContainer, settings: Settings, strings: Strings = Stri
                         documentId = it.asDocumentId
                         settings.lastDocument = it.asDocumentId
                     },
+                    footer = { if (sync != null) SyncPanel(sync, strings, openBrowser) },
                 )
                 VerticalDivider()
                 Box(Modifier.weight(1f).fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -74,7 +85,7 @@ fun App(container: DesktopContainer, settings: Settings, strings: Strings = Stri
                     if (id == null) {
                         if (ready) Text(strings.noDocument) else CircularProgressIndicator()
                     } else {
-                        DocumentPane(container, id, strings, keys)
+                        DocumentPane(container, id, strings, keys, sync)
                     }
                 }
             }
@@ -83,16 +94,17 @@ fun App(container: DesktopContainer, settings: Settings, strings: Strings = Stri
 }
 
 @Composable
-private fun DocumentPane(container: DesktopContainer, id: DocumentId, strings: Strings, keys: KeyRouter) {
+private fun DocumentPane(container: DesktopContainer, id: DocumentId, strings: Strings, keys: KeyRouter, sync: SyncController?) {
     var session by remember(id) { mutableStateOf<DocumentSession?>(null) }
     LaunchedEffect(id) { session = container.openSession(id) }
     val s = session ?: return CircularProgressIndicator()
     val doc by s.state.collectAsState()
     val scope = rememberCoroutineScope()
     val textLayout = remember(id) { DesktopTextLayout() }
-    val painter = remember(id) {
-        PagePainter(textLayout, MediaCache(scope) { File(container.repository.assetPath(id, it.sha256).toString()) })
-    }
+    val media = remember(id) { MediaCache(scope) { File(container.repository.assetPath(id, it.sha256).toString()) } }
+    val painter = remember(id) { PagePainter(textLayout, media) }
+    // Pictures that arrive with the sync get drawn once they are there.
+    LaunchedEffect(id) { container.assetsArrivedFlow.collect { if (id in it) media.retryMissing() } }
     val controller = remember(s) { NoteController(s, textLayout::heightMm) }
     val editing by controller.text.editing.collectAsState()
     val canUndo by s.canUndo.collectAsState()
@@ -122,6 +134,7 @@ private fun DocumentPane(container: DesktopContainer, id: DocumentId, strings: S
             onRedo = { controller.redo() },
             editing = editing?.controller,
             onDeleteText = { controller.text.delete() },
+            end = { if (sync != null) SyncStatusIcon(sync, strings) },
         )
         Box(Modifier.weight(1f).fillMaxWidth().clipToBounds()) {
             PageView(

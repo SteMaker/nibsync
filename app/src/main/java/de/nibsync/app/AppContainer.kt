@@ -1,7 +1,9 @@
 package de.nibsync.app
 
 import de.nibsync.canvas.StrokeClipboard
+import de.nibsync.document.DocumentOp
 import de.nibsync.document.DocumentSession
+import de.nibsync.sync.client.SyncHost
 import de.nibsync.document.OpJournal
 import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -28,19 +30,21 @@ import okio.Path
  * will later be mirrored to a Nextcloud share. Device-local files live outside of it.
  */
 class AppContainer(
-    val fs: FileSystem,
+    override val fs: FileSystem,
     val localRoot: Path,
     val appScope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Default),
-) {
-    val documentsRoot: Path = localRoot / "documents"
+) : SyncHost {
+    override val documentsRoot: Path = localRoot / "documents"
 
-    val deviceId: DeviceId by lazy { DeviceIdStore.loadOrCreate(fs, localRoot / "device-id") }
+    override val stateDir: Path get() = localRoot
+
+    override val deviceId: DeviceId by lazy { DeviceIdStore.loadOrCreate(fs, localRoot / "device-id") }
 
     val repository: DocumentRepository = FileDocumentRepository(fs, documentsRoot, Dispatchers.IO)
 
     val libraryRoot: Path = localRoot / "library"
 
-    val library = Library(
+    override val library = Library(
         nodes = FileLibraryRepository(fs, libraryRoot, Dispatchers.IO),
         documents = repository,
         clock = System::currentTimeMillis,
@@ -67,16 +71,22 @@ class AppContainer(
     private val _localChanges = MutableSharedFlow<Unit>(extraBufferCapacity = 1, onBufferOverflow = BufferOverflow.DROP_OLDEST)
 
     /** Emits after this device wrote a change to any document (for syncing soon). */
-    val localChanges: SharedFlow<Unit> = _localChanges.asSharedFlow()
+    override val localChanges: SharedFlow<Unit> = _localChanges.asSharedFlow()
 
     private val _assetsArrived = MutableSharedFlow<Set<DocumentId>>(extraBufferCapacity = 4, onBufferOverflow = BufferOverflow.DROP_OLDEST)
 
     /** Documents whose files (pictures, PDFs) were just fetched by the sync. */
     val assetsArrived: SharedFlow<Set<DocumentId>> = _assetsArrived.asSharedFlow()
 
-    fun notifyAssetsArrived(documents: Set<DocumentId>) {
-        _assetsArrived.tryEmit(documents)
+    override fun assetsArrived(docs: Set<DocumentId>) {
+        _assetsArrived.tryEmit(docs)
     }
+
+    override suspend fun applyRemote(doc: DocumentId, ops: List<DocumentOp>) {
+        openSessionOrNull(doc)?.applyRemote(ops)
+    }
+
+    override suspend fun beforeDocumentsDeleted(docs: Set<DocumentId>) = beforeDelete(docs)
 
     private val sessions = HashMap<DocumentId, DocumentSession>()
     private val sessionLock = Mutex()
@@ -112,7 +122,7 @@ class AppContainer(
     suspend fun openSessionOrNull(id: DocumentId): DocumentSession? = sessionLock.withLock { sessions[id] }
 
     /** Waits until all open documents have written their changes. */
-    suspend fun flushOpenSessions() {
+    override suspend fun flushOpenSessions() {
         sessionLock.withLock { sessions.values.toList() }.forEach { it.flush() }
     }
 

@@ -64,11 +64,13 @@ fun LibraryPane(
     strings: Strings,
     onOpen: (NodeId) -> Unit,
     modifier: Modifier = Modifier,
+    /** Shown below the tree, e.g. the Nextcloud section. */
+    footer: @Composable () -> Unit = {},
 ) {
     var expanded by remember { mutableStateOf(current?.let { c -> tree.pathTo(c).dropLast(1).map { it.id }.toSet() } ?: emptySet()) }
     Column(modifier.fillMaxHeight().width(280.dp).background(MaterialTheme.colorScheme.surfaceContainerLow)) {
         Text(strings.library, style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(16.dp))
-        LazyColumn(Modifier.fillMaxWidth()) {
+        LazyColumn(Modifier.fillMaxWidth().weight(1f)) {
             items(treeRows(tree, expanded), key = { it.node.id.value }) { row ->
                 val node = row.node
                 val selected = node.id == current
@@ -103,5 +105,6 @@ fun LibraryPane(
                 }
             }
         }
+        footer()
     }
 }

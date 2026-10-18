@@ -74,6 +74,8 @@ fun NoteToolbar(
     onRedo: () -> Unit,
     editing: TextEditController?,
     onDeleteText: () -> Unit,
+    /** Items at the right end, e.g. the sync status. */
+    end: @Composable () -> Unit = {},
 ) {
     Surface(tonalElevation = 2.dp, modifier = Modifier.fillMaxWidth()) {
         Row(
@@ -98,6 +100,7 @@ fun NoteToolbar(
                 Divider()
                 Action(strings.deleteTextBox, Icons.Filled.Delete, true, TextTags.DELETE, onDeleteText)
             }
+            end()
         }
     }
 }

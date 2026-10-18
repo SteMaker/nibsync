@@ -10,8 +10,8 @@ import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.google.common.truth.Truth.assertThat
-import de.nibsync.app.sync.SyncConfig
-import de.nibsync.app.sync.SyncStatus
+import de.nibsync.sync.client.SyncConfig
+import de.nibsync.sync.client.SyncStatus
 import de.nibsync.document.DocumentOp
 import de.nibsync.document.OpStamp
 import de.nibsync.library.LibraryNode

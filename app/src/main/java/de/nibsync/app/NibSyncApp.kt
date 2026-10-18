@@ -2,7 +2,7 @@ package de.nibsync.app
 
 import android.app.Application
 import de.nibsync.app.sync.SyncAccountStore
-import de.nibsync.app.sync.SyncController
+import de.nibsync.sync.client.SyncController
 import okio.FileSystem
 import okio.Path.Companion.toOkioPath
 

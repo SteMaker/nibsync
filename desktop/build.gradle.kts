@@ -19,6 +19,7 @@ kotlin {
         jvmMain {
             dependencies {
                 implementation(project(":shared:text"))
+                implementation(project(":sync:client"))
                 implementation(project(":core:library"))
                 implementation(project(":core:document"))
                 implementation(project(":core:storage"))
