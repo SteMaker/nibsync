@@ -4,6 +4,7 @@ import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke as StrokeStyle
 import androidx.compose.ui.graphics.drawscope.scale
@@ -24,6 +25,7 @@ import de.nibsync.model.BackgroundPattern
 import de.nibsync.model.FileLink
 import de.nibsync.model.ImageElement
 import de.nibsync.model.Stroke
+import de.nibsync.model.StrokeId
 import de.nibsync.model.TextBox
 import de.nibsync.model.geometry.Viewport
 import kotlin.math.roundToInt
@@ -36,7 +38,15 @@ class PagePainter(private val text: DesktopTextLayout, private val media: MediaC
     /** Measures link labels in layout pixels (1 sp = 1 px), scaled down when drawn. */
     private val labels = TextMeasurer(createFontFamilyResolver(), Density(1f), LayoutDirection.Ltr)
 
-    fun draw(scope: DrawScope, doc: DocumentState, viewport: Viewport, hiddenTextBox: Any? = null) = with(scope) {
+    /** What is drawn on top of the document: gesture in progress and selection. */
+    class Overlay(
+        val gesture: GesturePreview? = null,
+        val selection: Set<StrokeId> = emptySet(),
+        val selectionFrame: de.nibsync.model.geometry.Rect? = null,
+        val resizable: Boolean = false,
+    )
+
+    fun draw(scope: DrawScope, doc: DocumentState, viewport: Viewport, hiddenTextBox: Any? = null, overlay: Overlay = Overlay()) = with(scope) {
         drawRect(DESK)
         if (!viewport.hasSize) return
         val t = viewport.documentToView
@@ -52,15 +62,67 @@ class PagePainter(private val text: DesktopTextLayout, private val media: MediaC
             scale(t.scale, t.scale, pivot = Offset.Zero)
         }) {
             drawPattern(this, doc, viewport)
-            for (element in doc.elements) {
-                if (!element.bounds.intersects(visible)) continue
-                when (element) {
-                    is Stroke -> StrokePainter.draw(this, element)
-                    is TextBox -> if (element.id != hiddenTextBox) drawTextBox(this, element)
-                    is ImageElement -> drawImage(this, element)
-                    is FileLink -> drawLink(this, element)
+            val gesture = overlay.gesture
+            // While erasing, the strokes as they would be after the gesture.
+            val elements = if (gesture is GesturePreview.Erasing) {
+                (doc.elements.filter { it !is Stroke } + gesture.visible).sortedBy { it.layer.zIndex }
+            } else {
+                doc.elements
+            }
+            for (element in elements) {
+                val selected = element.id in overlay.selection
+                when {
+                    selected && gesture is GesturePreview.Moving -> translate(gesture.dx, gesture.dy) { drawElement(this, element, hiddenTextBox) }
+                    selected && gesture is GesturePreview.Resizing && element is de.nibsync.model.FileElement -> withTransform({
+                        translate(element.x, element.y)
+                        scale(gesture.factor, gesture.factor, pivot = Offset.Zero)
+                        translate(-element.x, -element.y)
+                    }) { drawElement(this, element, hiddenTextBox) }
+                    element.bounds.intersects(visible) -> drawElement(this, element, hiddenTextBox)
                 }
             }
+            if (gesture is GesturePreview.Drawing) StrokePainter.draw(this, gesture.stroke)
+        }
+        drawOverlay(this, viewport, overlay)
+    }
+
+    private fun drawElement(scope: DrawScope, element: de.nibsync.model.PageElement, hiddenTextBox: Any?) {
+        when (element) {
+            is Stroke -> StrokePainter.draw(scope, element)
+            is TextBox -> if (element.id != hiddenTextBox) drawTextBox(scope, element)
+            is ImageElement -> drawImage(scope, element)
+            is FileLink -> drawLink(scope, element)
+        }
+    }
+
+    /** Selection frame, scale handle, lasso and eraser in screen pixels. */
+    private fun drawOverlay(scope: DrawScope, viewport: Viewport, overlay: Overlay) = with(scope) {
+        val t = viewport.documentToView
+        val dash = StrokeStyle(width = 2f, pathEffect = PathEffect.dashPathEffect(floatArrayOf(12f, 8f)))
+        val gesture = overlay.gesture
+        overlay.selectionFrame?.let { f ->
+            var r = f
+            if (gesture is GesturePreview.Moving) r = de.nibsync.model.geometry.Rect(f.left + gesture.dx, f.top + gesture.dy, f.right + gesture.dx, f.bottom + gesture.dy)
+            if (gesture is GesturePreview.Resizing) {
+                val pad = NoteController.SELECTION_PADDING_MM
+                r = de.nibsync.model.geometry.Rect(f.left, f.top, f.left + pad + (f.width - 2 * pad) * gesture.factor + pad, f.top + pad + (f.height - 2 * pad) * gesture.factor + pad)
+            }
+            drawRect(SELECTION, Offset(t.mapX(r.left), t.mapY(r.top)), Size(r.width * t.scale, r.height * t.scale), style = dash)
+            if (overlay.resizable && gesture !is GesturePreview.Moving) {
+                drawCircle(SELECTION, HANDLE_RADIUS_PX, Offset(t.mapX(r.right), t.mapY(r.bottom)))
+            }
+        }
+        when (gesture) {
+            is GesturePreview.Lassoing -> {
+                val path = androidx.compose.ui.graphics.Path()
+                val p = gesture.path
+                for (i in p.indices step 2) {
+                    if (i == 0) path.moveTo(t.mapX(p[i]), t.mapY(p[i + 1])) else path.lineTo(t.mapX(p[i]), t.mapY(p[i + 1]))
+                }
+                drawPath(path, SELECTION, style = dash)
+            }
+            is GesturePreview.Erasing -> drawCircle(ERASER, gesture.radiusMm * t.scale, Offset(t.mapX(gesture.x), t.mapY(gesture.y)), style = StrokeStyle(2f))
+            else -> Unit
         }
     }
 
@@ -142,6 +204,9 @@ class PagePainter(private val text: DesktopTextLayout, private val media: MediaC
 
     companion object {
         val DESK = Color(0xffe0e0e0)
+        const val HANDLE_RADIUS_PX = 9f
+        private val SELECTION = Color(0xff1a3fa8)
+        private val ERASER = Color(0xff757575)
         private val SHADOW = Color(0x22000000)
         private val PATTERN = Color(0xffb4c6e2)
         private val PLACEHOLDER = Color(0xffeceff1)

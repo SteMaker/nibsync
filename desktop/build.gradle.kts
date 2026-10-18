@@ -23,6 +23,7 @@ kotlin {
                 implementation(project(":core:library"))
                 implementation(project(":core:document"))
                 implementation(project(":core:storage"))
+                implementation(project(":core:shapes"))
                 implementation(compose.desktop.currentOs)
                 implementation(compose.material3)
                 implementation(compose.materialIconsExtended)

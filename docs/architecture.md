@@ -209,7 +209,16 @@ it. Ink is Android-only, so `StrokePainter` redraws strokes from their points (b
 highlighter constant width, fountain pen with BrushMapper's pressure curve and end taper).
 Text boxes use the same embedded fonts (loaded from `feature/text/src/main/res/font`) and the
 same paragraph layout as `RichTextLayout`. Plan: D1 viewing ✅, D2 text boxes ✅, D3
-Nextcloud sync ✅, D4 drawing/erasing/lasso/pictures, D5 packages.
+Nextcloud sync ✅, D4 drawing/erasing/lasso/pictures ✅, D5 packages.
+
+Tools on the PC (`NoteController`, `DesktopTool`): text (default), the three pens with the
+Android palette, both erasers (`EraseGesture`), lasso; holding the pen still recognises shapes
+(`GeometricShapeRecognizer`). A click on a picture or link selects it (double-click opens a
+link with the system program); the selection is dragged, scaled at its corner handle, copied,
+cut, pasted (Ctrl+C/X/V, also between documents with their files) and deleted (Del). Pictures
+come from the file dialog, the clipboard (Ctrl+V) or drag & drop; placement is the shared
+`MediaFiles` (core/model), EXIF rotation is applied with Skia. Pen pressure from graphics
+tablets is used when the platform reports a stylus (AWT usually reports a mouse).
 
 Sync on the PC is the same `SyncController` as on Android (module `sync/client`; the apps
 provide a `SyncHost` with their open documents and a `SyncConfigStore`). The PC keeps the

@@ -13,7 +13,8 @@ import org.junit.Test
 class NoteControllerTest {
     private fun TestScope.controller() = NoteController(
         DocumentSession(DocumentState.empty(DocumentMeta(DocumentId("d"), "t", createdAtEpochMs = 0)), DEV, { }, backgroundScope, clock = { 0L }),
-    ) { _, _ -> 6f }
+        measureText = { _, _ -> 6f },
+    )
 
     private fun NoteController.type(text: String) = this.text.editing.value!!.controller.setContent(RichText.plain(text))
 

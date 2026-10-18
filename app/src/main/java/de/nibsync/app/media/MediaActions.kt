@@ -12,7 +12,7 @@ import de.nibsync.app.AppContainer
 import de.nibsync.app.R
 import de.nibsync.canvas.CanvasViewModel
 import de.nibsync.media.MediaImport
-import de.nibsync.media.PickedFile
+import de.nibsync.model.PickedFile
 import de.nibsync.model.Asset
 import de.nibsync.model.DocumentId
 import de.nibsync.model.FileLink

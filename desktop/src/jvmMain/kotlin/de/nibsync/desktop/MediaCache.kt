@@ -43,11 +43,34 @@ class MediaCache(private val scope: CoroutineScope, private val fileOf: (Asset) 
         requested.retainAll(loaded.keys)
     }
 
+    /** Decodes a picture turned the way its EXIF data says (camera photos). */
+    private fun decodeUpright(bytes: ByteArray): org.jetbrains.skia.Image {
+        val image = org.jetbrains.skia.Image.makeFromEncoded(bytes)
+        val origin = runCatching { org.jetbrains.skia.Codec.makeFromData(org.jetbrains.skia.Data.makeFromBytes(bytes)).encodedOrigin }
+            .getOrDefault(org.jetbrains.skia.EncodedOrigin.TOP_LEFT)
+        val degrees = when (origin) {
+            org.jetbrains.skia.EncodedOrigin.RIGHT_TOP -> 90f
+            org.jetbrains.skia.EncodedOrigin.BOTTOM_RIGHT -> 180f
+            org.jetbrains.skia.EncodedOrigin.LEFT_BOTTOM -> 270f
+            else -> return image
+        }
+        val turned = degrees != 180f
+        val w = if (turned) image.height else image.width
+        val h = if (turned) image.width else image.height
+        val surface = org.jetbrains.skia.Surface.makeRasterN32Premul(w, h)
+        surface.canvas.apply {
+            translate(w / 2f, h / 2f)
+            rotate(degrees)
+            drawImage(image, -image.width / 2f, -image.height / 2f)
+        }
+        return surface.makeImageSnapshot()
+    }
+
     private fun decode(asset: Asset): Loaded? {
         val file = fileOf(asset)?.takeIf { it.exists() } ?: return null
         return when (asset.mimeType) {
             Asset.SVG -> file.inputStream().use { Loaded.Vector(loadSvgPainter(it, Density(1f))) }
-            Asset.PNG, Asset.JPEG -> Loaded.Bitmap(org.jetbrains.skia.Image.makeFromEncoded(file.readBytes()).toComposeImageBitmap())
+            Asset.PNG, Asset.JPEG -> Loaded.Bitmap(decodeUpright(file.readBytes()).toComposeImageBitmap())
             else -> null
         }
     }

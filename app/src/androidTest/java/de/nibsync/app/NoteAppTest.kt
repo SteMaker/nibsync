@@ -867,7 +867,7 @@ class NoteAppTest {
     /** Stores [bytes] with the test document and inserts it like the file picker does. */
     private fun insertFile(bytes: ByteArray, type: String, name: String): de.nibsync.model.PageElement {
         val sha = runBlocking { app.container.repository.putAsset(documentId, bytes) }
-        val draft = checkNotNull(de.nibsync.media.MediaImport.draft(de.nibsync.media.PickedFile(bytes, type, name), sha, 210f, 105f, 50f))
+        val draft = checkNotNull(de.nibsync.media.MediaImport.draft(de.nibsync.model.PickedFile(bytes, type, name), sha, 210f, 105f, 50f))
         var added: de.nibsync.model.PageElement? = null
         scenario.onActivity { added = it.canvasViewModel!!.insert(listOf(draft)).single() }
         compose.waitForIdle()

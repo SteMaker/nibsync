@@ -1,6 +1,27 @@
 package de.nibsync.desktop
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material.icons.filled.AddPhotoAlternate
+import androidx.compose.material.icons.filled.BorderColor
+import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.material.icons.filled.ContentCut
+import androidx.compose.material.icons.filled.ContentPaste
+import androidx.compose.material.icons.filled.Draw
+import androidx.compose.material.icons.filled.HighlightAlt
+import androidx.compose.material.icons.filled.HistoryEdu
+import androidx.compose.material.icons.filled.TextFields
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.semantics
+import de.nibsync.document.erase.EraserMode
+import de.nibsync.model.BrushFamily
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
@@ -62,7 +83,37 @@ private val NotFocusable = Modifier.focusProperties { canFocus = false }
 object ToolbarTags {
     const val UNDO = "undo"
     const val REDO = "redo"
+    const val TEXT = "tool-text"
+    fun pen(family: BrushFamily) = "pen-${family.name}"
+    fun eraser(mode: EraserMode) = "eraser-${mode.name}"
+    const val LASSO = "tool-lasso"
+    const val INSERT = "insert"
+    fun color(index: Int) = "color-$index"
+    fun size(index: Int) = "size-$index"
+    fun eraserSize(index: Int) = "eraser-size-$index"
+    const val DELETE_SELECTION = "delete-selection"
+    const val COPY_SELECTION = "copy-selection"
+    const val CUT_SELECTION = "cut-selection"
+    const val PASTE = "paste"
 }
+
+/** Tools and their options; part of the tool bar while no text box is open. */
+class ToolbarTools(
+    val state: DesktopToolState,
+    val hasSelection: Boolean,
+    val canPaste: Boolean,
+    val onTool: (DesktopTool) -> Unit,
+    val onPen: (BrushFamily) -> Unit,
+    val onEraser: (EraserMode) -> Unit,
+    val onColor: (Int) -> Unit,
+    val onSize: (Float) -> Unit,
+    val onEraserSize: (Float) -> Unit,
+    val onInsert: () -> Unit,
+    val onDeleteSelection: () -> Unit,
+    val onCopySelection: () -> Unit,
+    val onCutSelection: () -> Unit,
+    val onPaste: () -> Unit,
+)
 
 /** Tool bar above the page: undo/redo, and text formatting while a box is open. */
 @Composable
@@ -74,6 +125,7 @@ fun NoteToolbar(
     onRedo: () -> Unit,
     editing: TextEditController?,
     onDeleteText: () -> Unit,
+    tools: ToolbarTools? = null,
     /** Items at the right end, e.g. the sync status. */
     end: @Composable () -> Unit = {},
 ) {
@@ -85,6 +137,12 @@ fun NoteToolbar(
         ) {
             Action(strings.undo, Icons.AutoMirrored.Filled.Undo, canUndo, ToolbarTags.UNDO, onUndo)
             Action(strings.redo, Icons.AutoMirrored.Filled.Redo, canRedo, ToolbarTags.REDO, onRedo)
+            // While a text box is open only its formatting is shown (the tool bar would get too
+            // wide otherwise); Esc or a click beside the box brings the tools back.
+            if (editing == null && tools != null) {
+                ToolButtons(strings, tools)
+                ToolOptions(strings, tools)
+            }
             if (editing != null) {
                 Divider()
                 Toggle(strings.bold, Icons.Filled.FormatBold, editing.isBold, TextTags.BOLD, editing::toggleBold)
@@ -101,6 +159,89 @@ fun NoteToolbar(
                 Action(strings.deleteTextBox, Icons.Filled.Delete, true, TextTags.DELETE, onDeleteText)
             }
             end()
+        }
+    }
+}
+
+@Composable
+private fun ToolButtons(strings: Strings, t: ToolbarTools) {
+    val s = t.state
+    Divider()
+    Toggle(strings.toolText, Icons.Filled.TextFields, s.tool == DesktopTool.TEXT, ToolbarTags.TEXT) { t.onTool(DesktopTool.TEXT) }
+    for (family in BrushFamily.entries) {
+        val (label, icon) = when (family) {
+            BrushFamily.BALLPOINT -> strings.penBallpoint to Icons.Filled.Draw
+            BrushFamily.FOUNTAIN_PEN -> strings.penFountain to Icons.Filled.HistoryEdu
+            BrushFamily.HIGHLIGHTER -> strings.penHighlighter to Icons.Filled.BorderColor
+        }
+        Toggle(label, icon, s.tool == DesktopTool.PEN && s.pen == family, ToolbarTags.pen(family)) { t.onPen(family) }
+    }
+    for (mode in EraserMode.entries) {
+        val label = if (mode == EraserMode.OBJECT) strings.eraserObject else strings.eraserPixel
+        Toggle(label, eraserIcon(mode), s.tool == DesktopTool.ERASER && s.eraserMode == mode, ToolbarTags.eraser(mode)) { t.onEraser(mode) }
+    }
+    Toggle(strings.lasso, Icons.Filled.HighlightAlt, s.tool == DesktopTool.LASSO, ToolbarTags.LASSO) { t.onTool(DesktopTool.LASSO) }
+    Action(strings.insert, Icons.Filled.AddPhotoAlternate, true, ToolbarTags.INSERT, t.onInsert)
+}
+
+@Composable
+private fun ToolOptions(strings: Strings, t: ToolbarTools) {
+    val s = t.state
+    Divider()
+    when (s.tool) {
+        DesktopTool.PEN -> {
+            DesktopPalette.colors(s.pen).forEachIndexed { i, argb ->
+                Swatch(argb, s.choice.colorArgb == argb, strings.color(i + 1), ToolbarTags.color(i)) { t.onColor(argb) }
+            }
+            Divider()
+            DesktopPalette.sizes(s.pen).forEachIndexed { i, mm ->
+                Dot((8 + i * 5).dp, s.choice.sizeMm == mm, strings.width(mm), ToolbarTags.size(i)) { t.onSize(mm) }
+            }
+        }
+        DesktopTool.ERASER -> if (s.eraserMode == EraserMode.PIXEL) {
+            DesktopPalette.eraserSizes.forEachIndexed { i, mm ->
+                Dot((8 + i * 5).dp, s.eraserSizeMm == mm, strings.width(mm), ToolbarTags.eraserSize(i)) { t.onEraserSize(mm) }
+            }
+        }
+        DesktopTool.LASSO -> {
+            Action(strings.deleteSelection, Icons.Filled.Delete, t.hasSelection, ToolbarTags.DELETE_SELECTION, t.onDeleteSelection)
+            Action(strings.copySelection, Icons.Filled.ContentCopy, t.hasSelection, ToolbarTags.COPY_SELECTION, t.onCopySelection)
+            Action(strings.cutSelection, Icons.Filled.ContentCut, t.hasSelection, ToolbarTags.CUT_SELECTION, t.onCutSelection)
+            Action(strings.paste, Icons.Filled.ContentPaste, t.canPaste, ToolbarTags.PASTE, t.onPaste)
+        }
+        DesktopTool.TEXT -> Unit
+    }
+}
+
+@Composable
+private fun Swatch(argb: Int, selected: Boolean, label: String, tag: String, onClick: () -> Unit) {
+    WithTooltip(label) {
+        Box(
+            NotFocusable
+                .size(30.dp)
+                .border(2.dp, if (selected) MaterialTheme.colorScheme.primary else Color.Transparent, CircleShape)
+                .padding(4.dp)
+                .background(Color(argb), CircleShape)
+                .clickable(onClick = onClick)
+                .semantics { contentDescription = label; this.selected = selected }
+                .testTag(tag),
+        )
+    }
+}
+
+@Composable
+private fun Dot(diameter: androidx.compose.ui.unit.Dp, selected: Boolean, label: String, tag: String, onClick: () -> Unit) {
+    WithTooltip(label) {
+        Box(
+            NotFocusable
+                .size(30.dp)
+                .border(2.dp, if (selected) MaterialTheme.colorScheme.primary else Color.Transparent, CircleShape)
+                .clickable(onClick = onClick)
+                .semantics { contentDescription = label; this.selected = selected }
+                .testTag(tag),
+            contentAlignment = Alignment.Center,
+        ) {
+            Box(Modifier.size(diameter).background(MaterialTheme.colorScheme.onSurface, CircleShape))
         }
     }
 }

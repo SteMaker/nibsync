@@ -1,6 +1,18 @@
 package de.nibsync.desktop
 
+import androidx.compose.ui.ExperimentalComposeUiApi
+import androidx.compose.foundation.draganddrop.dragAndDropTarget
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.padding
+import androidx.compose.ui.draganddrop.DragAndDropEvent
+import androidx.compose.ui.draganddrop.DragAndDropTarget
+import androidx.compose.ui.draganddrop.DragData
+import androidx.compose.ui.draganddrop.dragData
+import androidx.compose.ui.unit.dp
+import de.nibsync.model.MediaFiles
+import de.nibsync.model.PickedFile
+import de.nibsync.shapes.GeometricShapeRecognizer
+import kotlinx.coroutines.launch
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.Row
@@ -60,6 +72,8 @@ fun App(
                 sync?.start()
             }
             val tree by container.library.tree.collectAsState()
+            // One clipboard for the window, so elements can be copied between documents.
+            val clipboard = remember { DesktopClipboard() }
             var documentId by remember { mutableStateOf<DocumentId?>(null) }
             LaunchedEffect(ready, tree) {
                 if (!ready) return@LaunchedEffect
@@ -85,7 +99,7 @@ fun App(
                     if (id == null) {
                         if (ready) Text(strings.noDocument) else CircularProgressIndicator()
                     } else {
-                        DocumentPane(container, id, strings, keys, sync)
+                        DocumentPane(container, id, strings, keys, sync, clipboard)
                     }
                 }
             }
@@ -93,8 +107,9 @@ fun App(
     }
 }
 
+@OptIn(ExperimentalComposeUiApi::class)
 @Composable
-private fun DocumentPane(container: DesktopContainer, id: DocumentId, strings: Strings, keys: KeyRouter, sync: SyncController?) {
+private fun DocumentPane(container: DesktopContainer, id: DocumentId, strings: Strings, keys: KeyRouter, sync: SyncController?, clipboard: DesktopClipboard) {
     var session by remember(id) { mutableStateOf<DocumentSession?>(null) }
     LaunchedEffect(id) { session = container.openSession(id) }
     val s = session ?: return CircularProgressIndicator()
@@ -105,11 +120,46 @@ private fun DocumentPane(container: DesktopContainer, id: DocumentId, strings: S
     val painter = remember(id) { PagePainter(textLayout, media) }
     // Pictures that arrive with the sync get drawn once they are there.
     LaunchedEffect(id) { container.assetsArrivedFlow.collect { if (id in it) media.retryMissing() } }
-    val controller = remember(s) { NoteController(s, textLayout::heightMm) }
+    var message by remember(id) { mutableStateOf<String?>(null) }
+    val controller = remember(s) {
+        NoteController(s, textLayout::heightMm, GeometricShapeRecognizer(), clipboard).apply {
+            openFile = { link -> if (!DesktopMedia.open(container.repository, id, link)) message = strings.mediaNotSynced }
+            copyAssets = { from, to, assets -> DesktopMedia.copyAssets(container.repository, from, to, assets) }
+        }
+    }
     val editing by controller.text.editing.collectAsState()
+    val tools by controller.tools.collectAsState()
+    val selection by controller.selection.collectAsState()
+    val gesture by controller.gesture.collectAsState()
+    val clip by controller.clipboardContent.collectAsState()
     val canUndo by s.canUndo.collectAsState()
     val canRedo by s.canRedo.collectAsState()
     var viewport by remember(id) { mutableStateOf(initialViewport(doc.meta.format.widthMm, doc.meta.format.pageHeightMm)) }
+
+    /** Stores [file] with the document and puts it in the middle of the visible page. */
+    fun insertFile(file: PickedFile?) {
+        if (file == null) {
+            message = strings.mediaUnsupported
+            return
+        }
+        scope.launch {
+            val sha = container.repository.putAsset(id, file.bytes)
+            val visible = viewport.visibleDocumentRect
+            val cx = ((visible.left + visible.right) / 2).coerceIn(0f, viewport.pageWidthMm)
+            val cy = maxOf(0f, (visible.top + visible.bottom) / 2)
+            val draft = MediaFiles.draft(file, sha, DesktopMedia.naturalSize(file), viewport.pageWidthMm, cx, cy)
+            if (draft == null) message = strings.mediaUnreadable else controller.insert(listOf(draft))
+        }
+    }
+
+    fun pasteHere() {
+        if (DesktopMedia.clipboardHasMedia()) {
+            insertFile(DesktopMedia.fromClipboard())
+        } else {
+            val r = viewport.visibleDocumentRect
+            controller.paste((r.left + r.right) / 2, (r.top + r.bottom) / 2)
+        }
+    }
 
     // Leaving the document or closing the window stores the open text box.
     DisposableEffect(controller) {
@@ -121,7 +171,7 @@ private fun DocumentPane(container: DesktopContainer, id: DocumentId, strings: S
         }
     }
     DisposableEffect(controller) {
-        keys.handler = { event -> handleKey(event, controller) }
+        keys.handler = { event -> handleKey(event, controller, ::pasteHere) }
         onDispose { keys.handler = { false } }
     }
 
@@ -134,44 +184,114 @@ private fun DocumentPane(container: DesktopContainer, id: DocumentId, strings: S
             onRedo = { controller.redo() },
             editing = editing?.controller,
             onDeleteText = { controller.text.delete() },
+            tools = ToolbarTools(
+                state = tools,
+                hasSelection = selection.isNotEmpty(),
+                canPaste = clip != null,
+                onTool = controller::selectTool,
+                onPen = controller::selectPen,
+                onEraser = controller::selectEraser,
+                onColor = controller::selectColor,
+                onSize = controller::selectSize,
+                onEraserSize = controller::selectEraserSize,
+                onInsert = { DesktopMedia.chooseFile(null, strings.insert)?.let { insertFile(DesktopMedia.read(it)) } },
+                onDeleteSelection = { controller.deleteSelection() },
+                onCopySelection = { controller.copySelection() },
+                onCutSelection = { controller.cutSelection() },
+                onPaste = ::pasteHere,
+            ),
             end = { if (sync != null) SyncStatusIcon(sync, strings) },
         )
-        Box(Modifier.weight(1f).fillMaxWidth().clipToBounds()) {
+        Box(
+            Modifier
+                .weight(1f)
+                .fillMaxWidth()
+                .clipToBounds()
+                .dragAndDropTarget(
+                    shouldStartDragAndDrop = { true },
+                    target = remember(controller) {
+                        object : DragAndDropTarget {
+                            override fun onDrop(event: DragAndDropEvent): Boolean {
+                                val files = (event.dragData() as? DragData.FilesList)?.readFiles().orEmpty()
+                                val file = files.firstNotNullOfOrNull { uri -> runCatching { DesktopMedia.read(File(java.net.URI(uri))) }.getOrNull() }
+                                if (files.isEmpty()) return false
+                                insertFile(file)
+                                return true
+                            }
+                        }
+                    },
+                ),
+        ) {
             PageView(
                 doc,
                 painter,
                 viewport,
                 onViewportChange = { viewport = it },
                 hiddenTextBox = editing?.boxId,
-                onClick = { x, y -> controller.clickAt(x, y, viewport.pageWidthMm) },
+                controller = controller,
+                overlay = PagePainter.Overlay(
+                    gesture = gesture,
+                    selection = selection,
+                    selectionFrame = if (selection.isEmpty()) null else controller.selectionFrame(),
+                    resizable = controller.resizable() != null,
+                ),
             )
             editing?.let { e ->
                 if (viewport.hasSize) TextBoxOverlay(e, viewport, strings, controller)
+            }
+            message?.let { text ->
+                LaunchedEffect(text) {
+                    kotlinx.coroutines.delay(4000)
+                    message = null
+                }
+                Surface(
+                    Modifier.align(Alignment.BottomCenter).padding(16.dp),
+                    color = MaterialTheme.colorScheme.inverseSurface,
+                    shape = MaterialTheme.shapes.small,
+                ) {
+                    Text(text, Modifier.padding(12.dp), color = MaterialTheme.colorScheme.inverseOnSurface)
+                }
             }
         }
     }
 }
 
 /** Shortcuts that work anywhere in the window; text editing keys stay with the editor. */
-private fun handleKey(event: KeyEvent, controller: NoteController): Boolean {
+private fun handleKey(event: KeyEvent, controller: NoteController, paste: () -> Unit): Boolean {
     if (event.type != KeyEventType.KeyDown) return false
     val editing = controller.text.editing.value
+    if (editing != null) {
+        return when {
+            event.key == Key.Escape -> {
+                controller.endEditing()
+                true
+            }
+            event.isCtrlPressed && event.key == Key.B -> {
+                editing.controller.toggleBold()
+                true
+            }
+            event.isCtrlPressed && event.key == Key.I -> {
+                editing.controller.toggleItalic()
+                true
+            }
+            // Ctrl+Z/Y, Ctrl+C/V/X: the editor's own history and clipboard.
+            else -> false
+        }
+    }
     return when {
-        event.key == Key.Escape && editing != null -> {
-            controller.endEditing()
+        event.key == Key.Escape -> {
+            controller.escape()
             true
         }
-        event.isCtrlPressed && event.key == Key.B && editing != null -> {
-            editing.controller.toggleBold()
-            true
-        }
-        event.isCtrlPressed && event.key == Key.I && editing != null -> {
-            editing.controller.toggleItalic()
-            true
-        }
-        // While typing, Ctrl+Z/Y undo within the text box (the editor's own history).
-        editing == null && event.isCtrlPressed && (event.key == Key.Z || event.key == Key.Y) -> {
+        event.key == Key.Delete || event.key == Key.Backspace -> controller.deleteSelection()
+        event.isCtrlPressed && (event.key == Key.Z || event.key == Key.Y) -> {
             if (event.key == Key.Z && !event.isShiftPressed) controller.undo() else controller.redo()
+            true
+        }
+        event.isCtrlPressed && event.key == Key.C -> controller.copySelection()
+        event.isCtrlPressed && event.key == Key.X -> controller.cutSelection()
+        event.isCtrlPressed && event.key == Key.V -> {
+            paste()
             true
         }
         else -> false

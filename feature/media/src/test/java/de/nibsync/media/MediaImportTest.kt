@@ -4,6 +4,7 @@ import com.google.common.truth.Truth.assertThat
 import de.nibsync.model.Asset
 import de.nibsync.model.FileLinkDraft
 import de.nibsync.model.ImageDraft
+import de.nibsync.model.PickedFile
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
