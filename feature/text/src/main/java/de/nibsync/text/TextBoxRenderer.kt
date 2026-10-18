@@ -30,7 +30,8 @@ class TextBoxRenderer(context: Context) {
             measurer.measure(prefix, TextMetrics.baseStyle).size.width / density.density
         }
         val width = (widthMm * LAYOUT_PX_PER_MM).roundToInt().coerceAtLeast(1)
-        return measurer.measure(annotated, TextMetrics.baseStyle, constraints = Constraints(maxWidth = width))
+        // A fixed width, like the editor (and as the PC needs it for indented paragraphs).
+        return measurer.measure(annotated, TextMetrics.baseStyle, constraints = Constraints.fixedWidth(width))
     }
 
     /** Height of [text] in a box of [widthMm], in mm: what is stored as the box height. */

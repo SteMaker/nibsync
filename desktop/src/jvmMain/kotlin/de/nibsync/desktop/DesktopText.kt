@@ -25,7 +25,9 @@ class DesktopTextLayout {
     fun layout(text: RichText, widthMm: Float): TextLayoutResult {
         val annotated = RichTextLayout.annotated(text) { prefix -> measurer.measure(prefix, TextMetrics.baseStyle).size.width / density.density }
         val width = (widthMm * LAYOUT_PX_PER_MM).roundToInt().coerceAtLeast(1)
-        return measurer.measure(annotated, TextMetrics.baseStyle, constraints = Constraints(maxWidth = width))
+        // A fixed width, like the editor: with only a maximum width, Compose on the desktop
+        // wraps indented (list) paragraphs far too early.
+        return measurer.measure(annotated, TextMetrics.baseStyle, constraints = Constraints.fixedWidth(width))
     }
 
     /** Height of [text] in a box of [widthMm], in mm: what is stored as the box height. */

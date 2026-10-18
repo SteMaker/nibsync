@@ -42,6 +42,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
@@ -51,6 +52,12 @@ import de.nibsync.model.TextFont
 import de.nibsync.text.TextEditController
 import de.nibsync.text.TextFonts
 import de.nibsync.text.TextTags
+
+/**
+ * Tool bar controls never take the keyboard focus: clicking one must leave the cursor and the
+ * selection in the open text box, so "bold" applies to the selected text.
+ */
+private val NotFocusable = Modifier.focusProperties { canFocus = false }
 
 object ToolbarTags {
     const val UNDO = "undo"
@@ -99,7 +106,7 @@ fun NoteToolbar(
 private fun FontMenu(strings: Strings, controller: TextEditController) {
     var open by remember { mutableStateOf(false) }
     Box {
-        OutlinedButton(onClick = { open = true }, modifier = Modifier.testTag(TextTags.FONT)) {
+        OutlinedButton(onClick = { open = true }, modifier = NotFocusable.testTag(TextTags.FONT)) {
             Text(strings.font(controller.font), fontFamily = TextFonts.family(controller.font))
         }
         // Not focusable: the editor keeps the focus, the cursor and the pending style.
@@ -108,7 +115,7 @@ private fun FontMenu(strings: Strings, controller: TextEditController) {
                 DropdownMenuItem(
                     text = { Text(strings.font(font), fontFamily = TextFonts.family(font)) },
                     onClick = { open = false; controller.setFont(font) },
-                    modifier = Modifier.testTag(TextTags.font(font)),
+                    modifier = NotFocusable.testTag(TextTags.font(font)),
                 )
             }
         }
@@ -119,7 +126,7 @@ private fun FontMenu(strings: Strings, controller: TextEditController) {
 private fun SizeMenu(strings: Strings, controller: TextEditController) {
     var open by remember { mutableStateOf(false) }
     Box {
-        OutlinedButton(onClick = { open = true }, modifier = Modifier.testTag(TextTags.SIZE)) {
+        OutlinedButton(onClick = { open = true }, modifier = NotFocusable.testTag(TextTags.SIZE)) {
             Text(strings.sizePt(formatPt(controller.sizePt)))
         }
         DropdownMenu(expanded = open, onDismissRequest = { open = false }, properties = PopupProperties(focusable = false)) {
@@ -127,7 +134,7 @@ private fun SizeMenu(strings: Strings, controller: TextEditController) {
                 DropdownMenuItem(
                     text = { Text(strings.sizePt(formatPt(pt))) },
                     onClick = { open = false; controller.setSize(pt) },
-                    modifier = Modifier.testTag(TextTags.size(pt)),
+                    modifier = NotFocusable.testTag(TextTags.size(pt)),
                 )
             }
         }
@@ -139,7 +146,7 @@ private fun formatPt(pt: Float): String = if (pt % 1f == 0f) pt.toInt().toString
 @Composable
 private fun Toggle(label: String, icon: ImageVector, checked: Boolean, tag: String, onClick: () -> Unit) {
     WithTooltip(label) {
-        FilledIconToggleButton(checked = checked, onCheckedChange = { onClick() }, modifier = Modifier.testTag(tag)) {
+        FilledIconToggleButton(checked = checked, onCheckedChange = { onClick() }, modifier = NotFocusable.testTag(tag)) {
             Icon(icon, contentDescription = label)
         }
     }
@@ -148,7 +155,7 @@ private fun Toggle(label: String, icon: ImageVector, checked: Boolean, tag: Stri
 @Composable
 private fun Action(label: String, icon: ImageVector, enabled: Boolean, tag: String, onClick: () -> Unit) {
     WithTooltip(label) {
-        IconButton(onClick = onClick, enabled = enabled, modifier = Modifier.testTag(tag)) {
+        IconButton(onClick = onClick, enabled = enabled, modifier = NotFocusable.testTag(tag)) {
             Icon(icon, contentDescription = label)
         }
     }
