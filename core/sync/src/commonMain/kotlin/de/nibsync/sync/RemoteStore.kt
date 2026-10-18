@@ -10,8 +10,12 @@ data class RemoteListing(val etag: String, val entries: List<RemoteEntry>) {
 
 /**
  * Minimal remote file store the sync works with. Paths are relative to the sync folder and
- * use "/" ("" is the sync folder itself). Implemented for WebDAV (Nextcloud) and by a fake in
- * tests. Failures (network, server) are thrown as exceptions.
+ * use "/" ("" is the sync folder itself). Implemented for WebDAV (Nextcloud), OneDrive and
+ * Google Drive, and by a fake in tests. Failures (network, server) are thrown as exceptions.
+ *
+ * Changes made by other devices are guaranteed to show up after listing the sync folder ("")
+ * again; stores that keep a local index refresh it then (the sync engine does this first in
+ * every run).
  */
 interface RemoteStore {
     /** Lists a folder, or returns null if it does not exist. */
