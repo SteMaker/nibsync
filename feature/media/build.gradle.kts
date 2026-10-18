@@ -36,3 +36,8 @@ dependencies {
     testImplementation(libs.truth)
     testImplementation(libs.robolectric)
 }
+
+// No instrumented tests in this module (app-level tests live in :app): skip building them.
+androidComponents {
+    beforeVariants { it.androidTest.enable = false }
+}

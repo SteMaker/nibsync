@@ -59,3 +59,8 @@ dependencies {
     androidTestImplementation(libs.androidx.test.ext.junit.ktx)
     androidTestImplementation(libs.truth)
 }
+
+// No instrumented tests in this module (app-level tests live in :app): skip building them.
+androidComponents {
+    beforeVariants { it.androidTest.enable = false }
+}

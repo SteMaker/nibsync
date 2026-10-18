@@ -32,3 +32,8 @@ dependencies {
     implementation(libs.androidx.compose.ui.tooling.preview)
     debugImplementation(libs.androidx.compose.ui.tooling)
 }
+
+// No instrumented tests in this module (app-level tests live in :app): skip building them.
+androidComponents {
+    beforeVariants { it.androidTest.enable = false }
+}

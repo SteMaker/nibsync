@@ -10,6 +10,7 @@ import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import com.mohamedrejeb.richeditor.ui.BasicRichTextEditor
+import de.nibsync.model.TextFont
 
 /**
  * The editable text of a box, drawn at the page zoom ([pxPerMm]) so it looks like the box on
@@ -34,4 +35,20 @@ fun TextBoxEditor(controller: TextEditController, widthMm: Float, pxPerMm: Float
             cursorBrush = SolidColor(TextMetrics.TEXT_COLOR),
         )
     }
+}
+
+/** Test tags used by UI tests. */
+object TextTags {
+    const val EDITOR = "text-editor"
+    const val BOLD = "text-bold"
+    const val ITALIC = "text-italic"
+    const val FONT = "text-font"
+    fun font(font: TextFont) = "text-font-${font.name}"
+    const val SIZE = "text-size"
+    fun size(pt: Float) = "text-size-${pt.toInt()}"
+    const val BULLETS = "text-bullets"
+    const val NUMBERS = "text-numbers"
+    const val INDENT = "text-indent"
+    const val OUTDENT = "text-outdent"
+    const val DELETE = "text-delete"
 }

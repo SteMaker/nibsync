@@ -40,22 +40,6 @@ import androidx.compose.ui.window.PopupProperties
 import de.nibsync.model.RichText
 import de.nibsync.model.TextFont
 
-/** Test tags used by UI tests. */
-object TextTags {
-    const val EDITOR = "text-editor"
-    const val BOLD = "text-bold"
-    const val ITALIC = "text-italic"
-    const val FONT = "text-font"
-    fun font(font: TextFont) = "text-font-${font.name}"
-    const val SIZE = "text-size"
-    fun size(pt: Float) = "text-size-${pt.toInt()}"
-    const val BULLETS = "text-bullets"
-    const val NUMBERS = "text-numbers"
-    const val INDENT = "text-indent"
-    const val OUTDENT = "text-outdent"
-    const val DELETE = "text-delete"
-}
-
 /**
  * Tool bar items shown instead of the drawing tools while a text box is being edited. Editing
  * ends by tapping the page outside the box.

@@ -17,9 +17,8 @@ kotlin {
 
     sourceSets {
         jvmMain {
-            // The fonts embedded in the Android app (feature/text), loaded from the classpath.
-            resources.srcDir("../feature/text/src/main/res/font")
             dependencies {
+                implementation(project(":shared:text"))
                 implementation(project(":core:library"))
                 implementation(project(":core:document"))
                 implementation(project(":core:storage"))
@@ -42,12 +41,18 @@ kotlin {
 compose.desktop {
     application {
         mainClass = "de.nibsync.desktop.MainKt"
+        // Notes need little memory; without a cap the JVM may take a quarter of the RAM.
+        jvmArgs += listOf("-Xmx1g")
         nativeDistributions {
             targetFormats(TargetFormat.Deb, TargetFormat.Rpm, TargetFormat.Msi)
             packageName = "nibsync"
             packageVersion = "1.0.0"
         }
     }
+}
+
+tasks.withType<Test>().configureEach {
+    maxHeapSize = "1g"
 }
 
 // Lets `./gradlew test` at the root include this module.

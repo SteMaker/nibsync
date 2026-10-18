@@ -6,7 +6,9 @@
 app/              Android app: wiring (AppContainer), MainActivity with the library drawer
 feature/library/  Library drawer (tree of books/chapters/documents), LibraryViewModel
 feature/canvas/   Endless page (NoteCanvasView), tool bar (Compose), CanvasViewModel
-feature/text/     Text boxes: embedded fonts, page renderer, rich text editor + format bar
+shared/text/      KMP (Android + PC): text model <-> editor conversion, editor controller,
+                  paragraph layout, embedded fonts
+feature/text/     Android text boxes: page renderer, format bar
 feature/media/    Pictures and file links: type detection, sizing, rendering (AndroidSVG)
 desktop/          PC app (Linux, Windows, later macOS): Compose Multiplatform for Desktop
 ui/background/    Paper pattern picker and preview, used by canvas and library drawer

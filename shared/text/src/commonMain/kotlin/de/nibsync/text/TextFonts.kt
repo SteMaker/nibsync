@@ -13,38 +13,36 @@ import de.nibsync.model.TextFont
 
 /**
  * The embedded fonts (Noto Sans/Serif/Sans Mono, Caveat; latin subsets from Fontsource, SIL
- * OFL, see `feature/text/licenses`). Characters outside the subsets fall back to system fonts.
- * Mono and handwriting have no italic cut; Compose slants them synthetically.
+ * OFL, see `shared/text/licenses`), the same files on every platform. Characters outside the
+ * subsets fall back to system fonts. Mono and handwriting have no italic cut; Compose slants
+ * them synthetically.
  */
 object TextFonts {
-    private val sans = FontFamily(
-        Font(R.font.noto_sans_400_normal, FontWeight.Normal),
-        Font(R.font.noto_sans_400_italic, FontWeight.Normal, FontStyle.Italic),
-        Font(R.font.noto_sans_700_normal, FontWeight.Bold),
-        Font(R.font.noto_sans_700_italic, FontWeight.Bold, FontStyle.Italic),
-    )
-    private val serif = FontFamily(
-        Font(R.font.noto_serif_400_normal, FontWeight.Normal),
-        Font(R.font.noto_serif_400_italic, FontWeight.Normal, FontStyle.Italic),
-        Font(R.font.noto_serif_700_normal, FontWeight.Bold),
-        Font(R.font.noto_serif_700_italic, FontWeight.Bold, FontStyle.Italic),
-    )
-    private val mono = FontFamily(
-        Font(R.font.noto_sans_mono_400_normal, FontWeight.Normal),
-        Font(R.font.noto_sans_mono_700_normal, FontWeight.Bold),
-    )
-    private val handwriting = FontFamily(
-        Font(R.font.caveat_400_normal, FontWeight.Normal),
-        Font(R.font.caveat_700_normal, FontWeight.Bold),
-    )
+    private val families = HashMap<TextFont, FontFamily>()
 
-    fun family(font: TextFont): FontFamily = when (font) {
-        TextFont.SANS -> sans
-        TextFont.SERIF -> serif
-        TextFont.MONO -> mono
-        TextFont.HANDWRITING -> handwriting
+    fun family(font: TextFont): FontFamily = families.getOrPut(font) {
+        val prefix = when (font) {
+            TextFont.SANS -> "noto_sans"
+            TextFont.SERIF -> "noto_serif"
+            TextFont.MONO -> "noto_sans_mono"
+            TextFont.HANDWRITING -> "caveat"
+        }
+        val italic = font == TextFont.SANS || font == TextFont.SERIF
+        FontFamily(
+            buildList {
+                add(embeddedFont("${prefix}_400_normal", FontWeight.Normal, FontStyle.Normal))
+                add(embeddedFont("${prefix}_700_normal", FontWeight.Bold, FontStyle.Normal))
+                if (italic) {
+                    add(embeddedFont("${prefix}_400_italic", FontWeight.Normal, FontStyle.Italic))
+                    add(embeddedFont("${prefix}_700_italic", FontWeight.Bold, FontStyle.Italic))
+                }
+            },
+        )
     }
 }
+
+/** One embedded font file by its base name (e.g. "noto_sans_400_normal"). */
+internal expect fun embeddedFont(name: String, weight: FontWeight, style: FontStyle): Font
 
 /**
  * Units of text layout. Font sizes are points (1 sp = 1 pt); a [Density] maps points to the

@@ -1,5 +1,5 @@
 // Text boxes: embedded fonts, rendering on the page, the rich text editor and its tool bar.
-// The editor library (richeditor) stays inside this module.
+// The editor library (richeditor) stays inside this module and shared/text.
 plugins {
     alias(libs.plugins.android.library)
     alias(libs.plugins.kotlin.compose)
@@ -33,9 +33,8 @@ android {
 }
 
 dependencies {
-    api(project(":core:model"))
+    api(project(":shared:text"))
     implementation(libs.androidx.core.ktx)
-    implementation(libs.richeditor.compose)
 
     implementation(platform(libs.androidx.compose.bom))
     implementation(libs.androidx.compose.ui)
@@ -54,4 +53,9 @@ dependencies {
     androidTestImplementation(libs.androidx.test.runner)
     androidTestImplementation(libs.androidx.test.ext.junit.ktx)
     androidTestImplementation(libs.truth)
+}
+
+// No instrumented tests in this module (app-level tests live in :app): skip building them.
+androidComponents {
+    beforeVariants { it.androidTest.enable = false }
 }

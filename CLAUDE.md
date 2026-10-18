@@ -25,10 +25,13 @@ feature roadmap and where each feature lives.
 ## Module rules
 
 - `core/*` (model, document, storage, shapes, library, sync) are Kotlin Multiplatform (JVM target only for now). **No Android imports** there:
-  they must later back a Windows client.
+  they also back the PC app (`desktop/`). `shared/*` modules are KMP with Android and JVM
+  targets for UI code both apps use.
+- Memory: the dev PC froze once from RAM exhaustion; keep the caps in `gradle.properties` and
+  the desktop `-Xmx1g`, and do not leave `:desktop:run` running during builds.
 - `androidx.ink` types stay inside `ink/android` and `feature/canvas`; they never appear in
   public APIs of other modules. Likewise the rich text editor library stays inside
-  `feature/text` (convert via `RichTextConversion`).
+  `shared/text` (KMP, Android + PC) and `feature/text`; convert via `RichTextConversion`.
 - Strokes are immutable and stored as raw input points in millimetres; edits are
   remove + add with a fresh id. Do not add mutating ops that break order-independent merging
   (`DocumentState` must give the same result for any op order; see its tests).

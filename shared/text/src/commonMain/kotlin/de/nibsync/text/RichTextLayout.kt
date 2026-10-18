@@ -16,7 +16,7 @@ import de.nibsync.model.RichText
  * Builds the [AnnotatedString] that shows a [RichText] on the page, laid out like the editor
  * does it: list prefixes in the indent gutter, [TextMetrics.LIST_INDENT_PT] per level.
  */
-internal object RichTextLayout {
+object RichTextLayout {
     private val BULLETS = listOf("•", "◦", "▪")
 
     /** [prefixWidthPt] measures a list prefix in the base style, in points. */

@@ -11,10 +11,7 @@ import de.nibsync.model.TextFont
 import de.nibsync.model.TextMark
 import de.nibsync.model.TextParagraph
 import org.junit.Test
-import org.junit.runner.RunWith
-import org.robolectric.RobolectricTestRunner
 
-@RunWith(RobolectricTestRunner::class)
 class RichTextConversionTest {
     private val sample = RichText(
         listOf(
