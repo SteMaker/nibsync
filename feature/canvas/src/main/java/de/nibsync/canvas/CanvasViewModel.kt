@@ -323,6 +323,16 @@ class CanvasViewModel(
     }
 
     /**
+     * A long press at ([x], [y]) mm selects the text box, picture or link there (temporary
+     * lasso mode), so it can be moved, copied or deleted. Elsewhere it does nothing.
+     */
+    fun longPressAt(x: Float, y: Float) {
+        val hit = tappableAt(x, y) ?: return
+        finishText()
+        selectTemporarily(setOf(hit.id))
+    }
+
+    /**
      * The text tool touched the page: a frame ([widthMm] set) dragged from ([x], [y]) mm starts
      * a new text box; a tap ([widthMm] null) is handled like [tapAt].
      */

@@ -941,4 +941,21 @@ class NoteAppTest {
         // The file is stored with the document.
         assertThat(runBlocking { app.container.repository.hasAsset(documentId, opened.single().asset.sha256) }).isTrue()
     }
+
+    @Test
+    fun longPressOnAPdfLinkSelectsIt() {
+        val link = insertFile("%PDF-1.4\n%%EOF".encodeToByteArray(), de.nibsync.model.Asset.PDF, "Skript.pdf")
+        val opened = mutableListOf<de.nibsync.model.FileLink>()
+        scenario.onActivity { it.canvasViewModel!!.openFile = { l -> opened += l } }
+        tap(2600f, 1400f)
+        waitUntil("back to the pen") { viewModel().tools.value.tool == de.nibsync.canvas.Tool.PEN }
+        val t = checkNotNull(canvas()).viewport.documentToView
+        val x = t.mapX(link.bounds.left + 5f)
+        val y = t.mapY(link.bounds.top + 5f)
+        drawLive(listOf(x to y, x to y), holdMs = 800)
+        waitUntil("selected") { canvas()?.selection == setOf(link.id) }
+        assertThat(opened).isEmpty()
+        assertThat(strokes()).isEmpty()
+        assertThat(viewModel().tools.value.tool).isEqualTo(de.nibsync.canvas.Tool.LASSO)
+    }
 }

@@ -215,6 +215,7 @@ fun NoteScreen(
                     NoteCanvasView(context).also {
                         it.onTextFrame = { x, y, width -> viewModel.requestText(x, y, width, it.viewport.pageWidthMm) }
                         it.onPageTapped = viewModel::tapAt
+                        it.onPageLongPressed = viewModel::longPressAt
                         it.onSelectionResized = viewModel::resizeSelection
                         it.mediaRenderer.assetFile = assetFile
                         it.onViewportChanged = { v -> viewport = v }

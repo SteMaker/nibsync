@@ -96,6 +96,9 @@ class NoteCanvasView(context: Context) : FrameLayout(context) {
      */
     var onPageTapped: (Float, Float) -> Unit = { _, _ -> }
 
+    /** A long press at (x, y) mm, e.g. to select a file link or text box for moving. */
+    var onPageLongPressed: (Float, Float) -> Unit = { _, _ -> }
+
     /** The selected picture or link was scaled by the given factor; returns what was stored. */
     var onSelectionResized: (Float) -> CommittedEdit? = { null }
 
@@ -272,6 +275,13 @@ class NoteCanvasView(context: Context) : FrameLayout(context) {
             val toDoc = viewport.viewToDocument
             onPageTapped(toDoc.mapX(e.x), toDoc.mapY(e.y))
             return true
+        }
+
+        override fun onLongPress(e: MotionEvent) {
+            if (!navigating) return
+            val toDoc = viewport.viewToDocument
+            performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
+            onPageLongPressed(toDoc.mapX(e.x), toDoc.mapY(e.y))
         }
 
         override fun onScroll(e1: MotionEvent?, e2: MotionEvent, distanceX: Float, distanceY: Float): Boolean {
@@ -646,6 +656,16 @@ class NoteCanvasView(context: Context) : FrameLayout(context) {
         val id = drawingStrokeId ?: return
         val detector = holdDetector ?: return
         if (!detector.consumeHold(SystemClock.uptimeMillis())) return
+        // Pen held still on a text box, picture or link: a long press, not a shape.
+        val pressed = pressedElement()
+        if (pressed != null) {
+            inProgressStrokesView.cancelStroke(id)
+            brushesInProgress.remove(id)
+            clearDrawingPointer()
+            performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
+            onPageLongPressed(pressed.first, pressed.second)
+            return
+        }
         val spec = brushesInProgress[id] ?: return
         // Leave out the samples taken while resting; they only add jitter at the end.
         val points = capturedPoints.subList(0, detector.anchorSampleCount.coerceAtMost(capturedPoints.size)).toList()
@@ -951,8 +971,16 @@ class NoteCanvasView(context: Context) : FrameLayout(context) {
 
     /** Document point of a pen tap on a text box, picture or link that just ended, or null. */
     private fun tappedElement(event: MotionEvent): Pair<Float, Float>? {
-        val first = capturedPoints.firstOrNull() ?: return null
         if (event.eventTime - strokeDownTime > TAP_MAX_MS) return null
+        return pressedElement()
+    }
+
+    /**
+     * Where the pen touches a text box, picture or link, if it has stayed there (within the
+     * tap tolerance) since it came down; else null.
+     */
+    private fun pressedElement(): Pair<Float, Float>? {
+        val first = capturedPoints.firstOrNull() ?: return null
         val tolerance = TEXT_TAP_TOLERANCE_DP * resources.displayMetrics.density / viewport.scale
         if (capturedPoints.any { abs(it.x - first.x) > tolerance || abs(it.y - first.y) > tolerance }) return null
         val onElement = textBoxes.any { it.bounds.contains(first.x, first.y) } || files.any { it.bounds.contains(first.x, first.y) }

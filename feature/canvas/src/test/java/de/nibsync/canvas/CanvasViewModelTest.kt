@@ -488,4 +488,33 @@ class CanvasViewModelTest {
         assertThat(copied).containsExactly(Triple(DocumentId("first"), DocumentId("second"), setOf(picture)))
         assertThat(second.document.value.files.single().asset).isEqualTo(picture)
     }
+
+    @Test
+    fun longPressSelectsLinksAndTextBoxesForMoving() = runTest {
+        val vm = viewModel()
+        val opened = mutableListOf<de.nibsync.model.FileLink>()
+        vm.openFile = { opened += it }
+        val link = vm.insert(listOf(de.nibsync.model.FileLinkDraft(10f, 10f, 60f, 12f, pdf, "Skript.pdf"))).single()
+        vm.tapAt(150f, 200f)
+        vm.longPressAt(20f, 15f)
+        assertThat(opened).isEmpty()
+        assertThat(vm.tools.value.tool).isEqualTo(Tool.LASSO)
+        assertThat(vm.selection.value).containsExactly(link.id)
+        vm.moveSelection(0f, 50f)
+        assertThat(vm.document.value.files.single().y).isEqualTo(60f)
+        vm.tapAt(150f, 200f)
+        assertThat(vm.tools.value.tool).isEqualTo(Tool.PEN)
+
+        vm.requestText(10f, 100f, 50f, pageWidthMm = 210f)
+        vm.type("Notiz")
+        vm.finishText()
+        val box = vm.document.value.textBoxes.single()
+        vm.longPressAt(box.x + 1f, box.y + 1f)
+        assertThat(vm.textEditing.value).isNull()
+        assertThat(vm.selection.value).containsExactly(box.id)
+        // On empty paper a long press does nothing.
+        vm.tapAt(150f, 200f)
+        vm.longPressAt(150f, 200f)
+        assertThat(vm.tools.value.tool).isEqualTo(Tool.PEN)
+    }
 }
