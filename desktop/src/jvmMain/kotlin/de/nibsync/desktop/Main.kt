@@ -16,6 +16,7 @@ fun main(args: Array<String>) {
     val container = DesktopContainer(dataDir)
     val settings = Settings(container.fs, dataDir / "settings.properties")
     val strings = Strings()
+    val keys = KeyRouter()
     application {
         Window(
             onCloseRequest = {
@@ -24,8 +25,9 @@ fun main(args: Array<String>) {
             },
             title = strings.appName,
             state = rememberWindowState(width = 1400.dp, height = 900.dp),
+            onPreviewKeyEvent = keys::onKey,
         ) {
-            App(container, settings, strings)
+            App(container, settings, strings, keys)
         }
     }
 }

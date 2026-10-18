@@ -24,7 +24,8 @@ import de.nibsync.model.RichText
 import de.nibsync.model.TextBox
 import de.nibsync.model.TextBoxDraft
 import de.nibsync.model.toDraft
-import de.nibsync.text.TextEditController
+import de.nibsync.text.TextBoxEditing
+import de.nibsync.text.TextEditing
 import de.nibsync.model.BrushFamily
 import de.nibsync.model.ShapeRecognizer
 import de.nibsync.model.Stroke
@@ -37,20 +38,6 @@ import kotlinx.coroutines.flow.update
 
 /** Elements just stored by an edit (shape, erasing, moving) and the ids of the elements they replaced. */
 class CommittedEdit(val added: List<PageElement>, val removed: Set<StrokeId>)
-
-/**
- * The text box being edited: where it is, its content in [controller], and [boxId] once it
- * has been stored (null for a new box that is still empty). [key] identifies the editing
- * session, i.e. one controller.
- */
-data class TextEditing(
-    val key: Long,
-    val boxId: StrokeId?,
-    val x: Float,
-    val y: Float,
-    val widthMm: Float,
-    val controller: TextEditController,
-)
 
 /**
  * Connects the canvas UI to a [DocumentSession]. The session is owned by the caller (it
@@ -229,20 +216,17 @@ class CanvasViewModel(
 
     // ---- text boxes ----------------------------------------------------------------------
 
-    private val _textEditing = MutableStateFlow<TextEditing?>(null)
+    private val text = TextBoxEditing(session)
 
     /** The text box being edited, or null. While set, the tool bar shows text formatting. */
-    val textEditing: StateFlow<TextEditing?> = _textEditing.asStateFlow()
+    val textEditing: StateFlow<TextEditing?> = text.editing
 
-    /**
-     * Height in mm of a text in a box of the given width. The screen sets the real text
-     * layout; the default is a rough estimate for tests without one.
-     */
-    var measureText: (RichText, Float) -> Float = { text, _ -> text.paragraphs.size * RichText.DEFAULT_SIZE_PT * RichText.MM_PER_PT * 1.4f }
-
-    /** What was stored last for the edited box, to skip saves without changes. */
-    private var savedText: TextBoxDraft? = null
-    private var textEditingKey = 0L
+    /** Height in mm of a text in a box of the given width; the screen sets the real layout. */
+    var measureText: (RichText, Float) -> Float
+        get() = text.measureText
+        set(value) {
+            text.measureText = value
+        }
 
     // Text mode, and the lasso when it was entered by tapping a picture, are temporary: a tap
     // on an empty spot of the page goes back to the tool used before.
@@ -310,8 +294,7 @@ class CanvasViewModel(
             is TextBox -> {
                 enterTextMode()
                 clearSelection()
-                savedText = hit.toDraft() as TextBoxDraft
-                startText(hit.id, hit.x, hit.y, hit.widthMm, hit.text)
+                text.open(hit)
             }
             is FileLink -> openFile(hit)
             is ImageElement -> selectTemporarily(setOf(hit.id))
@@ -346,56 +329,27 @@ class CanvasViewModel(
         val maxWidth = maxOf(TextBox.MIN_WIDTH_MM, pageWidthMm - TEXT_MARGIN_MM)
         val width = widthMm.coerceIn(TextBox.MIN_WIDTH_MM, maxWidth)
         val left = x.coerceIn(0f, maxOf(0f, pageWidthMm - width))
-        savedText = null
-        startText(null, left, y, width, RichText.EMPTY)
-    }
-
-    private fun startText(boxId: StrokeId?, x: Float, y: Float, widthMm: Float, text: RichText) {
-        _textEditing.value = TextEditing(++textEditingKey, boxId, x, y, widthMm, TextEditController.create(text))
+        text.startNew(left, y, width)
     }
 
     /** Stores the edited box if it changed (one undo step). Called while typing and when done. */
-    fun saveText() {
-        val e = _textEditing.value ?: return
-        val text = e.controller.text
-        if (text.isBlank && e.boxId == null) return
-        // On the storage grid, so an unchanged box compares equal to what was loaded.
-        fun q(mm: Float) = Quantization.quantizePosition(mm)
-        val draft = TextBoxDraft(q(e.x), q(e.y), q(e.widthMm), q(measureText(text, e.widthMm)), text)
-        if (draft == savedText && e.boxId != null && e.boxId in session.state.value) return
-        val box = session.replaceElements(listOfNotNull(e.boxId), listOf(draft)).single()
-        savedText = draft
-        _textEditing.value = e.copy(boxId = box.id)
-    }
+    fun saveText() = text.save()
 
     /** Ends editing; a box left empty is removed. */
     fun finishText() {
-        val e = _textEditing.value ?: return
-        if (e.controller.text.isBlank) {
-            e.boxId?.let { session.removeStrokes(listOf(it)) }
-        } else {
-            saveText()
-        }
-        _textEditing.value = null
-        savedText = null
+        text.finish()
     }
 
     /** Deletes the edited box and leaves text mode. */
     fun deleteText() {
-        val e = _textEditing.value ?: return
-        e.boxId?.let { session.removeStrokes(listOf(it)) }
-        _textEditing.value = null
-        savedText = null
-        leaveTemporaryMode()
+        if (text.delete()) leaveTemporaryMode()
     }
 
     /** Moves the edited box while its handle is dragged; [saveText] stores the result. */
-    fun moveText(dx: Float, dy: Float) =
-        _textEditing.update { it?.copy(x = maxOf(0f, it.x + dx), y = maxOf(0f, it.y + dy)) }
+    fun moveText(dx: Float, dy: Float) = text.move(dx, dy)
 
     /** Changes the width of the edited box while its edge is dragged. */
-    fun resizeText(dw: Float) =
-        _textEditing.update { it?.copy(widthMm = maxOf(TextBox.MIN_WIDTH_MM, it.widthMm + dw)) }
+    fun resizeText(dw: Float) = text.resize(dw)
 
     private companion object {
         /** How many of the latest strokes a multi-stroke shape (arrow head + shaft) may join. */

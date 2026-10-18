@@ -658,8 +658,8 @@ class NoteAppTest {
 
     // ---- text boxes -----------------------------------------------------------------------
 
-    private fun editing(): de.nibsync.canvas.TextEditing? {
-        var e: de.nibsync.canvas.TextEditing? = null
+    private fun editing(): de.nibsync.text.TextEditing? {
+        var e: de.nibsync.text.TextEditing? = null
         scenario.onActivity { e = it.canvasViewModel?.textEditing?.value }
         return e
     }

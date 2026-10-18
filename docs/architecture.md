@@ -207,8 +207,14 @@ so the PC reads and writes exactly the Android file format. Data folder: `DataDi
 it. Ink is Android-only, so `StrokePainter` redraws strokes from their points (ballpoint and
 highlighter constant width, fountain pen with BrushMapper's pressure curve and end taper).
 Text boxes use the same embedded fonts (loaded from `feature/text/src/main/res/font`) and the
-same paragraph layout as `RichTextLayout`. Plan: D1 viewing ✅, D2 text boxes (click to
-create), D3 Nextcloud sync, D4 drawing/erasing/lasso/pictures, D5 packages.
+same paragraph layout as `RichTextLayout`. Plan: D1 viewing ✅, D2 text boxes ✅, D3
+Nextcloud sync, D4 drawing/erasing/lasso/pictures, D5 packages.
+
+Text on the PC (`NoteController`): a click on free paper starts a text box at the click
+(120 mm wide or up to the margin), a click on a box opens it, Esc closes it; Ctrl+B/I format,
+Ctrl+Z/Y undo/redo (inside an open box the editor's own history). Editing itself is the shared
+`TextBoxEditing` (shared/text), which the Android `CanvasViewModel` uses too, so both store
+boxes the same way.
 
 ## Roadmap
 

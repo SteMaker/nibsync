@@ -19,6 +19,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.unit.IntOffset
 import de.nibsync.model.geometry.Viewport
 import de.nibsync.text.TextBoxEditor
+import de.nibsync.text.TextEditing
 import de.nibsync.text.TextFormatActions
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.drop

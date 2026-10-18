@@ -10,6 +10,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.pointer.PointerButton
 import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.isCtrlPressed
 import androidx.compose.ui.input.pointer.onPointerEvent
@@ -37,6 +38,8 @@ fun PageView(
     onViewportChange: (Viewport) -> Unit,
     modifier: Modifier = Modifier,
     hiddenTextBox: Any? = null,
+    /** A primary-button click at the given document position in mm. */
+    onClick: (Float, Float) -> Unit = { _, _ -> },
 ) {
     var initialised by remember(doc.meta.id) { mutableStateOf(false) }
     LaunchedEffect(doc.contentBottomMm) {
@@ -55,6 +58,12 @@ fun PageView(
                     initialised = true
                 }
                 onViewportChange(v)
+            }
+            .onPointerEvent(PointerEventType.Press) { event ->
+                if (event.button != null && event.button != PointerButton.Primary) return@onPointerEvent
+                val position = event.changes.firstOrNull()?.position ?: return@onPointerEvent
+                val toDoc = viewport.viewToDocument
+                onClick(toDoc.mapX(position.x), toDoc.mapY(position.y))
             }
             .onPointerEvent(PointerEventType.Scroll) { event ->
                 val change = event.changes.firstOrNull() ?: return@onPointerEvent

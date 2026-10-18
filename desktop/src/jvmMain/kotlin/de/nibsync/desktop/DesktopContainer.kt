@@ -55,7 +55,11 @@ class DesktopContainer(
         }
     }
 
+    /** Run before the sessions close, e.g. to store an open text box. */
+    val beforeClose = mutableListOf<() -> Unit>()
+
     suspend fun closeAll() = sessionLock.withLock {
+        beforeClose.toList().forEach { it() }
         sessions.values.forEach { it.flush(); it.close() }
         sessions.clear()
     }

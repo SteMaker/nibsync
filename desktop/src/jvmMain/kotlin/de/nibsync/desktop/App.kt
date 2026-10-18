@@ -1,6 +1,8 @@
 package de.nibsync.desktop
 
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.CircularProgressIndicator
@@ -10,6 +12,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.VerticalDivider
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -19,6 +22,15 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEvent
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.isCtrlPressed
+import androidx.compose.ui.input.key.isShiftPressed
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
 import androidx.compose.ui.graphics.Color
 import de.nibsync.document.DocumentSession
 import de.nibsync.library.NodeId
@@ -27,9 +39,11 @@ import java.io.File
 
 /** The main window content: library on the left, the open document on the right. */
 @Composable
-fun App(container: DesktopContainer, settings: Settings, strings: Strings = Strings()) {
+fun App(container: DesktopContainer, settings: Settings, strings: Strings = Strings(), keys: KeyRouter = KeyRouter()) {
     MaterialTheme(colorScheme = lightColorScheme(primary = Color(0xff1a3fa8))) {
-        Surface(Modifier.fillMaxSize()) {
+        // Shortcuts also from here, so they work in tests without a window (the window passes
+        // keys on first; a key is handled only once).
+        Surface(Modifier.fillMaxSize().onPreviewKeyEvent(keys::onKey)) {
             var ready by remember { mutableStateOf(false) }
             LaunchedEffect(Unit) {
                 container.library.load(strings.defaultBook, strings.defaultDocument)
@@ -60,7 +74,7 @@ fun App(container: DesktopContainer, settings: Settings, strings: Strings = Stri
                     if (id == null) {
                         if (ready) Text(strings.noDocument) else CircularProgressIndicator()
                     } else {
-                        DocumentPane(container, id)
+                        DocumentPane(container, id, strings, keys)
                     }
                 }
             }
@@ -69,15 +83,84 @@ fun App(container: DesktopContainer, settings: Settings, strings: Strings = Stri
 }
 
 @Composable
-private fun DocumentPane(container: DesktopContainer, id: DocumentId) {
+private fun DocumentPane(container: DesktopContainer, id: DocumentId, strings: Strings, keys: KeyRouter) {
     var session by remember(id) { mutableStateOf<DocumentSession?>(null) }
     LaunchedEffect(id) { session = container.openSession(id) }
     val s = session ?: return CircularProgressIndicator()
     val doc by s.state.collectAsState()
     val scope = rememberCoroutineScope()
+    val textLayout = remember(id) { DesktopTextLayout() }
     val painter = remember(id) {
-        PagePainter(DesktopTextLayout(), MediaCache(scope) { File(container.repository.assetPath(id, it.sha256).toString()) })
+        PagePainter(textLayout, MediaCache(scope) { File(container.repository.assetPath(id, it.sha256).toString()) })
     }
+    val controller = remember(s) { NoteController(s, textLayout::heightMm) }
+    val editing by controller.text.editing.collectAsState()
+    val canUndo by s.canUndo.collectAsState()
+    val canRedo by s.canRedo.collectAsState()
     var viewport by remember(id) { mutableStateOf(initialViewport(doc.meta.format.widthMm, doc.meta.format.pageHeightMm)) }
-    PageView(doc, painter, viewport, onViewportChange = { viewport = it })
+
+    // Leaving the document or closing the window stores the open text box.
+    DisposableEffect(controller) {
+        val store = { controller.endEditing() }
+        container.beforeClose += store
+        onDispose {
+            container.beforeClose -= store
+            controller.endEditing()
+        }
+    }
+    DisposableEffect(controller) {
+        keys.handler = { event -> handleKey(event, controller) }
+        onDispose { keys.handler = { false } }
+    }
+
+    Column(Modifier.fillMaxSize()) {
+        NoteToolbar(
+            strings = strings,
+            canUndo = canUndo || editing != null,
+            canRedo = canRedo,
+            onUndo = { controller.undo() },
+            onRedo = { controller.redo() },
+            editing = editing?.controller,
+            onDeleteText = { controller.text.delete() },
+        )
+        Box(Modifier.weight(1f).fillMaxWidth().clipToBounds()) {
+            PageView(
+                doc,
+                painter,
+                viewport,
+                onViewportChange = { viewport = it },
+                hiddenTextBox = editing?.boxId,
+                onClick = { x, y -> controller.clickAt(x, y, viewport.pageWidthMm) },
+            )
+            editing?.let { e ->
+                if (viewport.hasSize) TextBoxOverlay(e, viewport, strings, controller)
+            }
+        }
+    }
+}
+
+/** Shortcuts that work anywhere in the window; text editing keys stay with the editor. */
+private fun handleKey(event: KeyEvent, controller: NoteController): Boolean {
+    if (event.type != KeyEventType.KeyDown) return false
+    val editing = controller.text.editing.value
+    return when {
+        event.key == Key.Escape && editing != null -> {
+            controller.endEditing()
+            true
+        }
+        event.isCtrlPressed && event.key == Key.B && editing != null -> {
+            editing.controller.toggleBold()
+            true
+        }
+        event.isCtrlPressed && event.key == Key.I && editing != null -> {
+            editing.controller.toggleItalic()
+            true
+        }
+        // While typing, Ctrl+Z/Y undo within the text box (the editor's own history).
+        editing == null && event.isCtrlPressed && (event.key == Key.Z || event.key == Key.Y) -> {
+            if (event.key == Key.Z && !event.isShiftPressed) controller.undo() else controller.redo()
+            true
+        }
+        else -> false
+    }
 }
