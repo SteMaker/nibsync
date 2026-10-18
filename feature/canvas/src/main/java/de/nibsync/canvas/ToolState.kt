@@ -53,7 +53,6 @@ data class ToolState(
     val pens: Map<BrushFamily, PenSettings> = BrushFamily.entries.associateWith {
         PenSettings(PenPalette.colors(it).first(), PenPalette.sizes(it)[1])
     },
-    val drawWithFinger: Boolean = false,
     /** The pen's current job; [activePen] is kept while erasing or selecting, for switching back. */
     val tool: Tool = Tool.PEN,
     val eraserMode: EraserMode = EraserMode.OBJECT,

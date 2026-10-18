@@ -175,7 +175,6 @@ class CanvasViewModel(
 
     fun selectSize(mm: Float) = _tools.update { it.withSize(mm) }
 
-    fun setDrawWithFinger(enabled: Boolean) = _tools.update { it.copy(drawWithFinger = enabled) }
 
     /** Changes the paper pattern of the document (synced, not undoable). */
     fun setBackground(background: BackgroundSpec) = session.setBackground(background)

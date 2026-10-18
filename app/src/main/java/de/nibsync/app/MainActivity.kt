@@ -44,7 +44,7 @@ import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import de.nibsync.app.media.MediaActions
-import de.nibsync.app.sync.SyncPanel
+import de.nibsync.app.sync.SyncStatusLine
 import de.nibsync.app.sync.SyncStatusIcon
 import de.nibsync.canvas.CanvasViewModel
 import de.nibsync.canvas.NoteCanvasView
@@ -87,6 +87,11 @@ class MainActivity : ComponentActivity() {
 
     private val media by lazy { MediaActions(this, container) }
 
+    /** Starts the OneDrive / Google Drive login; no service is set up yet in this build. */
+    private val cloudConnect = object {
+        fun starter(service: de.nibsync.sync.client.SyncService): (() -> Unit)? = null
+    }
+
     /** A picture or PDF shared from another app, inserted once the document is open. */
     private var pendingShare: Uri? by mutableStateOf(null)
 
@@ -128,6 +133,25 @@ class MainActivity : ComponentActivity() {
                 val tree by container.library.tree.collectAsStateWithLifecycle()
                 var libraryReady by remember { mutableStateOf(false) }
                 var showPageBreaks by remember { mutableStateOf(settings.showPageBreaks) }
+                var drawWithFinger by remember { mutableStateOf(settings.drawWithFinger) }
+                var showSettings by remember { mutableStateOf(false) }
+                if (showSettings) {
+                    SettingsScreen(
+                        sync = sync,
+                        connect = cloudConnect::starter,
+                        showPageBreaks = showPageBreaks,
+                        onShowPageBreaks = {
+                            showPageBreaks = it
+                            settings.showPageBreaks = it
+                        },
+                        drawWithFinger = drawWithFinger,
+                        onDrawWithFinger = {
+                            drawWithFinger = it
+                            settings.drawWithFinger = it
+                        },
+                        onClose = { showSettings = false },
+                    )
+                }
 
                 LaunchedEffect(Unit) {
                     container.ensureLibraryLoaded(bookTitle, documentTitle)
@@ -166,7 +190,8 @@ class MainActivity : ComponentActivity() {
                                 currentDocument = documentId?.let { NodeId(it.value) },
                                 onOpenDocument = { open(it.asDocumentId) },
                                 modifier = Modifier.safeDrawingPadding(),
-                                footer = { SyncPanel(sync) },
+                                footer = { SyncStatusLine(sync) },
+                                onSettings = { showSettings = true },
                             )
                         }
                     },
@@ -192,10 +217,7 @@ class MainActivity : ComponentActivity() {
                                 }
                             }
                         } else {
-                            DocumentPane(docId, documentTitle, openLibrary, showPageBreaks) {
-                                showPageBreaks = it
-                                settings.showPageBreaks = it
-                            }
+                            DocumentPane(docId, documentTitle, openLibrary, showPageBreaks, drawWithFinger)
                         }
                     }
                 }
@@ -209,7 +231,7 @@ class MainActivity : ComponentActivity() {
         fallbackTitle: String,
         onMenu: () -> Unit,
         showPageBreaks: Boolean,
-        onTogglePageBreaks: (Boolean) -> Unit,
+        drawWithFinger: Boolean,
     ) {
         var openSession by remember(docId) { mutableStateOf<DocumentSession?>(null) }
         LaunchedEffect(docId) {
@@ -240,7 +262,7 @@ class MainActivity : ComponentActivity() {
                 Modifier.safeDrawingPadding(),
                 onMenu = onMenu,
                 showPageBreaks = showPageBreaks,
-                onTogglePageBreaks = onTogglePageBreaks,
+                drawWithFinger = drawWithFinger,
                 toolbarEnd = { SyncStatusIcon(sync) },
                 assetFile = { media.assetFile(docId, it) },
                 onInsertFile = { pickFile.launch(media.mimeTypes) },

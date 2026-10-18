@@ -11,6 +11,9 @@ import androidx.compose.ui.test.junit4.createEmptyComposeRule
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.test.click
+import androidx.compose.ui.test.onRoot
+import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.performClick
@@ -244,13 +247,28 @@ class NoteAppTest {
 
     @Test
     fun fingerDrawsWhenEnabled() {
-        compose.onNodeWithTag(NoteScreenTags.MORE).performClick()
-        compose.onNodeWithTag(NoteScreenTags.FINGER_TOGGLE).performClick()
-        compose.waitForIdle() // the menu is gone
-        waitUntil("finger drawing on") { canvas()?.drawWithFinger == true }
-        drag(line(100f, 300f, 500f, 300f), toolType = MotionEvent.TOOL_TYPE_FINGER)
-        waitForStrokes(1)
-        assertThat(strokes().single().tool).isEqualTo(InputTool.TOUCH)
+        val settings = AppSettings(app)
+        val before = settings.drawWithFinger
+        try {
+            // Settings: menu, gear in the library, the switch, back.
+            compose.onNodeWithTag(NoteScreenTags.MENU).performClick()
+            compose.onNodeWithTag(de.nibsync.library.ui.LibraryTags.SETTINGS).performClick()
+            compose.onNodeWithTag(SettingsTags.DRAW_WITH_FINGER).performClick()
+            compose.onNodeWithTag(SettingsTags.CLOSE).performClick()
+            compose.waitForIdle()
+            waitUntil("finger drawing on") { canvas()?.drawWithFinger == true }
+            assertThat(settings.drawWithFinger).isTrue()
+            // Close the library with a tap beside it, then draw.
+            compose.onRoot().performTouchInput { click(androidx.compose.ui.geometry.Offset(width - 40f, height / 2f)) }
+            waitUntil("library closed") {
+                compose.onAllNodesWithTag(de.nibsync.library.ui.LibraryTags.DRAWER).fetchSemanticsNodes().all { it.boundsInRoot.right <= 0f }
+            }
+            drag(line(100f, 300f, 500f, 300f), toolType = MotionEvent.TOOL_TYPE_FINGER)
+            waitForStrokes(1)
+            assertThat(strokes().single().tool).isEqualTo(InputTool.TOUCH)
+        } finally {
+            settings.drawWithFinger = before
+        }
     }
 
     @Test
@@ -297,7 +315,6 @@ class NoteAppTest {
 
     @Test
     fun paperPatternIsChosenDrawnAndKept() {
-        compose.onNodeWithTag(NoteScreenTags.MORE).performClick()
         compose.onNodeWithTag(NoteScreenTags.BACKGROUND).performClick()
         compose.onNodeWithTag(BackgroundTags.kind(BackgroundKind.LINED)).performClick()
         compose.onNodeWithTag(BackgroundTags.spacing(10f)).performClick()

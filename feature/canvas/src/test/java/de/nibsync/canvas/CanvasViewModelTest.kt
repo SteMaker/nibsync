@@ -59,12 +59,10 @@ class CanvasViewModelTest {
         vm.selectPen(BrushFamily.BALLPOINT)
         vm.selectColor(PenPalette.inkColors[1])
         vm.selectSize(0.35f)
-        vm.setDrawWithFinger(true)
         val t = vm.tools.value
         assertThat(t.activeBrush.family).isEqualTo(BrushFamily.BALLPOINT)
         assertThat(t.activeBrush.colorArgb).isEqualTo(PenPalette.inkColors[1])
         assertThat(t.activeBrush.sizeMm).isEqualTo(0.35f)
-        assertThat(t.drawWithFinger).isTrue()
     }
 
     @Test

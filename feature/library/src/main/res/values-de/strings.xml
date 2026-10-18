@@ -22,4 +22,5 @@
     <string name="portrait">Hochformat</string>
     <string name="landscape">Querformat</string>
     <string name="width_info">%1$d mm breit, endlos lang</string>
+    <string name="settings">Einstellungen</string>
 </resources>

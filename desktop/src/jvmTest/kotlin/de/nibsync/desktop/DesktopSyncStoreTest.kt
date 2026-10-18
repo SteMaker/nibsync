@@ -1,6 +1,7 @@
 package de.nibsync.desktop
 
 import com.google.common.truth.Truth.assertThat
+import de.nibsync.sync.client.NextcloudConfig
 import de.nibsync.sync.client.SyncConfig
 import de.nibsync.sync.webdav.NextcloudAccount
 import org.junit.Rule
@@ -18,7 +19,7 @@ class DesktopSyncStoreTest {
         val file = tmp.root.toPath().resolve("data/sync-account.properties")
         val store = DesktopSyncStore(file)
         assertThat(store.load()).isNull()
-        val config = SyncConfig(NextcloudAccount("https://cloud.example.org", "stefan", "app-pass-123"), "NibSync")
+        val config = NextcloudConfig(NextcloudAccount("https://cloud.example.org", "stefan", "app-pass-123"), "NibSync")
         store.save(config)
         assertThat(store.load()).isEqualTo(config)
         assertThat(PosixFilePermissions.toString(Files.getPosixFilePermissions(file))).isEqualTo("rw-------")

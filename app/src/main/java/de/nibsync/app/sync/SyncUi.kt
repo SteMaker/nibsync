@@ -1,9 +1,7 @@
 package de.nibsync.app.sync
 
-import de.nibsync.sync.client.SyncConfig
-import de.nibsync.sync.client.SyncController
-import de.nibsync.sync.client.SyncStatus
 import android.content.Intent
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -23,6 +21,7 @@ import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
@@ -43,6 +42,11 @@ import androidx.compose.ui.unit.dp
 import androidx.core.net.toUri
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import de.nibsync.app.R
+import de.nibsync.sync.client.NextcloudConfig
+import de.nibsync.sync.client.SyncConfig
+import de.nibsync.sync.client.SyncController
+import de.nibsync.sync.client.SyncService
+import de.nibsync.sync.client.SyncStatus
 import de.nibsync.sync.webdav.NextcloudLoginFlow
 import kotlinx.coroutines.delay
 import java.text.DateFormat
@@ -50,7 +54,8 @@ import java.util.Date
 
 object SyncTags {
     const val STATUS_ICON = "sync-status"
-    const val CONNECT = "sync-connect"
+    const val STATUS_LINE = "sync-status-line"
+    fun service(service: SyncService) = "sync-service-${service.name}"
     const val SYNC_NOW = "sync-now"
     const val SIGN_OUT = "sync-sign-out"
     const val SERVER_FIELD = "sync-server"
@@ -62,7 +67,6 @@ object SyncTags {
 @Composable
 fun SyncStatusIcon(controller: SyncController) {
     val status by controller.status.collectAsStateWithLifecycle()
-    if (status == SyncStatus.NotConfigured) return
     val (icon, label) = when (val s = status) {
         SyncStatus.Syncing -> Icons.Filled.CloudSync to stringResource(R.string.sync_running)
         is SyncStatus.Synced -> Icons.Filled.CloudDone to stringResource(R.string.sync_done, time(s.atEpochMs))
@@ -74,54 +78,86 @@ fun SyncStatusIcon(controller: SyncController) {
     }
 }
 
-/** Nextcloud section at the bottom of the library drawer. */
 @Composable
-fun SyncPanel(controller: SyncController) {
+fun serviceName(service: SyncService): String = stringResource(
+    when (service) {
+        SyncService.NEXTCLOUD -> R.string.sync_service_nextcloud
+        SyncService.ONEDRIVE -> R.string.sync_service_onedrive
+        SyncService.GOOGLE_DRIVE -> R.string.sync_service_google
+    },
+)
+
+@Composable
+private fun statusText(status: SyncStatus): String = when (status) {
+    SyncStatus.Syncing -> stringResource(R.string.sync_running)
+    is SyncStatus.Synced -> stringResource(R.string.sync_done, time(status.atEpochMs))
+    is SyncStatus.Failed -> if (status.loginInvalid) stringResource(R.string.sync_login_invalid) else stringResource(R.string.sync_failed, status.message)
+    SyncStatus.NotConfigured -> stringResource(R.string.sync_not_configured)
+}
+
+/** Bottom of the library: which service, which account, how the sync went. No buttons. */
+@Composable
+fun SyncStatusLine(controller: SyncController) {
     val status by controller.status.collectAsStateWithLifecycle()
     val config by controller.config.collectAsStateWithLifecycle()
-    var connecting by remember { mutableStateOf(false) }
-
     HorizontalDivider()
-    Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Icon(Icons.Filled.Cloud, contentDescription = null)
-            Spacer(Modifier.width(8.dp))
-            Text(stringResource(R.string.nextcloud), style = MaterialTheme.typography.titleSmall)
-        }
-        val c = config
-        if (c == null) {
-            Text(stringResource(R.string.sync_not_configured), style = MaterialTheme.typography.bodyMedium)
-            FilledTonalButton(onClick = { connecting = true }, modifier = Modifier.testTag(SyncTags.CONNECT)) {
-                Text(stringResource(R.string.sync_connect))
+    Row(Modifier.fillMaxWidth().padding(16.dp).testTag(SyncTags.STATUS_LINE), verticalAlignment = Alignment.CenterVertically) {
+        Icon(if (status is SyncStatus.Failed) Icons.Filled.CloudOff else Icons.Filled.Cloud, contentDescription = null)
+        Spacer(Modifier.width(12.dp))
+        Column {
+            val c = config
+            if (c != null) {
+                Text(serviceName(c.service), style = MaterialTheme.typography.titleSmall)
+                Text(c.description, style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
-        } else {
             Text(
-                "${c.account.loginName} @ ${c.account.serverUrl.removePrefix("https://").removePrefix("http://")} / ${c.folder}",
-                style = MaterialTheme.typography.bodyMedium, maxLines = 1, overflow = TextOverflow.Ellipsis,
-            )
-            Text(
-                when (val s = status) {
-                    SyncStatus.Syncing -> stringResource(R.string.sync_running)
-                    is SyncStatus.Synced -> stringResource(R.string.sync_done, time(s.atEpochMs))
-                    is SyncStatus.Failed -> if (s.loginInvalid) stringResource(R.string.sync_login_invalid) else stringResource(R.string.sync_failed, s.message)
-                    SyncStatus.NotConfigured -> ""
-                },
+                statusText(status),
                 style = MaterialTheme.typography.bodySmall,
                 color = if (status is SyncStatus.Failed) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = 2,
             )
+        }
+    }
+}
+
+/**
+ * Sync part of the settings: the connected service with "sync now" and "disconnect", or the
+ * services to connect to. [connect] starts the login for OneDrive and Google Drive; it is
+ * null for a service that is not set up in this build (no client id).
+ */
+@Composable
+fun SyncSettings(controller: SyncController, connect: (SyncService) -> (() -> Unit)?) {
+    val status by controller.status.collectAsStateWithLifecycle()
+    val config by controller.config.collectAsStateWithLifecycle()
+    var connectingNextcloud by remember { mutableStateOf(false) }
+    val c = config
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        if (c != null) {
+            Text(serviceName(c.service), style = MaterialTheme.typography.titleMedium)
+            Text(c.description, style = MaterialTheme.typography.bodyMedium)
+            Text(statusText(status), style = MaterialTheme.typography.bodySmall, color = if (status is SyncStatus.Failed) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant)
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                FilledTonalButton(onClick = controller::syncNow, modifier = Modifier.testTag(SyncTags.SYNC_NOW)) {
-                    Text(stringResource(R.string.sync_now))
-                }
-                TextButton(onClick = { controller.configure(null) }, modifier = Modifier.testTag(SyncTags.SIGN_OUT)) {
-                    Text(stringResource(R.string.sync_sign_out))
-                }
+                FilledTonalButton(onClick = controller::syncNow, modifier = Modifier.testTag(SyncTags.SYNC_NOW)) { Text(stringResource(R.string.sync_now)) }
+                TextButton(onClick = { controller.configure(null) }, modifier = Modifier.testTag(SyncTags.SIGN_OUT)) { Text(stringResource(R.string.sync_sign_out)) }
+            }
+        } else {
+            Text(stringResource(R.string.sync_not_configured), style = MaterialTheme.typography.bodyMedium)
+            Text(stringResource(R.string.sync_choose_service), style = MaterialTheme.typography.bodySmall)
+            for (service in SyncService.entries) {
+                val start: (() -> Unit)? = if (service == SyncService.NEXTCLOUD) ({ connectingNextcloud = true }) else connect(service)
+                ListItem(
+                    headlineContent = { Text(serviceName(service)) },
+                    supportingContent = if (start == null) ({ Text(stringResource(R.string.sync_service_unavailable)) }) else null,
+                    leadingContent = { Icon(Icons.Filled.Cloud, contentDescription = null) },
+                    modifier = Modifier
+                        .testTag(SyncTags.service(service))
+                        .then(if (start != null) Modifier.clickable(onClick = start) else Modifier),
+                )
             }
         }
     }
-    if (connecting) ConnectDialog(onDismiss = { connecting = false }) { config ->
-        connecting = false
+    if (connectingNextcloud) NextcloudConnectDialog(onDismiss = { connectingNextcloud = false }) { config ->
+        connectingNextcloud = false
         controller.configure(config)
     }
 }
@@ -131,10 +167,10 @@ fun SyncPanel(controller: SyncController) {
  * (Login Flow v2) and waits for the app password.
  */
 @Composable
-private fun ConnectDialog(onDismiss: () -> Unit, onConnected: (SyncConfig) -> Unit) {
+private fun NextcloudConnectDialog(onDismiss: () -> Unit, onConnected: (SyncConfig) -> Unit) {
     val context = LocalContext.current
     var server by remember { mutableStateOf("") }
-    var folder by remember { mutableStateOf(SyncAccountStore.DEFAULT_FOLDER) }
+    var folder by remember { mutableStateOf(SyncConfig.DEFAULT_FOLDER) }
     var waiting by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     val flow = remember { NextcloudLoginFlow() }
@@ -148,7 +184,7 @@ private fun ConnectDialog(onDismiss: () -> Unit, onConnected: (SyncConfig) -> Un
                 val deadline = System.currentTimeMillis() + 10 * 60_000
                 while (System.currentTimeMillis() < deadline) {
                     flow.poll(started)?.let {
-                        onConnected(SyncConfig(it, folder.trim('/', ' ').ifEmpty { SyncAccountStore.DEFAULT_FOLDER }))
+                        onConnected(NextcloudConfig(it, folder.trim('/', ' ').ifEmpty { SyncConfig.DEFAULT_FOLDER }))
                         return@LaunchedEffect
                     }
                     delay(2_000)
@@ -163,7 +199,7 @@ private fun ConnectDialog(onDismiss: () -> Unit, onConnected: (SyncConfig) -> Un
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text(stringResource(R.string.sync_connect)) },
+        title = { Text(stringResource(R.string.sync_connect_nextcloud)) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 OutlinedTextField(

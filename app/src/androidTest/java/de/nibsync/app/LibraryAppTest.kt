@@ -219,8 +219,11 @@ class LibraryAppTest {
         createDocumentThroughTheDrawer()
         val view = { activity { it.canvasView } as NoteCanvasView }
         val before = view().showPageBreaks
-        compose.onNodeWithTag(NoteScreenTags.MORE).performClick()
-        compose.onNodeWithTag(NoteScreenTags.PAGE_BREAKS).performClick()
+        // Settings: gear in the library, then the switch.
+        openDrawer()
+        compose.onNodeWithTag(LibraryTags.SETTINGS).performClick()
+        compose.onNodeWithTag(SettingsTags.PAGE_BREAKS).performClick()
+        compose.onNodeWithTag(SettingsTags.CLOSE).performClick()
         waitUntil("toggled") { view().showPageBreaks != before }
         assertThat(settings.showPageBreaks).isEqualTo(!before)
     }
@@ -255,5 +258,25 @@ class LibraryAppTest {
         val book = tree().books.first { it.title == bookTitle }
         waitUntil("default chapter name") { tree().childrenOf(book.id).isNotEmpty() }
         assertThat(tree().childrenOf(book.id).single().title).isAnyOf("Neues Kapitel", "New chapter")
+    }
+
+    @Test
+    fun libraryShowsOnlyTheSyncStatusTheSettingsHoldTheActions() {
+        openDrawer()
+        compose.onNodeWithTag(de.nibsync.app.sync.SyncTags.STATUS_LINE).assertExists()
+        compose.onNodeWithTag(de.nibsync.app.sync.SyncTags.SYNC_NOW).assertDoesNotExist()
+        compose.onNodeWithTag(LibraryTags.SETTINGS).performClick()
+        if (app.sync.config.value == null) {
+            for (service in de.nibsync.sync.client.SyncService.entries) {
+                compose.onNodeWithTag(de.nibsync.app.sync.SyncTags.service(service)).assertExists()
+            }
+        } else {
+            compose.onNodeWithTag(de.nibsync.app.sync.SyncTags.SYNC_NOW).assertExists()
+            compose.onNodeWithTag(de.nibsync.app.sync.SyncTags.SIGN_OUT).assertExists()
+        }
+        compose.onNodeWithTag(SettingsTags.PAGE_BREAKS).assertExists()
+        compose.onNodeWithTag(SettingsTags.DRAW_WITH_FINGER).assertExists()
+        compose.onNodeWithTag(SettingsTags.CLOSE).performClick()
+        compose.onNodeWithTag(SettingsTags.SCREEN).assertDoesNotExist()
     }
 }

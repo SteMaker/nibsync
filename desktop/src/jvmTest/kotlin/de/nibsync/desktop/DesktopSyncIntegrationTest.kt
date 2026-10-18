@@ -6,6 +6,7 @@ import de.nibsync.model.ImageDraft
 import de.nibsync.model.PageFormat
 import de.nibsync.model.RichText
 import de.nibsync.model.TextBoxDraft
+import de.nibsync.sync.client.NextcloudConfig
 import de.nibsync.sync.client.SyncConfig
 import de.nibsync.sync.client.SyncConfigStore
 import de.nibsync.sync.client.SyncController
@@ -48,7 +49,7 @@ class DesktopSyncIntegrationTest {
 
     private fun pc(name: String): Pair<DesktopContainer, SyncController> {
         val container = DesktopContainer(tmp.newFolder(name).toOkioPath(), appScope = scope)
-        return container to SyncController(container, MemoryStore(SyncConfig(account, folder)), scope)
+        return container to SyncController(container, MemoryStore(NextcloudConfig(account, folder)), scope)
     }
 
     @Before
@@ -104,7 +105,7 @@ class DesktopSyncIntegrationTest {
     fun wrongPasswordIsReportedAsInvalidLogin() = runBlocking {
         val container = DesktopContainer(tmp.newFolder("c").toOkioPath(), appScope = scope)
         container.library.load("Notizen", "Seite 1")
-        val sync = SyncController(container, MemoryStore(SyncConfig(account.copy(appPassword = "wrong"), folder)), scope)
+        val sync = SyncController(container, MemoryStore(NextcloudConfig(account.copy(appPassword = "wrong"), folder)), scope)
         sync.runOnce()
         val status = sync.status.value
         assertThat(status).isInstanceOf(SyncStatus.Failed::class.java)

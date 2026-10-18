@@ -1,26 +1,23 @@
 package de.nibsync.desktop
 
+import de.nibsync.sync.client.SyncConfigCodec
 import de.nibsync.sync.client.SyncConfig
 import de.nibsync.sync.client.SyncConfigStore
-import de.nibsync.sync.webdav.NextcloudAccount
 import java.nio.file.Files
 import java.nio.file.attribute.PosixFilePermissions
 import java.util.Properties
 import kotlin.io.path.exists
 
 /**
- * Keeps the Nextcloud login of the PC app in the data folder, readable only by the user
- * (rw-------). The app password only grants access for NibSync and can be revoked in Nextcloud
- * (Settings > Security > Devices & sessions).
+ * Keeps the sync login of the PC app (app password or refresh token) in the data folder,
+ * readable only by the user (rw-------). It grants access for NibSync only and can be revoked in
+ * the service's account settings.
  */
 class DesktopSyncStore(private val file: java.nio.file.Path) : SyncConfigStore {
     override fun load(): SyncConfig? {
         if (!file.exists()) return null
         val p = Properties().apply { Files.newInputStream(file).use { load(it) } }
-        val server = p.getProperty(SERVER) ?: return null
-        val login = p.getProperty(LOGIN) ?: return null
-        val password = p.getProperty(PASSWORD) ?: return null
-        return SyncConfig(NextcloudAccount(server, login, password), p.getProperty(FOLDER) ?: SyncConfig.DEFAULT_FOLDER)
+        return SyncConfigCodec.fromMap(SyncConfigCodec.KEYS.associateWith { p.getProperty(it) })
     }
 
     override fun save(config: SyncConfig?) {
@@ -29,12 +26,7 @@ class DesktopSyncStore(private val file: java.nio.file.Path) : SyncConfigStore {
             return
         }
         Files.createDirectories(file.parent)
-        val p = Properties().apply {
-            setProperty(SERVER, config.account.serverUrl)
-            setProperty(LOGIN, config.account.loginName)
-            setProperty(PASSWORD, config.account.appPassword)
-            setProperty(FOLDER, config.folder)
-        }
+        val p = Properties().apply { SyncConfigCodec.toMap(config).forEach { (k, v) -> setProperty(k, v) } }
         val tmp = file.resolveSibling("${file.fileName}.tmp")
         Files.deleteIfExists(tmp)
         Files.createFile(tmp)
@@ -46,12 +38,5 @@ class DesktopSyncStore(private val file: java.nio.file.Path) : SyncConfigStore {
     private fun restrictToOwner(path: java.nio.file.Path) {
         // POSIX systems (Linux, macOS); on Windows the user profile folder is private already.
         runCatching { Files.setPosixFilePermissions(path, PosixFilePermissions.fromString("rw-------")) }
-    }
-
-    private companion object {
-        const val SERVER = "server"
-        const val LOGIN = "login"
-        const val PASSWORD = "appPassword"
-        const val FOLDER = "folder"
     }
 }

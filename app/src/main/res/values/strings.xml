@@ -5,9 +5,7 @@
     <string name="default_book_title">Notes</string>
     <string name="no_document">No document yet. Create a book and a document in the library.</string>
     <string name="open_library">Open library</string>
-    <string name="nextcloud">Nextcloud</string>
     <string name="sync_not_configured">Not connected. Notes stay on this device.</string>
-    <string name="sync_connect">Connect to Nextcloud</string>
     <string name="sync_now">Sync now</string>
     <string name="sync_sign_out">Disconnect</string>
     <string name="sync_running">Syncing…</string>
@@ -25,4 +23,16 @@
     <string name="media_clipboard_empty">There is no picture or PDF in the clipboard.</string>
     <string name="media_no_viewer">No app found to open this file.</string>
     <string name="media_not_synced">The file has not arrived from the sync yet.</string>
+    <string name="settings">Settings</string>
+    <string name="settings_sync">Synchronisation</string>
+    <string name="settings_display">Display and input</string>
+    <string name="close">Close</string>
+    <string name="page_breaks">Show page breaks</string>
+    <string name="draw_with_finger">Draw with finger</string>
+    <string name="sync_service_nextcloud">Nextcloud</string>
+    <string name="sync_service_onedrive">OneDrive</string>
+    <string name="sync_service_google">Google Drive</string>
+    <string name="sync_choose_service">Choose a service to sync with:</string>
+    <string name="sync_service_unavailable">Not set up in this version yet</string>
+    <string name="sync_connect_nextcloud">Connect to Nextcloud</string>
 </resources>

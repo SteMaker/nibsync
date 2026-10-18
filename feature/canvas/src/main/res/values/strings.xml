@@ -5,7 +5,6 @@
     <string name="pen_highlighter">Highlighter</string>
     <string name="color_n">Colour %1$d</string>
     <string name="width_mm">Width %1$.2f mm</string>
-    <string name="draw_with_finger">Draw with finger</string>
     <string name="eraser_object">Eraser: whole strokes</string>
     <string name="eraser_pixel">Eraser: partial</string>
     <string name="eraser_size_mm">Eraser %1$.0f mm</string>
@@ -16,12 +15,10 @@
     <string name="copy_selection">Copy selection</string>
     <string name="paste">Paste</string>
     <string name="library_menu">Library</string>
-    <string name="page_breaks">Show page breaks</string>
     <string name="text_tool">Text box</string>
     <string name="move_text_box">Move text box</string>
     <string name="resize_text_box">Change width</string>
     <string name="insert">Insert picture or PDF</string>
     <string name="insert_file">Choose file…</string>
     <string name="insert_clipboard">From clipboard</string>
-    <string name="more_options">More options</string>
 </resources>

@@ -59,6 +59,8 @@ fun App(
     keys: KeyRouter = KeyRouter(),
     sync: SyncController? = null,
     openBrowser: (String) -> Boolean = ::openInBrowser,
+    /** Starts the OneDrive / Google Drive login; null for a service not set up in this build. */
+    cloudConnect: (de.nibsync.sync.client.SyncService) -> (() -> Unit)? = { null },
 ) {
     MaterialTheme(colorScheme = lightColorScheme(primary = Color(0xff1a3fa8))) {
         // Shortcuts also from here, so they work in tests without a window (the window passes
@@ -72,6 +74,10 @@ fun App(
                 sync?.start()
             }
             val tree by container.library.tree.collectAsState()
+            var showSettings by remember { mutableStateOf(false) }
+            if (showSettings && sync != null) {
+                SettingsDialog(sync, strings, openBrowser, connect = cloudConnect, onClose = { showSettings = false })
+            }
             // One clipboard for the window, so elements can be copied between documents.
             val clipboard = remember { DesktopClipboard() }
             var documentId by remember { mutableStateOf<DocumentId?>(null) }
@@ -91,7 +97,8 @@ fun App(
                         documentId = it.asDocumentId
                         settings.lastDocument = it.asDocumentId
                     },
-                    footer = { if (sync != null) SyncPanel(sync, strings, openBrowser) },
+                    footer = { if (sync != null) SyncStatusLine(sync, strings) },
+                    onSettings = if (sync != null) ({ showSettings = true }) else null,
                 )
                 VerticalDivider()
                 Box(Modifier.weight(1f).fillMaxSize(), contentAlignment = Alignment.Center) {

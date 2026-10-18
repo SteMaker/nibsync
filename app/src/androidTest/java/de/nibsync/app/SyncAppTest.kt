@@ -10,6 +10,7 @@ import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.google.common.truth.Truth.assertThat
+import de.nibsync.sync.client.NextcloudConfig
 import de.nibsync.sync.client.SyncConfig
 import de.nibsync.sync.client.SyncStatus
 import de.nibsync.document.DocumentOp
@@ -70,7 +71,7 @@ class SyncAppTest {
         previousStateFiles = stateFiles()
         // Switch to the test server first: the test book must never reach the account
         // configured on the device.
-        app.sync.configure(SyncConfig(account, folder))
+        app.sync.configure(NextcloudConfig(account, folder))
         app.container.ensureLibraryLoaded("Notizen", "Notizen")
         book = app.container.library.createBook("Sync-Test-" + UUID.randomUUID().toString().take(6))
         docId = app.container.library.createDocument(book.id, "Seite", PageFormat()).id.value
@@ -169,7 +170,7 @@ class SyncAppTest {
 
     @Test
     fun wrongPasswordIsReportedAsInvalidLogin() = runBlocking {
-        app.sync.configure(SyncConfig(account.copy(appPassword = "wrong"), folder))
+        app.sync.configure(NextcloudConfig(account.copy(appPassword = "wrong"), folder))
         app.sync.runOnce()
         val status = app.sync.status.value
         assertThat(status).isInstanceOf(SyncStatus.Failed::class.java)

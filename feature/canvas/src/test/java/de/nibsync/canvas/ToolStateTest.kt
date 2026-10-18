@@ -11,7 +11,6 @@ class ToolStateTest {
         val s = ToolState()
         assertThat(s.activePen).isEqualTo(BrushFamily.FOUNTAIN_PEN)
         assertThat(s.activeBrush.family.pressureSensitive).isTrue()
-        assertThat(s.drawWithFinger).isFalse()
     }
 
     @Test

@@ -106,16 +106,13 @@ object NoteScreenTags {
     fun pen(family: BrushFamily) = "pen-${family.name}"
     fun color(index: Int) = "color-$index"
     fun size(index: Int) = "size-$index"
-    const val FINGER_TOGGLE = "finger-toggle"
     const val UNDO = "undo"
     const val MENU = "menu"
-    const val PAGE_BREAKS = "page-breaks"
     const val BACKGROUND = "background"
     const val BACKGROUND_CONFIRM = "background-confirm"
     const val LASSO = "lasso"
     const val TEXT = "text-tool"
     const val INSERT = "insert"
-    const val MORE = "more-options"
     const val INSERT_FILE = "insert-file"
     const val INSERT_CLIPBOARD = "insert-clipboard"
     const val MOVE_TEXT = "move-text"
@@ -134,7 +131,8 @@ fun NoteScreen(
     modifier: Modifier = Modifier,
     onMenu: (() -> Unit)? = null,
     showPageBreaks: Boolean = false,
-    onTogglePageBreaks: ((Boolean) -> Unit)? = null,
+    /** Fingers write instead of scrolling (a setting, for devices without a pen). */
+    drawWithFinger: Boolean = false,
     /** Extra items at the end of the tool bar, e.g. a sync indicator. */
     toolbarEnd: @Composable () -> Unit = {},
     /** Where a file (picture, PDF) of this document is stored. */
@@ -175,8 +173,6 @@ fun NoteScreen(
         Toolbar(
             toolbarEnd = toolbarEnd,
             onMenu = onMenu,
-            showPageBreaks = showPageBreaks,
-            onTogglePageBreaks = onTogglePageBreaks,
             onBackground = { choosingBackground = true },
             tools = tools,
             canUndo = canUndo,
@@ -202,7 +198,6 @@ fun NoteScreen(
                     viewModel.paste(cx, (r.top + r.bottom) / 2)
                 }
             },
-            onFingerToggle = viewModel::setDrawWithFinger,
             onText = viewModel::selectText,
             onInsertFile = onInsertFile,
             onInsertFromClipboard = onInsertFromClipboard,
@@ -235,7 +230,7 @@ fun NoteScreen(
                     view.pageFormat = document.meta.format
                     view.pageBackground = document.background
                     view.brush = tools.activeBrush
-                    view.drawWithFinger = tools.drawWithFinger
+                    view.drawWithFinger = drawWithFinger
                     view.showPageBreaks = showPageBreaks
                     view.tool = tools.tool
                     view.selection = selection
@@ -329,8 +324,6 @@ private const val TEXT_SAVE_DELAY_MS = 1500L
 private fun Toolbar(
     toolbarEnd: @Composable () -> Unit,
     onMenu: (() -> Unit)?,
-    showPageBreaks: Boolean,
-    onTogglePageBreaks: ((Boolean) -> Unit)?,
     onBackground: () -> Unit,
     tools: ToolState,
     canUndo: Boolean,
@@ -348,7 +341,6 @@ private fun Toolbar(
     onDeleteSelection: () -> Unit,
     onCopySelection: () -> Unit,
     onPaste: () -> Unit,
-    onFingerToggle: (Boolean) -> Unit,
     onText: () -> Unit,
     onInsertFile: (() -> Unit)?,
     onInsertFromClipboard: (() -> Unit)?,
@@ -445,7 +437,12 @@ private fun Toolbar(
                     }
                 }
                 Divider()
-                MoreMenu(showPageBreaks, onTogglePageBreaks, onBackground, tools.drawWithFinger, onFingerToggle)
+                val backgroundLabel = stringResource(BackgroundR.string.background_paper)
+                WithTooltip(backgroundLabel) {
+                    IconButton(onClick = onBackground, modifier = Modifier.testTag(NoteScreenTags.BACKGROUND)) {
+                        Icon(Icons.Filled.GridOn, contentDescription = backgroundLabel)
+                    }
+                }
             }
             toolbarEnd()
         }
@@ -526,50 +523,6 @@ private fun WithTooltip(text: String, content: @Composable () -> Unit) {
         state = rememberTooltipState(),
     ) {
         content()
-    }
-}
-
-/** Page settings that are not needed while writing: page breaks, paper, finger drawing. */
-@Composable
-private fun MoreMenu(
-    showPageBreaks: Boolean,
-    onTogglePageBreaks: ((Boolean) -> Unit)?,
-    onBackground: () -> Unit,
-    drawWithFinger: Boolean,
-    onFingerToggle: (Boolean) -> Unit,
-) {
-    var open by remember { mutableStateOf(false) }
-    val label = stringResource(R.string.more_options)
-    Box {
-        WithTooltip(label) {
-            IconButton(onClick = { open = true }, modifier = Modifier.testTag(NoteScreenTags.MORE)) {
-                Icon(Icons.Filled.MoreVert, contentDescription = label)
-            }
-        }
-        DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
-            if (onTogglePageBreaks != null) {
-                DropdownMenuItem(
-                    text = { Text(stringResource(R.string.page_breaks)) },
-                    leadingIcon = { Icon(Icons.Filled.InsertPageBreak, contentDescription = null) },
-                    trailingIcon = { Checkbox(checked = showPageBreaks, onCheckedChange = null) },
-                    onClick = { open = false; onTogglePageBreaks(!showPageBreaks) },
-                    modifier = Modifier.testTag(NoteScreenTags.PAGE_BREAKS),
-                )
-            }
-            DropdownMenuItem(
-                text = { Text(stringResource(BackgroundR.string.background_paper)) },
-                leadingIcon = { Icon(Icons.Filled.GridOn, contentDescription = null) },
-                onClick = { open = false; onBackground() },
-                modifier = Modifier.testTag(NoteScreenTags.BACKGROUND),
-            )
-            DropdownMenuItem(
-                text = { Text(stringResource(R.string.draw_with_finger)) },
-                leadingIcon = { Icon(Icons.Filled.TouchApp, contentDescription = null) },
-                trailingIcon = { Checkbox(checked = drawWithFinger, onCheckedChange = null) },
-                onClick = { open = false; onFingerToggle(!drawWithFinger) },
-                modifier = Modifier.testTag(NoteScreenTags.FINGER_TOGGLE),
-            )
-        }
     }
 }
 

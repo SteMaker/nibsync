@@ -5,7 +5,6 @@
     <string name="pen_highlighter">Textmarker</string>
     <string name="color_n">Farbe %1$d</string>
     <string name="width_mm">Breite %1$.2f mm</string>
-    <string name="draw_with_finger">Mit Finger zeichnen</string>
     <string name="eraser_object">Radierer: ganze Striche</string>
     <string name="eraser_pixel">Radierer: teilweise</string>
     <string name="eraser_size_mm">Radierer %1$.0f mm</string>
@@ -16,12 +15,10 @@
     <string name="copy_selection">Auswahl kopieren</string>
     <string name="paste">Einfügen</string>
     <string name="library_menu">Bibliothek</string>
-    <string name="page_breaks">Seitenumbrüche anzeigen</string>
     <string name="text_tool">Textbox</string>
     <string name="move_text_box">Textbox verschieben</string>
     <string name="resize_text_box">Breite ändern</string>
     <string name="insert">Bild oder PDF einfügen</string>
     <string name="insert_file">Datei auswählen…</string>
     <string name="insert_clipboard">Aus Zwischenablage</string>
-    <string name="more_options">Weitere Optionen</string>
 </resources>

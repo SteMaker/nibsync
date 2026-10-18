@@ -27,6 +27,8 @@ import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.LibraryAdd
+import androidx.compose.material3.IconButton
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -69,6 +71,7 @@ import kotlinx.coroutines.launch
 /** Test tags used by UI tests. */
 object LibraryTags {
     const val DRAWER = "library-drawer"
+    const val SETTINGS = "library-settings"
     const val TREE = "library-tree"
     const val NEW_BOOK = "library-new-book"
     const val NEW_FOLDER = "library-new-folder"
@@ -101,8 +104,10 @@ fun LibraryDrawer(
     currentDocument: NodeId?,
     onOpenDocument: (NodeId) -> Unit,
     modifier: Modifier = Modifier,
-    /** Extra content at the bottom, e.g. the sync settings. */
+    /** Extra content at the bottom, e.g. the sync status. */
     footer: @Composable () -> Unit = {},
+    /** Opens the app settings; null hides the gear button. */
+    onSettings: (() -> Unit)? = null,
 ) {
     val tree by viewModel.tree.collectAsStateWithLifecycle()
     val expanded by viewModel.expanded.collectAsStateWithLifecycle()
@@ -115,6 +120,12 @@ fun LibraryDrawer(
     Column(modifier.fillMaxHeight().testTag(LibraryTags.DRAWER)) {
         Row(Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
             Text(stringResource(R.string.library), style = MaterialTheme.typography.titleLarge, modifier = Modifier.weight(1f))
+            if (onSettings != null) {
+                IconButton(onClick = onSettings, modifier = Modifier.testTag(LibraryTags.SETTINGS)) {
+                    Icon(Icons.Filled.Settings, contentDescription = stringResource(R.string.settings))
+                }
+                Spacer(Modifier.width(4.dp))
+            }
             FilledTonalButton(onClick = { dialog = Dialog.NewBook }, modifier = Modifier.testTag(LibraryTags.NEW_BOOK)) {
                 Icon(Icons.Filled.LibraryAdd, contentDescription = null)
                 Spacer(Modifier.width(8.dp))

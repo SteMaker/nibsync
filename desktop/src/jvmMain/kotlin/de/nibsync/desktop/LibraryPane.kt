@@ -19,7 +19,9 @@ import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -53,6 +55,7 @@ fun treeRows(tree: LibraryTree, expanded: Set<NodeId>): List<TreeRow> {
 }
 
 object LibraryTags {
+    const val SETTINGS = "library-settings"
     fun row(title: String) = "library-row-$title"
 }
 
@@ -64,12 +67,21 @@ fun LibraryPane(
     strings: Strings,
     onOpen: (NodeId) -> Unit,
     modifier: Modifier = Modifier,
-    /** Shown below the tree, e.g. the Nextcloud section. */
+    /** Shown below the tree, e.g. the sync status. */
     footer: @Composable () -> Unit = {},
+    /** Opens the settings; null hides the gear button. */
+    onSettings: (() -> Unit)? = null,
 ) {
     var expanded by remember { mutableStateOf(current?.let { c -> tree.pathTo(c).dropLast(1).map { it.id }.toSet() } ?: emptySet()) }
     Column(modifier.fillMaxHeight().width(280.dp).background(MaterialTheme.colorScheme.surfaceContainerLow)) {
-        Text(strings.library, style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(16.dp))
+        Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 4.dp, top = 4.dp, bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+            Text(strings.library, style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
+            if (onSettings != null) {
+                IconButton(onClick = onSettings, modifier = Modifier.testTag(LibraryTags.SETTINGS)) {
+                    Icon(Icons.Filled.Settings, contentDescription = strings.settings)
+                }
+            }
+        }
         LazyColumn(Modifier.fillMaxWidth().weight(1f)) {
             items(treeRows(tree, expanded), key = { it.node.id.value }) { row ->
                 val node = row.node

@@ -26,11 +26,46 @@ import okio.FileSystem
 import okio.Path
 import java.security.MessageDigest
 
+/** The cloud services NibSync can sync with; one at a time. Persisted by name: never rename. */
+enum class SyncService { NEXTCLOUD, ONEDRIVE, GOOGLE_DRIVE }
+
 /** Where and as whom to sync. */
-data class SyncConfig(val account: NextcloudAccount, val folder: String) {
+sealed interface SyncConfig {
+    val service: SyncService
+
+    /** Who and where, for the library and the settings ("stefan @ cloud.example.org / NibSync"). */
+    val description: String
+
+    /** Identifies the remote place; each has its own sync state on this device. */
+    val stateKey: String
+
     companion object {
         const val DEFAULT_FOLDER = "NibSync"
     }
+}
+
+/** A folder in a Nextcloud, accessed with an app password (WebDAV). */
+data class NextcloudConfig(val account: NextcloudAccount, val folder: String = SyncConfig.DEFAULT_FOLDER) : SyncConfig {
+    override val service get() = SyncService.NEXTCLOUD
+    override val description: String
+        get() = "${account.loginName} @ ${account.serverUrl.removePrefix("https://").removePrefix("http://")} / $folder"
+
+    // Unchanged from the first sync version, so existing sync state is kept.
+    override val stateKey: String get() = "${account.serverUrl}|${account.loginName}|$folder"
+}
+
+/** The app folder "Apps/NibSync" of a OneDrive (Microsoft Graph), via an OAuth refresh token. */
+data class OneDriveConfig(val user: String, val refreshToken: String) : SyncConfig {
+    override val service get() = SyncService.ONEDRIVE
+    override val description: String get() = "$user / OneDrive / Apps/NibSync"
+    override val stateKey: String get() = "onedrive|$user"
+}
+
+/** The folder "NibSync" in a Google Drive, via an OAuth refresh token (scope drive.file). */
+data class GoogleDriveConfig(val user: String, val refreshToken: String) : SyncConfig {
+    override val service get() = SyncService.GOOGLE_DRIVE
+    override val description: String get() = "$user / Google Drive / ${SyncConfig.DEFAULT_FOLDER}"
+    override val stateKey: String get() = "gdrive|$user"
 }
 
 sealed interface SyncStatus {
@@ -82,9 +117,8 @@ class SyncController(
     private val host: SyncHost,
     private val store: SyncConfigStore,
     private val scope: CoroutineScope,
-    private val remoteFor: (SyncConfig) -> RemoteStore = {
-        WebDavRemoteStore(it.account.serverUrl, it.account.loginName, it.account.appPassword, it.folder)
-    },
+    /** The remote store for a configuration; the apps add OneDrive and Google Drive. */
+    private val remoteFor: (SyncConfig) -> RemoteStore = ::nextcloudStore,
     private val clock: () -> Long = System::currentTimeMillis,
 ) {
     private val _status = MutableStateFlow<SyncStatus>(SyncStatus.NotConfigured)
@@ -186,9 +220,14 @@ class SyncController(
         const val INTERVAL_MS = 10_000L
         const val LOCAL_CHANGE_DELAY_MS = 2_000L
 
-        /** Separate state per server, login and folder: switching starts a fresh comparison. */
+        fun nextcloudStore(config: SyncConfig): RemoteStore = when (config) {
+            is NextcloudConfig -> WebDavRemoteStore(config.account.serverUrl, config.account.loginName, config.account.appPassword, config.folder)
+            else -> error("No store for ${config.service}")
+        }
+
+        /** Separate state per remote place: switching starts a fresh comparison. */
         fun stateFile(dir: Path, config: SyncConfig): Path {
-            val key = "${config.account.serverUrl}|${config.account.loginName}|${config.folder}"
+            val key = config.stateKey
             val hash = MessageDigest.getInstance("SHA-256").digest(key.toByteArray()).take(8).joinToString("") { "%02x".format(it) }
             return dir / "sync-state-$hash.json"
         }
