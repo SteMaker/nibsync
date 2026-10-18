@@ -1,5 +1,7 @@
 package de.nibsync.document
 
+import de.nibsync.model.BackgroundKind
+import de.nibsync.model.BackgroundSpec
 import de.nibsync.model.StrokeId
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -74,6 +76,34 @@ class DocumentStateTest {
             assertEquals(expected, empty.applyAll(perm).strokes, "order $perm")
         }
         assertEquals(listOf("a3", "a2", "b2"), empty.applyAll(ops).ids)
+    }
+
+    @Test
+    fun backgroundComesFromMetaUntilChanged() {
+        val meta = META.copy(background = BackgroundSpec(BackgroundKind.LINED, 7f))
+        val s = DocumentState.empty(meta)
+        assertEquals(meta.background, s.background)
+        val grid = BackgroundSpec(BackgroundKind.GRID, 5f)
+        val changed = s.apply(DocumentOp.SetBackground(OpStamp(1, DEV_A), grid))
+        assertEquals(grid, changed.background)
+        // A later meta (e.g. downloaded by sync) does not override the explicit change.
+        assertEquals(grid, changed.withMeta(meta.copy(title = "x")).background)
+        assertEquals(BackgroundSpec(), DocumentState.empty(META).withMeta(META).background)
+    }
+
+    @Test
+    fun latestBackgroundWinsInAnyOrder() {
+        val lined = DocumentOp.SetBackground(OpStamp(3, DEV_A), BackgroundSpec(BackgroundKind.LINED, 7f))
+        val grid = DocumentOp.SetBackground(OpStamp(3, DEV_B), BackgroundSpec(BackgroundKind.GRID, 5f))
+        val dots = DocumentOp.SetBackground(OpStamp(2, DEV_B), BackgroundSpec(BackgroundKind.DOTTED, 5f))
+        val ops = listOf(lined, grid, dots, add(1, DEV_A, stroke("x")))
+        permutations(ops).forEach { perm ->
+            val s = empty.applyAll(perm)
+            // Equal counters: the higher device id wins, like stroke order.
+            assertEquals(grid.background, s.background, "order $perm")
+            assertEquals(listOf("x"), s.ids)
+            assertEquals(3, s.clock)
+        }
     }
 
     @Test

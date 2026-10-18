@@ -20,6 +20,10 @@ import com.google.common.truth.Truth.assertThat
 import de.nibsync.canvas.NoteCanvasView
 import de.nibsync.canvas.NoteScreenTags
 import de.nibsync.document.DocumentSession
+import de.nibsync.background.ui.BackgroundTags
+import de.nibsync.model.BackgroundKind
+import de.nibsync.model.BackgroundPattern
+import de.nibsync.model.BackgroundSpec
 import de.nibsync.model.BrushFamily
 import de.nibsync.model.DocumentId
 import de.nibsync.model.InputTool
@@ -277,6 +281,38 @@ class NoteAppTest {
         val highlighterOnly = bitmap.getPixel(150, 400)
         assertThat(Color.red(highlighterOnly)).isGreaterThan(200)
         assertThat(Color.blue(highlighterOnly)).isLessThan(200)
+    }
+
+    @Test
+    fun paperPatternIsChosenDrawnAndKept() {
+        compose.onNodeWithTag(NoteScreenTags.BACKGROUND).performClick()
+        compose.onNodeWithTag(BackgroundTags.kind(BackgroundKind.LINED)).performClick()
+        compose.onNodeWithTag(BackgroundTags.spacing(10f)).performClick()
+        compose.onNodeWithTag(NoteScreenTags.BACKGROUND_CONFIRM).performClick()
+        val lined = BackgroundSpec(BackgroundKind.LINED, 10f)
+        waitUntil("background set") { session().state.value.background == lined }
+        waitUntil("canvas shows it") { canvas()?.pageBackground == lined }
+
+        // A ruled line is drawn in blue-grey on the page, the paper between lines stays white.
+        val view = checkNotNull(canvas())
+        val bitmap = Bitmap.createBitmap(view.width, view.height, Bitmap.Config.ARGB_8888)
+        scenario.onActivity { view.draw(Canvas(bitmap)) }
+        val v = view.viewport
+        val t = v.documentToView
+        val x = t.mapX(v.pageWidthMm / 2).toInt()
+        val lineMm = BackgroundPattern.rows(lined, v.visibleDocumentRect.top + 1f, v.visibleDocumentRect.bottom).first()
+        val lineY = t.mapY(lineMm).toInt()
+        val onLine = (lineY - 2..lineY + 2).map { bitmap.getPixel(x, it) }.minBy { Color.red(it) }
+        assertThat(Color.red(onLine)).isLessThan(230)
+        assertThat(Color.blue(onLine)).isGreaterThan(Color.red(onLine))
+        assertThat(bitmap.getPixel(x, t.mapY(lineMm + 5f).toInt())).isEqualTo(Color.WHITE)
+
+        // Undo does not touch the paper; it survives a restart from disk.
+        compose.onNodeWithTag(NoteScreenTags.UNDO).assertIsNotEnabled()
+        scenario.close()
+        runBlocking { app.container.closeSession(documentId) }
+        scenario = launchActivity()
+        waitUntil("reloaded with lined paper") { canvas()?.pageBackground == lined }
     }
 
     @Test

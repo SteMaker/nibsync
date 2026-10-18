@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="background_blank">Blanko</string>
+    <string name="background_lined">Liniert</string>
+    <string name="background_grid">Kariert</string>
+    <string name="background_dotted">Gepunktet</string>
+    <string name="background_paper">Papier</string>
+    <string name="background_spacing">Abstand</string>
+    <string name="background_spacing_mm">%1$s mm</string>
+</resources>

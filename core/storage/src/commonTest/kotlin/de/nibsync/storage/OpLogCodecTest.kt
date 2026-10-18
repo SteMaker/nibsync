@@ -14,6 +14,10 @@ class OpLogCodecTest {
         addOp(1, DEV_A, penStroke("s1"), highlighterStroke("h1")),
         addOp(2, DEV_A, penStroke("s2", withPressure = false)),
         removeOp(3, DEV_A, "s1", "h1"),
+        de.nibsync.document.DocumentOp.SetBackground(
+            de.nibsync.document.OpStamp(4, DEV_A),
+            de.nibsync.model.BackgroundSpec(de.nibsync.model.BackgroundKind.DOTTED, 5f),
+        ),
     )
 
     private fun encode(list: List<de.nibsync.document.DocumentOp>): Buffer {
@@ -71,6 +75,17 @@ class OpLogCodecTest {
         val payload = kotlinx.serialization.cbor.Cbor.encodeToByteArray(OpRecord.serializer(), unknown)
         val b = encode(ops.take(1)).writeInt(payload.size).write(payload)
         assertEquals(ops.take(1), OpLogCodec.read(b).ops)
+    }
+
+    @Test
+    fun unknownBackgroundKindBecomesBlank() {
+        val record = OpRecord(counter = 9, device = "x", type = OpRecord.TYPE_BACKGROUND, background = BackgroundRecord("HEXAGONS", 6f))
+        val payload = kotlinx.serialization.cbor.Cbor.encodeToByteArray(OpRecord.serializer(), record)
+        val op = OpLogCodec.read(Buffer().write(OpLogCodec.header()).writeInt(payload.size).write(payload)).ops.single()
+        assertEquals(
+            de.nibsync.model.BackgroundSpec(de.nibsync.model.BackgroundKind.BLANK, 6f),
+            (op as de.nibsync.document.DocumentOp.SetBackground).background,
+        )
     }
 
     @Test

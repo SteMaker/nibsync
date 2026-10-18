@@ -32,10 +32,12 @@ internal data class OpRecord(
     @SerialName("t") val type: Int,
     @SerialName("s") val strokes: List<StrokeRecord> = emptyList(),
     @SerialName("r") val removed: List<String> = emptyList(),
+    @SerialName("b") val background: BackgroundRecord? = null,
 ) {
     companion object {
         const val TYPE_ADD = 1
         const val TYPE_REMOVE = 2
+        const val TYPE_BACKGROUND = 3
     }
 }
 

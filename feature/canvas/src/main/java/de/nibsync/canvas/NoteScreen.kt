@@ -24,16 +24,19 @@ import androidx.compose.material.icons.filled.BorderColor
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.ContentPaste
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.GridOn
 import androidx.compose.material.icons.filled.HighlightAlt
 import androidx.compose.material.icons.filled.InsertPageBreak
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.Draw
 import androidx.compose.material.icons.filled.HistoryEdu
 import androidx.compose.material.icons.filled.TouchApp
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledIconToggleButton
 import androidx.compose.material3.PlainTooltip
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TooltipAnchorPosition
 import androidx.compose.material3.TooltipBox
 import androidx.compose.material3.TooltipDefaults
@@ -63,7 +66,10 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import de.nibsync.document.erase.EraserMode
+import de.nibsync.background.ui.BackgroundPicker
+import de.nibsync.model.BackgroundSpec
 import de.nibsync.model.BrushFamily
+import de.nibsync.background.ui.R as BackgroundR
 
 /** Test tags used by UI tests. */
 object NoteScreenTags {
@@ -76,6 +82,8 @@ object NoteScreenTags {
     const val UNDO = "undo"
     const val MENU = "menu"
     const val PAGE_BREAKS = "page-breaks"
+    const val BACKGROUND = "background"
+    const val BACKGROUND_CONFIRM = "background-confirm"
     const val LASSO = "lasso"
     const val DELETE_SELECTION = "delete-selection"
     const val COPY_SELECTION = "copy-selection"
@@ -103,6 +111,15 @@ fun NoteScreen(
     val selection by viewModel.selection.collectAsStateWithLifecycle()
     val clip by viewModel.clipboard.content.collectAsStateWithLifecycle()
     var canvasView by remember { mutableStateOf<NoteCanvasView?>(null) }
+    var choosingBackground by remember { mutableStateOf(false) }
+
+    if (choosingBackground) {
+        BackgroundDialog(
+            initial = document.background,
+            onDismiss = { choosingBackground = false },
+            onConfirm = { choosingBackground = false; viewModel.setBackground(it) },
+        )
+    }
 
     Column(modifier.fillMaxSize()) {
         Toolbar(
@@ -110,6 +127,7 @@ fun NoteScreen(
             onMenu = onMenu,
             showPageBreaks = showPageBreaks,
             onTogglePageBreaks = onTogglePageBreaks,
+            onBackground = { choosingBackground = true },
             tools = tools,
             canUndo = canUndo,
             canRedo = canRedo,
@@ -152,6 +170,7 @@ fun NoteScreen(
             },
             update = { view ->
                 view.pageFormat = document.meta.format
+                view.pageBackground = document.background
                 view.brush = tools.activeBrush
                 view.drawWithFinger = tools.drawWithFinger
                 view.showPageBreaks = showPageBreaks
@@ -171,6 +190,7 @@ private fun Toolbar(
     onMenu: (() -> Unit)?,
     showPageBreaks: Boolean,
     onTogglePageBreaks: ((Boolean) -> Unit)?,
+    onBackground: () -> Unit,
     tools: ToolState,
     canUndo: Boolean,
     canRedo: Boolean,
@@ -268,6 +288,12 @@ private fun Toolbar(
                     ) {
                         Icon(Icons.Filled.InsertPageBreak, contentDescription = breaksLabel)
                     }
+                }
+            }
+            val backgroundLabel = stringResource(BackgroundR.string.background_paper)
+            WithTooltip(backgroundLabel) {
+                IconButton(onClick = onBackground, modifier = Modifier.testTag(NoteScreenTags.BACKGROUND)) {
+                    Icon(Icons.Filled.GridOn, contentDescription = backgroundLabel)
                 }
             }
             val fingerLabel = stringResource(R.string.draw_with_finger)
@@ -423,4 +449,20 @@ private fun penLabel(family: BrushFamily): Int = when (family) {
     BrushFamily.BALLPOINT -> R.string.pen_ballpoint
     BrushFamily.FOUNTAIN_PEN -> R.string.pen_fountain
     BrushFamily.HIGHLIGHTER -> R.string.pen_highlighter
+}
+
+@Composable
+private fun BackgroundDialog(initial: BackgroundSpec, onDismiss: () -> Unit, onConfirm: (BackgroundSpec) -> Unit) {
+    var choice by remember { mutableStateOf(initial) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(BackgroundR.string.background_paper)) },
+        text = { BackgroundPicker(choice, { choice = it }) },
+        confirmButton = {
+            TextButton(onClick = { onConfirm(choice) }, modifier = Modifier.testTag(NoteScreenTags.BACKGROUND_CONFIRM)) {
+                Text(stringResource(android.R.string.ok))
+            }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(android.R.string.cancel)) } },
+    )
 }

@@ -28,8 +28,8 @@ data class PageFormat(
         get() = if (orientation == Orientation.PORTRAIT) paper.longSideMm else paper.shortSideMm
 }
 
-/** Background pattern of a document. Only [BLANK] is rendered so far. */
-enum class BackgroundKind { BLANK, LINED, GRID }
+/** Background pattern of a document, drawn behind all strokes. See [BackgroundPattern]. */
+enum class BackgroundKind { BLANK, LINED, GRID, DOTTED }
 
 data class BackgroundSpec(
     val kind: BackgroundKind = BackgroundKind.BLANK,
@@ -37,6 +37,15 @@ data class BackgroundSpec(
 ) {
     init {
         require(spacingMm > 0f) { "spacingMm must be positive" }
+    }
+
+    companion object {
+        /** Spacings offered in the UI; any positive value is valid in files. */
+        val SPACINGS_MM = listOf(5f, 7f, 10f)
+
+        /** Usual spacing per kind: ruled paper 7 mm, squared and dotted paper 5 mm. */
+        fun of(kind: BackgroundKind): BackgroundSpec =
+            BackgroundSpec(kind, if (kind == BackgroundKind.LINED || kind == BackgroundKind.BLANK) 7f else 5f)
     }
 }
 

@@ -1,5 +1,6 @@
 package de.nibsync.document
 
+import de.nibsync.model.BackgroundSpec
 import de.nibsync.model.DocumentMeta
 import de.nibsync.model.Stroke
 import de.nibsync.model.StrokeId
@@ -13,7 +14,8 @@ import de.nibsync.model.StrokeId
  *   id has no effect. Edits therefore always create strokes with fresh ids.
  *
  * With these rules the result does not depend on the order in which ops arrive, which is what
- * concurrent editing on several devices needs.
+ * concurrent editing on several devices needs. The background is a last-writer-wins register:
+ * the [DocumentOp.SetBackground] with the highest stamp counts, else the one in [meta].
  */
 class DocumentState private constructor(
     val meta: DocumentMeta,
@@ -22,6 +24,9 @@ class DocumentState private constructor(
     private val applied: Set<OpStamp>,
     /** Highest Lamport counter seen so far. */
     val clock: Long,
+    private val backgroundSetAt: OpStamp?,
+    /** Paper pattern currently in effect. */
+    val background: BackgroundSpec,
 ) {
     private class Entry(val stroke: Stroke, val addedAt: OpStamp)
 
@@ -59,18 +64,27 @@ class DocumentState private constructor(
                     val existing = newEntries[s.id]
                     if (existing == null || op.stamp < existing.addedAt) newEntries[s.id] = Entry(s, op.stamp)
                 }
-                DocumentState(meta, newEntries, tombstones, applied + op.stamp, newClock)
+                DocumentState(meta, newEntries, tombstones, applied + op.stamp, newClock, backgroundSetAt, background)
             }
             is DocumentOp.RemoveStrokes ->
-                DocumentState(meta, entries - op.ids, tombstones + op.ids, applied + op.stamp, newClock)
+                DocumentState(meta, entries - op.ids, tombstones + op.ids, applied + op.stamp, newClock, backgroundSetAt, background)
+            is DocumentOp.SetBackground ->
+                if (backgroundSetAt == null || op.stamp > backgroundSetAt) {
+                    DocumentState(meta, entries, tombstones, applied + op.stamp, newClock, op.stamp, op.background)
+                } else {
+                    DocumentState(meta, entries, tombstones, applied + op.stamp, newClock, backgroundSetAt, background)
+                }
         }
     }
 
     fun applyAll(ops: Iterable<DocumentOp>): DocumentState = ops.fold(this) { s, op -> s.apply(op) }
 
-    fun withMeta(meta: DocumentMeta): DocumentState = DocumentState(meta, entries, tombstones, applied, clock)
+    /** Replaces [meta]; its background only counts as long as no [DocumentOp.SetBackground] was applied. */
+    fun withMeta(meta: DocumentMeta): DocumentState =
+        DocumentState(meta, entries, tombstones, applied, clock, backgroundSetAt, if (backgroundSetAt == null) meta.background else background)
 
     companion object {
-        fun empty(meta: DocumentMeta): DocumentState = DocumentState(meta, emptyMap(), emptySet(), emptySet(), 0L)
+        fun empty(meta: DocumentMeta): DocumentState =
+            DocumentState(meta, emptyMap(), emptySet(), emptySet(), 0L, null, meta.background)
     }
 }

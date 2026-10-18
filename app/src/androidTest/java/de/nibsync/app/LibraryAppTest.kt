@@ -14,6 +14,7 @@ import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.performTextReplacement
+import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.test.performTouchInput
 import androidx.test.core.app.ActivityScenario
@@ -25,6 +26,9 @@ import de.nibsync.canvas.NoteCanvasView
 import de.nibsync.canvas.NoteScreenTags
 import de.nibsync.library.NodeId
 import de.nibsync.library.ui.LibraryTags
+import de.nibsync.background.ui.BackgroundTags
+import de.nibsync.model.BackgroundKind
+import de.nibsync.model.BackgroundSpec
 import de.nibsync.model.DocumentId
 import de.nibsync.model.Orientation
 import de.nibsync.model.PaperSize
@@ -136,6 +140,7 @@ class LibraryAppTest {
         compose.onNodeWithTag(LibraryTags.NEW_DOCUMENT).performClick()
         compose.onNodeWithTag(LibraryTags.paper(PaperSize.A5)).performClick()
         compose.onNodeWithTag(LibraryTags.orientation(Orientation.LANDSCAPE)).performClick()
+        compose.onNodeWithTag(BackgroundTags.kind(BackgroundKind.GRID)).performScrollTo().performClick()
         enterName("Seite A5")
         val book = tree().books.first { it.title == bookTitle }
         val doc = tree().descendantsOf(book.id).first { it.title == "Seite A5" }
@@ -150,6 +155,9 @@ class LibraryAppTest {
         assertThat(tree().pathTo(docId).map { it.title }).containsExactly(bookTitle, "Kapitel 1", "Seite A5").inOrder()
         // The page has the chosen width: A5 landscape = 210 mm.
         waitUntil("canvas for new document") { activity { it.canvasView }?.viewport?.pageWidthMm == 210f }
+        // ... and the chosen paper.
+        assertThat(activity { it.session }?.state?.value?.background).isEqualTo(BackgroundSpec.of(BackgroundKind.GRID))
+        assertThat(activity { it.canvasView }?.pageBackground).isEqualTo(BackgroundSpec.of(BackgroundKind.GRID))
         assertThat(tree()[book.id]).isNotNull()
         // It is remembered as the last document.
         assertThat(settings.lastDocument).isEqualTo(docId.asDocumentId)

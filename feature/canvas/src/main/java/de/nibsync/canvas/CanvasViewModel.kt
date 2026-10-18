@@ -8,6 +8,7 @@ import de.nibsync.document.erase.EraserMode
 import de.nibsync.document.select.ClipContent
 import de.nibsync.document.select.Lasso
 import de.nibsync.document.select.translated
+import de.nibsync.model.BackgroundSpec
 import de.nibsync.model.BrushFamily
 import de.nibsync.model.ShapeRecognizer
 import de.nibsync.model.Stroke
@@ -105,6 +106,9 @@ class CanvasViewModel(
     fun selectSize(mm: Float) = _tools.update { it.withSize(mm) }
 
     fun setDrawWithFinger(enabled: Boolean) = _tools.update { it.copy(drawWithFinger = enabled) }
+
+    /** Changes the paper pattern of the document (synced, not undoable). */
+    fun setBackground(background: BackgroundSpec) = session.setBackground(background)
 
     /** Called on the UI thread when a stroke has been completed on the canvas. */
     fun commitStroke(draft: StrokeDraft): Stroke? {

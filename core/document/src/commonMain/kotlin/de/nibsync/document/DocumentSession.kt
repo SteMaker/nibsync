@@ -1,5 +1,6 @@
 package de.nibsync.document
 
+import de.nibsync.model.BackgroundSpec
 import de.nibsync.model.DeviceId
 import de.nibsync.model.IdGenerator
 import de.nibsync.model.Quantization
@@ -112,6 +113,12 @@ class DocumentSession(
         val current = _state.value
         val strokes = ids.mapNotNull { current[it] }
         if (strokes.isNotEmpty()) applyEdit(Edit.Removed(strokes), record = true)
+    }
+
+    /** Changes the paper pattern. It is a document setting, not an edit: undo does not revert it. */
+    fun setBackground(background: BackgroundSpec) {
+        if (background == _state.value.background) return
+        emit { DocumentOp.SetBackground(it, background) }
     }
 
     fun undo(): Boolean {

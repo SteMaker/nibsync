@@ -95,6 +95,23 @@ class DocumentSessionTest {
     }
 
     @Test
+    fun backgroundChangeIsJournaledButNotUndone() = runTest {
+        val s = session()
+        val grid = de.nibsync.model.BackgroundSpec(de.nibsync.model.BackgroundKind.GRID, 5f)
+        s.addStroke(draft())
+        s.setBackground(grid)
+        s.setBackground(grid) // unchanged: no second op
+        s.flush()
+        assertEquals(grid, s.state.value.background)
+        assertEquals(DocumentOp.SetBackground(OpStamp(2, DEV_A), grid), written.last())
+        assertEquals(2, written.size)
+        // Undo reverts the stroke, not the paper.
+        assertTrue(s.undo())
+        assertEquals(grid, s.state.value.background)
+        assertEquals(0, s.state.value.strokeCount)
+    }
+
+    @Test
     fun remoteOpsMergeButAreNotJournaled() = runTest {
         val s = session()
         s.addStroke(draft())

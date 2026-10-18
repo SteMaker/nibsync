@@ -1,5 +1,6 @@
 package de.nibsync.library
 
+import de.nibsync.model.BackgroundSpec
 import de.nibsync.model.DocumentId
 import de.nibsync.model.DocumentMeta
 import de.nibsync.model.IdGenerator
@@ -54,9 +55,14 @@ class Library(
         folderNode(parent, title).also { store(it); publish() }
     }
 
-    suspend fun createDocument(parent: NodeId, title: String, format: PageFormat): LibraryNode = lock.withLock {
+    suspend fun createDocument(
+        parent: NodeId,
+        title: String,
+        format: PageFormat,
+        background: BackgroundSpec = BackgroundSpec(),
+    ): LibraryNode = lock.withLock {
         requireFolder(parent)
-        createDocumentLocked(parent, title, format).also { publish() }
+        createDocumentLocked(parent, title, format, background).also { publish() }
     }
 
     suspend fun rename(id: NodeId, title: String) = lock.withLock {
@@ -110,9 +116,14 @@ class Library(
         changed
     }
 
-    private suspend fun createDocumentLocked(parent: NodeId, title: String, format: PageFormat): LibraryNode {
+    private suspend fun createDocumentLocked(
+        parent: NodeId,
+        title: String,
+        format: PageFormat,
+        background: BackgroundSpec = BackgroundSpec(),
+    ): LibraryNode {
         val node = LibraryNode(NodeId(ids.newUuid()), NodeKind.DOCUMENT, parent, title.trim().ifEmpty { "?" }, clock())
-        documents.create(DocumentMeta(node.id.asDocumentId, node.title, format, createdAtEpochMs = node.createdAtEpochMs))
+        documents.create(DocumentMeta(node.id.asDocumentId, node.title, format, background, node.createdAtEpochMs))
         store(node)
         return node
     }

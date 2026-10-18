@@ -1,5 +1,6 @@
 package de.nibsync.document
 
+import de.nibsync.model.BackgroundSpec
 import de.nibsync.model.DeviceId
 import de.nibsync.model.Stroke
 import de.nibsync.model.StrokeId
@@ -24,4 +25,7 @@ sealed interface DocumentOp {
     data class AddStrokes(override val stamp: OpStamp, val strokes: List<Stroke>) : DocumentOp
 
     data class RemoveStrokes(override val stamp: OpStamp, val ids: Set<StrokeId>) : DocumentOp
+
+    /** Changes the paper pattern. Concurrent changes: the one with the highest stamp wins. */
+    data class SetBackground(override val stamp: OpStamp, val background: BackgroundSpec) : DocumentOp
 }

@@ -1,5 +1,7 @@
 package de.nibsync.library
 
+import de.nibsync.model.BackgroundKind
+import de.nibsync.model.BackgroundSpec
 import de.nibsync.model.DocumentId
 import de.nibsync.model.DocumentMeta
 import de.nibsync.model.Orientation
@@ -68,7 +70,7 @@ class LibraryTest {
         val ch1 = lib.createFolder(book.id, "Kapitel 1")
         val ch11 = lib.createFolder(ch1.id, "Abschnitt 1.1")
         val doc = lib.createDocument(ch11.id, "Integrale", PageFormat(PaperSize.A5, Orientation.LANDSCAPE))
-        val beside = lib.createDocument(ch1.id, "Übersicht", PageFormat())
+        val beside = lib.createDocument(ch1.id, "Übersicht", PageFormat(), BackgroundSpec(BackgroundKind.GRID, 5f))
 
         val tree = lib.tree.value
         assertEquals(listOf(ch11.id, beside.id), tree.childrenOf(ch1.id).map { it.id }) // folders first
@@ -77,6 +79,8 @@ class LibraryTest {
         val meta = documents().load(doc.id.asDocumentId).meta
         assertEquals(PageFormat(PaperSize.A5, Orientation.LANDSCAPE), meta.format)
         assertEquals("Integrale", meta.title)
+        assertEquals(BackgroundSpec(), meta.background)
+        assertEquals(BackgroundSpec(BackgroundKind.GRID, 5f), documents().load(beside.id.asDocumentId).meta.background)
     }
 
     @Test

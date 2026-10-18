@@ -22,9 +22,17 @@ class GoldenFormatTest {
         removeOp(3, DEV_A, "11111111-1111-4111-8111-111111111111"),
     )
 
+    // Added in format version 1 later on (op type 3); older readers skip it.
+    private val backgroundOps = listOf(
+        de.nibsync.document.DocumentOp.SetBackground(
+            de.nibsync.document.OpStamp(4, DEV_A),
+            de.nibsync.model.BackgroundSpec(de.nibsync.model.BackgroundKind.GRID, 5f),
+        ),
+    )
+
     private val goldenDir = "src/jvmTest/resources/golden".toPath()
 
-    private fun encodedLog(): okio.ByteString {
+    private fun encodedLog(ops: List<de.nibsync.document.DocumentOp> = this.ops): okio.ByteString {
         val b = Buffer().write(OpLogCodec.header())
         ops.forEach { b.write(OpLogCodec.encodeRecord(it)) }
         return b.readByteString()
@@ -51,6 +59,14 @@ class GoldenFormatTest {
         FileSystem.SYSTEM.createDirectories(goldenDir)
         FileSystem.SYSTEM.write(goldenDir / "ops-v1.oplog") { write(encodedLog()) }
         FileSystem.SYSTEM.write(goldenDir / "meta-v1.json") { writeUtf8(metaJson()) }
+        FileSystem.SYSTEM.write(goldenDir / "ops-v1-background.oplog") { write(encodedLog(backgroundOps)) }
+    }
+
+    @Test
+    fun backgroundOpIsStable() {
+        val golden = golden("ops-v1-background.oplog")
+        assertThat(OpLogCodec.read(Buffer().write(golden)).ops).isEqualTo(backgroundOps)
+        assertThat(encodedLog(backgroundOps).hex()).isEqualTo(golden.hex())
     }
 
     @Test

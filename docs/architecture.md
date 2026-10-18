@@ -6,6 +6,7 @@
 app/              Android app: wiring (AppContainer), MainActivity with the library drawer
 feature/library/  Library drawer (tree of books/chapters/documents), LibraryViewModel
 feature/canvas/   Endless page (NoteCanvasView), tool bar (Compose), CanvasViewModel
+ui/background/    Paper pattern picker and preview, used by canvas and library drawer
 ink/android/      Adapter domain <-> androidx.ink (brushes, stroke conversion, mesh cache)
 core/sync/        Sync engine (platform-neutral) against a RemoteStore
 sync/webdav/      RemoteStore for Nextcloud/WebDAV (OkHttp), Nextcloud login flow v2
@@ -64,6 +65,16 @@ versions (`default`) was adopted into a first book on upgrade.
 `BACKGROUND` (pattern) -> `MARKER` (highlighter) -> `INK`. Highlighter strokes are placed on
 `MARKER` and therefore always appear behind the ink. While being drawn, the in-progress
 highlighter is shown on top (Ink overlay limitation) and drops behind once finished.
+
+## Backgrounds
+
+A document's paper is a `BackgroundSpec` (BLANK, LINED, GRID, DOTTED + spacing in mm).
+`meta.json` holds the pattern chosen at creation; a later change is a
+`DocumentOp.SetBackground` in the op log (record type 3), so it syncs like strokes. The op
+with the highest stamp wins in any arrival order; it is a setting, not an edit, so undo
+leaves it alone. Where lines and dots go is computed platform-neutrally in
+`BackgroundPattern` (rows from one spacing below the top, columns centred on the page); the
+Android view only draws them and skips the pattern when zoomed out below 6 px spacing.
 
 ## Input
 
@@ -150,4 +161,4 @@ into segments later); no background sync while the app is closed.
 | F ✅ | Pixel and object eraser | `core/document/erase`; two eraser buttons in the tool bar |
 | G ✅ | Lasso: delete, move, copy/paste | `core/document/select`; lasso tool + actions in the tool bar |
 | H ✅ | Undo/redo | tool bar buttons, Ctrl+Z / Ctrl+Y / Ctrl+Shift+Z; history per open document and app run |
-| I | Lined/grid backgrounds | `BackgroundSpec` is stored; render in `NoteCanvasView.onDraw` |
+| I ✅ | Lined/grid/dotted backgrounds | `BackgroundPattern`, `DocumentOp.SetBackground`, `ui/background`, `NoteCanvasView.drawPattern` |

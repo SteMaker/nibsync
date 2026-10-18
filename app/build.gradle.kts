@@ -64,6 +64,7 @@ dependencies {
     testImplementation(libs.truth)
     testImplementation(libs.robolectric)
 
+    androidTestImplementation(project(":ui:background"))
     androidTestImplementation(platform(libs.androidx.compose.bom))
     androidTestImplementation(libs.androidx.compose.ui.test.junit4)
     debugImplementation(libs.androidx.compose.ui.test.manifest)

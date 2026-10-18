@@ -6,6 +6,7 @@ import de.nibsync.library.LibraryNode
 import de.nibsync.library.LibraryTree
 import de.nibsync.library.NodeId
 import de.nibsync.model.DocumentId
+import de.nibsync.model.BackgroundSpec
 import de.nibsync.model.PageFormat
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -89,9 +90,9 @@ class LibraryViewModel(
     }
 
     /** Creates a document in the selected folder; returns it so the caller can open it. */
-    suspend fun createDocument(title: String, format: PageFormat): LibraryNode? {
+    suspend fun createDocument(title: String, format: PageFormat, background: BackgroundSpec = BackgroundSpec()): LibraryNode? {
         val parent = _selectedFolder.value ?: return null
-        return library.createDocument(parent, title, format).also { _expanded.update { e -> e + parent } }
+        return library.createDocument(parent, title, format, background).also { _expanded.update { e -> e + parent } }
     }
 
     suspend fun rename(id: NodeId, title: String) = library.rename(id, title)

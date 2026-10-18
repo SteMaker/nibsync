@@ -27,7 +27,7 @@ internal fun DocumentMeta.toRecord() = MetaRecord(
     title = title,
     paper = format.paper.name,
     orientation = format.orientation.name,
-    background = BackgroundRecord(background.kind.name, background.spacingMm),
+    background = background.toRecord(),
     createdAtEpochMs = createdAtEpochMs,
 )
 
@@ -37,7 +37,7 @@ internal fun MetaRecord.toDomain(): DocumentMeta {
         id = DocumentId(id),
         title = title,
         format = PageFormat(enumOr(paper, PaperSize.A4), enumOr(orientation, Orientation.PORTRAIT)),
-        background = BackgroundSpec(enumOr(background.kind, BackgroundKind.BLANK), background.spacingMm),
+        background = background.toDomain(),
         createdAtEpochMs = createdAtEpochMs,
     )
 }
@@ -55,7 +55,18 @@ internal fun DocumentOp.toRecord(): OpRecord = when (this) {
         type = OpRecord.TYPE_REMOVE,
         removed = ids.map { it.value }.sorted(),
     )
+    is DocumentOp.SetBackground -> OpRecord(
+        counter = stamp.counter,
+        device = stamp.device.value,
+        type = OpRecord.TYPE_BACKGROUND,
+        background = background.toRecord(),
+    )
 }
+
+internal fun BackgroundSpec.toRecord() = BackgroundRecord(kind.name, spacingMm)
+
+/** Unknown kinds (from a newer app version) fall back to a blank page. */
+internal fun BackgroundRecord.toDomain() = BackgroundSpec(enumOr(kind, BackgroundKind.BLANK), spacingMm)
 
 /** Returns null for op types written by a newer app version, so they are skipped, not fatal. */
 internal fun OpRecord.toDomain(): DocumentOp? {
@@ -63,6 +74,7 @@ internal fun OpRecord.toDomain(): DocumentOp? {
     return when (type) {
         OpRecord.TYPE_ADD -> DocumentOp.AddStrokes(stamp, strokes.mapNotNull { it.toDomain() })
         OpRecord.TYPE_REMOVE -> DocumentOp.RemoveStrokes(stamp, removed.map(::StrokeId).toSet())
+        OpRecord.TYPE_BACKGROUND -> background?.let { DocumentOp.SetBackground(stamp, it.toDomain()) }
         else -> null
     }
 }

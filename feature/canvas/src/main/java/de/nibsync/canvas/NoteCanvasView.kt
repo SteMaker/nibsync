@@ -29,6 +29,8 @@ import de.nibsync.document.erase.EraseGesture
 import de.nibsync.document.erase.EraseResult
 import de.nibsync.document.erase.EraserMode
 import de.nibsync.document.select.boundsOf
+import de.nibsync.model.BackgroundPattern
+import de.nibsync.model.BackgroundSpec
 import de.nibsync.model.BrushFamily
 import de.nibsync.model.BrushSpec
 import de.nibsync.model.InputTool
@@ -95,6 +97,14 @@ class NoteCanvasView(context: Context) : FrameLayout(context) {
             invalidate()
         }
 
+    /** Paper pattern drawn on the page behind all strokes. */
+    var pageBackground: BackgroundSpec = BackgroundSpec()
+        set(value) {
+            if (value == field) return
+            field = value
+            invalidate()
+        }
+
     /** What the pen does: write, erase (see [eraserMode]) or select with the lasso. */
     var tool: Tool = Tool.PEN
         set(value) {
@@ -138,6 +148,11 @@ class NoteCanvasView(context: Context) : FrameLayout(context) {
         color = 0xff9e9e9e.toInt()
         pathEffect = android.graphics.DashPathEffect(floatArrayOf(14f, 10f), 0f)
     }
+    private val patternPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = PATTERN_COLOR
+        strokeCap = Paint.Cap.ROUND
+    }
+    private var patternPoints = FloatArray(0)
     private val pageNumberPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         color = 0xff9e9e9e.toInt()
         textSize = 28f
@@ -264,6 +279,7 @@ class NoteCanvasView(context: Context) : FrameLayout(context) {
         val pageTop = transform.mapY(0f)
         canvas.drawRect(pageLeft + SHADOW_PX, pageTop + SHADOW_PX, pageRight + SHADOW_PX, pageBottom + SHADOW_PX, pageShadowPaint)
         canvas.drawRect(pageLeft, pageTop, pageRight, pageBottom, pagePaint)
+        drawPattern(canvas)
 
         if (showPageBreaks) drawPageBreaks(canvas, pageLeft, pageRight)
 
@@ -295,6 +311,42 @@ class NoteCanvasView(context: Context) : FrameLayout(context) {
                 if (i == 0) lassoDrawPath.moveTo(x, y) else lassoDrawPath.lineTo(x, y)
             }
             canvas.drawPath(lassoDrawPath, selectionPaint)
+        }
+    }
+
+    /** Lines or dots of [pageBackground] on the visible part of the page. */
+    private fun drawPattern(canvas: Canvas) {
+        val spec = pageBackground
+        val scale = viewport.scale
+        // Zoomed out so far that the pattern would turn into a grey wash: leave the paper plain.
+        if (!BackgroundPattern.hasRows(spec) || spec.spacingMm * scale < MIN_PATTERN_SPACING_PX) return
+        val transform = viewport.documentToView
+        val visible = viewport.visibleDocumentRect
+        val top = maxOf(0f, visible.top)
+        val bottom = minOf(viewport.documentHeightMm, visible.bottom)
+        val rows = BackgroundPattern.rows(spec, top, bottom)
+        val columns = BackgroundPattern.columns(spec, viewport.pageWidthMm).filter { it >= visible.left && it <= visible.right }
+        if (BackgroundPattern.isDotted(spec)) {
+            patternPaint.strokeWidth = maxOf(2f, DOT_DIAMETER_MM * scale)
+            val needed = rows.size * columns.size * 2
+            if (patternPoints.size < needed) patternPoints = FloatArray(needed)
+            var i = 0
+            for (y in rows) {
+                val vy = transform.mapY(y)
+                for (x in columns) {
+                    patternPoints[i++] = transform.mapX(x)
+                    patternPoints[i++] = vy
+                }
+            }
+            canvas.drawPoints(patternPoints, 0, i, patternPaint)
+        } else {
+            patternPaint.strokeWidth = maxOf(1f, LINE_WIDTH_MM * scale)
+            val left = transform.mapX(0f)
+            val right = transform.mapX(viewport.pageWidthMm)
+            for (y in rows) transform.mapY(y).let { canvas.drawLine(left, it, right, it, patternPaint) }
+            val vTop = transform.mapY(top)
+            val vBottom = transform.mapY(bottom)
+            for (x in columns) transform.mapX(x).let { canvas.drawLine(it, vTop, it, vBottom, patternPaint) }
         }
     }
 
@@ -663,6 +715,13 @@ class NoteCanvasView(context: Context) : FrameLayout(context) {
     private companion object {
         const val NO_POINTER = -1
         const val SHADOW_PX = 4f
+
+        const val PATTERN_COLOR = 0xffb4c6e2.toInt()
+        const val LINE_WIDTH_MM = 0.15f
+        const val DOT_DIAMETER_MM = 0.45f
+
+        /** Below this distance between lines the pattern is not drawn. */
+        const val MIN_PATTERN_SPACING_PX = 6f
 
         /** Space between the selected strokes and the selection frame, mm. */
         const val SELECTION_PADDING_MM = 2f

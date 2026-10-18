@@ -14,6 +14,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.MenuBook
@@ -57,6 +59,8 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import de.nibsync.library.LibraryNode
 import de.nibsync.library.NodeId
+import de.nibsync.background.ui.BackgroundPicker
+import de.nibsync.model.BackgroundSpec
 import de.nibsync.model.Orientation
 import de.nibsync.model.PageFormat
 import de.nibsync.model.PaperSize
@@ -212,9 +216,9 @@ fun LibraryDrawer(
         Dialog.NewFolder -> NameDialog(stringResource(R.string.new_folder), placeholder = stringResource(R.string.default_folder_name), onDismiss = { dialog = null }) { name ->
             scope.launch { viewModel.createFolder(name) }
         }
-        Dialog.NewDocument -> NewDocumentDialog(onDismiss = { dialog = null }) { name, format ->
+        Dialog.NewDocument -> NewDocumentDialog(onDismiss = { dialog = null }) { name, format, background ->
             scope.launch {
-                viewModel.createDocument(name, format)?.let {
+                viewModel.createDocument(name, format, background)?.let {
                     viewModel.onDocumentOpened(it.id)
                     onOpenDocument(it.id)
                 }
@@ -271,18 +275,19 @@ private fun NameDialog(title: String, placeholder: String, initial: String = "",
 }
 
 @Composable
-private fun NewDocumentDialog(onDismiss: () -> Unit, onConfirm: (String, PageFormat) -> Unit) {
+private fun NewDocumentDialog(onDismiss: () -> Unit, onConfirm: (String, PageFormat, BackgroundSpec) -> Unit) {
     var name by remember { mutableStateOf("") }
     val defaultName = stringResource(R.string.default_document_name)
     var paper by remember { mutableStateOf(PaperSize.A4) }
     var orientation by remember { mutableStateOf(Orientation.PORTRAIT) }
+    var background by remember { mutableStateOf(BackgroundSpec()) }
     val focus = remember { FocusRequester() }
     LaunchedEffect(Unit) { focus.requestFocus() }
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(stringResource(R.string.new_document)) },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 OutlinedTextField(
                     value = name,
                     onValueChange = { name = it },
@@ -317,11 +322,12 @@ private fun NewDocumentDialog(onDismiss: () -> Unit, onConfirm: (String, PageFor
                     stringResource(R.string.width_info, format.widthMm.toInt()),
                     style = MaterialTheme.typography.bodySmall,
                 )
+                BackgroundPicker(background, { background = it })
             }
         },
         confirmButton = {
             TextButton(
-                onClick = { onDismiss(); onConfirm(name.ifBlank { defaultName }, PageFormat(paper, orientation)) },
+                onClick = { onDismiss(); onConfirm(name.ifBlank { defaultName }, PageFormat(paper, orientation), background) },
                 modifier = Modifier.testTag(LibraryTags.CONFIRM),
             ) { Text(stringResource(R.string.create)) }
         },
