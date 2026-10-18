@@ -1,19 +1,20 @@
 package de.nibsync.document
 
 import de.nibsync.model.IdGenerator
-import de.nibsync.model.Stroke
+import de.nibsync.model.PageElement
 import de.nibsync.model.StrokeId
+import de.nibsync.model.withId
 
 /**
  * A locally performed change, recorded so it can be undone. Undo/redo never revives removed
  * stroke ids (see [DocumentState]); restoring a stroke re-adds a copy with a fresh id.
  */
 sealed interface Edit {
-    data class Added(val strokes: List<Stroke>) : Edit
-    data class Removed(val strokes: List<Stroke>) : Edit
+    data class Added(val strokes: List<PageElement>) : Edit
+    data class Removed(val strokes: List<PageElement>) : Edit
 
     /** [removed] were replaced by [added] in one step (e.g. two strokes merged into one shape). */
-    data class Replaced(val removed: List<Stroke>, val added: List<Stroke>) : Edit
+    data class Replaced(val removed: List<PageElement>, val added: List<PageElement>) : Edit
 }
 
 /**
@@ -28,7 +29,7 @@ class UndoManager(private val ids: IdGenerator, private val maxDepth: Int = 200)
      * Restoring removed strokes gives them new ids, so older history entries that still refer to
      * the old id are resolved through this map (old id -> restored copy).
      */
-    private val restoredAs = mutableMapOf<StrokeId, Stroke>()
+    private val restoredAs = mutableMapOf<StrokeId, PageElement>()
 
     val canUndo: Boolean get() = undoStack.isNotEmpty()
     val canRedo: Boolean get() = redoStack.isNotEmpty()
@@ -63,7 +64,7 @@ class UndoManager(private val ids: IdGenerator, private val maxDepth: Int = 200)
         restoredAs.clear()
     }
 
-    private fun current(stroke: Stroke): Stroke {
+    private fun current(stroke: PageElement): PageElement {
         var s = stroke
         while (true) s = restoredAs[s.id] ?: return s
     }
@@ -74,7 +75,7 @@ class UndoManager(private val ids: IdGenerator, private val maxDepth: Int = 200)
         is Edit.Replaced -> Edit.Replaced(removed = edit.added.map(::current), added = restore(edit.removed))
     }
 
-    private fun restore(strokes: List<Stroke>): List<Stroke> = strokes.map(::current).map { old ->
-        old.copy(id = ids.newStrokeId()).also { restoredAs[old.id] = it }
+    private fun restore(strokes: List<PageElement>): List<PageElement> = strokes.map(::current).map { old ->
+        old.withId(ids.newStrokeId()).also { restoredAs[old.id] = it }
     }
 }

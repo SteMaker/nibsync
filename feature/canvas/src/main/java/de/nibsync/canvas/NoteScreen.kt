@@ -1,6 +1,25 @@
 package de.nibsync.canvas
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.filled.OpenWith
+import androidx.compose.material.icons.filled.TextFields
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.snapshotFlow
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.unit.IntOffset
+import de.nibsync.model.geometry.Viewport
+import de.nibsync.text.TextBoxEditor
+import de.nibsync.text.TextFormatActions
+import kotlinx.coroutines.flow.debounce
+import kotlinx.coroutines.flow.drop
+import kotlin.math.roundToInt
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -85,6 +104,9 @@ object NoteScreenTags {
     const val BACKGROUND = "background"
     const val BACKGROUND_CONFIRM = "background-confirm"
     const val LASSO = "lasso"
+    const val TEXT = "text-tool"
+    const val MOVE_TEXT = "move-text"
+    const val RESIZE_TEXT = "resize-text"
     const val DELETE_SELECTION = "delete-selection"
     const val COPY_SELECTION = "copy-selection"
     const val PASTE = "paste"
@@ -112,6 +134,15 @@ fun NoteScreen(
     val clip by viewModel.clipboard.content.collectAsStateWithLifecycle()
     var canvasView by remember { mutableStateOf<NoteCanvasView?>(null) }
     var choosingBackground by remember { mutableStateOf(false) }
+    val textEditing by viewModel.textEditing.collectAsStateWithLifecycle()
+    var viewport by remember { mutableStateOf<Viewport?>(null) }
+
+    // Store the text while typing, so nothing is lost if the app goes away.
+    textEditing?.let { editing ->
+        LaunchedEffect(editing.key) {
+            snapshotFlow { editing.controller.contentVersion }.drop(1).debounce(TEXT_SAVE_DELAY_MS).collect { viewModel.saveText() }
+        }
+    }
 
     if (choosingBackground) {
         BackgroundDialog(
@@ -153,36 +184,120 @@ fun NoteScreen(
                 }
             },
             onFingerToggle = viewModel::setDrawWithFinger,
+            onText = viewModel::selectText,
+            textEditing = textEditing,
+            onTextDelete = viewModel::deleteText,
         )
-        AndroidView(
-            modifier = Modifier.fillMaxSize().clipToBounds().testTag(NoteScreenTags.CANVAS),
-            factory = { context ->
-                NoteCanvasView(context).also {
-                    it.onStrokeDrafted = viewModel::commitStroke
-                    it.onShapeRequested = viewModel::commitShape
-                    it.onEraseFinished = viewModel::commitErase
-                    it.onLassoFinished = viewModel::selectByLasso
-                    it.onSelectionMoved = viewModel::moveSelection
-                    it.onSelectionCleared = viewModel::clearSelection
-                    canvasView = it
-                    onCanvasCreated(it)
-                }
-            },
-            update = { view ->
-                view.pageFormat = document.meta.format
-                view.pageBackground = document.background
-                view.brush = tools.activeBrush
-                view.drawWithFinger = tools.drawWithFinger
-                view.showPageBreaks = showPageBreaks
-                view.tool = tools.tool
-                view.selection = selection
-                view.eraserMode = tools.eraserMode
-                view.eraserRadiusMm = tools.eraserRadiusMm
-                view.setStrokes(document.strokes)
-            },
+        Box(Modifier.fillMaxSize().clipToBounds()) {
+            AndroidView(
+                modifier = Modifier.fillMaxSize().testTag(NoteScreenTags.CANVAS),
+                factory = { context ->
+                    NoteCanvasView(context).also {
+                        it.onTextRequested = { x, y, width -> viewModel.requestText(x, y, width, it.viewport.pageWidthMm) }
+                        it.onViewportChanged = { v -> viewport = v }
+                        viewModel.measureText = it.textRenderer::heightMm
+                        it.onStrokeDrafted = viewModel::commitStroke
+                        it.onShapeRequested = viewModel::commitShape
+                        it.onEraseFinished = viewModel::commitErase
+                        it.onLassoFinished = viewModel::selectByLasso
+                        it.onSelectionMoved = viewModel::moveSelection
+                        it.onSelectionCleared = viewModel::clearSelection
+                        canvasView = it
+                        onCanvasCreated(it)
+                    }
+                },
+                update = { view ->
+                    view.pageFormat = document.meta.format
+                    view.pageBackground = document.background
+                    view.brush = tools.activeBrush
+                    view.drawWithFinger = tools.drawWithFinger
+                    view.showPageBreaks = showPageBreaks
+                    view.tool = tools.tool
+                    view.selection = selection
+                    view.eraserMode = tools.eraserMode
+                    view.eraserRadiusMm = tools.eraserRadiusMm
+                    view.setStrokes(document.strokes)
+                    view.setTextBoxes(document.textBoxes)
+                    view.editingTextBox = textEditing?.boxId
+                },
+            )
+            val editing = textEditing
+            val v = viewport ?: canvasView?.viewport
+            if (editing != null && v != null && v.hasSize) {
+                TextBoxOverlay(
+                    editing = editing,
+                    viewport = v,
+                    onMove = viewModel::moveText,
+                    onResize = viewModel::resizeText,
+                    onGestureEnd = viewModel::saveText,
+                )
+            }
+        }
+    }
+}
+
+/**
+ * The editor over the edited box, at the page zoom, with handles to move it (top left) and
+ * to change its width (right edge).
+ */
+@Composable
+private fun TextBoxOverlay(
+    editing: TextEditing,
+    viewport: Viewport,
+    onMove: (Float, Float) -> Unit,
+    onResize: (Float) -> Unit,
+    onGestureEnd: () -> Unit,
+) {
+    val t = viewport.documentToView
+    val scale by rememberUpdatedState(viewport.scale)
+    val focus = remember(editing.key) { FocusRequester() }
+    LaunchedEffect(editing.key) { focus.requestFocus() }
+    val accent = MaterialTheme.colorScheme.primary
+    val resizeLabel = stringResource(R.string.resize_text_box)
+    Box(Modifier.offset { IntOffset(t.mapX(editing.x).roundToInt(), t.mapY(editing.y).roundToInt()) }) {
+        TextBoxEditor(
+            controller = editing.controller,
+            widthMm = editing.widthMm,
+            pxPerMm = viewport.scale,
+            modifier = Modifier.focusRequester(focus).border(1.dp, accent.copy(alpha = 0.6f)),
+        )
+        Icon(
+            Icons.Filled.OpenWith,
+            contentDescription = stringResource(R.string.move_text_box),
+            tint = MaterialTheme.colorScheme.onPrimary,
+            modifier = Modifier
+                .offset(x = (-14).dp, y = (-34).dp)
+                .size(28.dp)
+                .background(accent, CircleShape)
+                .padding(4.dp)
+                .testTag(NoteScreenTags.MOVE_TEXT)
+                .pointerInput(editing.key) {
+                    detectDragGestures(onDragEnd = onGestureEnd) { change, drag ->
+                        change.consume()
+                        onMove(drag.x / scale, drag.y / scale)
+                    }
+                },
+        )
+        Box(
+            Modifier
+                .align(Alignment.CenterEnd)
+                .offset(x = 10.dp)
+                .size(width = 10.dp, height = 32.dp)
+                .background(accent, RoundedCornerShape(5.dp))
+                .semantics { contentDescription = resizeLabel }
+                .testTag(NoteScreenTags.RESIZE_TEXT)
+                .pointerInput(editing.key) {
+                    detectHorizontalDragGestures(onDragEnd = onGestureEnd) { change, dx ->
+                        change.consume()
+                        onResize(dx / scale)
+                    }
+                },
         )
     }
 }
+
+/** Idle time after typing before the text box is stored. */
+private const val TEXT_SAVE_DELAY_MS = 1500L
 
 @Composable
 private fun Toolbar(
@@ -208,102 +323,126 @@ private fun Toolbar(
     onCopySelection: () -> Unit,
     onPaste: () -> Unit,
     onFingerToggle: (Boolean) -> Unit,
+    onText: () -> Unit,
+    textEditing: TextEditing?,
+    onTextDelete: () -> Unit,
 ) {
     Surface(tonalElevation = 3.dp, modifier = Modifier.fillMaxWidth().testTag(NoteScreenTags.TOOLBAR)) {
+        // Tools stay in place; only the middle part (pen options, text formatting) scrolls when
+        // it does not fit, so switching tools never moves the buttons.
         Row(
-            modifier = Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = 8.dp, vertical = 4.dp),
+            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(4.dp),
         ) {
-            if (onMenu != null) {
-                val menuLabel = stringResource(R.string.library_menu)
-                WithTooltip(menuLabel) {
-                    IconButton(onClick = onMenu, modifier = Modifier.testTag(NoteScreenTags.MENU)) {
-                        Icon(Icons.Filled.Menu, contentDescription = menuLabel)
+            if (textEditing != null) {
+                ScrollingRow(Modifier.weight(1f)) {
+                    TextFormatActions(textEditing.controller, onDelete = onTextDelete)
+                }
+            } else {
+                if (onMenu != null) {
+                    val menuLabel = stringResource(R.string.library_menu)
+                    WithTooltip(menuLabel) {
+                        IconButton(onClick = onMenu, modifier = Modifier.testTag(NoteScreenTags.MENU)) {
+                            Icon(Icons.Filled.Menu, contentDescription = menuLabel)
+                        }
+                    }
+                    Divider()
+                }
+                val undoLabel = stringResource(R.string.undo)
+                WithTooltip(undoLabel) {
+                    IconButton(onClick = onUndo, enabled = canUndo, modifier = Modifier.testTag(NoteScreenTags.UNDO)) {
+                        Icon(Icons.AutoMirrored.Filled.Undo, contentDescription = undoLabel)
+                    }
+                }
+                val redoLabel = stringResource(R.string.redo)
+                WithTooltip(redoLabel) {
+                    IconButton(onClick = onRedo, enabled = canRedo, modifier = Modifier.testTag(NoteScreenTags.REDO)) {
+                        Icon(Icons.AutoMirrored.Filled.Redo, contentDescription = redoLabel)
                     }
                 }
                 Divider()
-            }
-            val undoLabel = stringResource(R.string.undo)
-            WithTooltip(undoLabel) {
-                IconButton(onClick = onUndo, enabled = canUndo, modifier = Modifier.testTag(NoteScreenTags.UNDO)) {
-                    Icon(Icons.AutoMirrored.Filled.Undo, contentDescription = undoLabel)
-                }
-            }
-            val redoLabel = stringResource(R.string.redo)
-            WithTooltip(redoLabel) {
-                IconButton(onClick = onRedo, enabled = canRedo, modifier = Modifier.testTag(NoteScreenTags.REDO)) {
-                    Icon(Icons.AutoMirrored.Filled.Redo, contentDescription = redoLabel)
-                }
-            }
-            Divider()
-            for (family in BrushFamily.entries) {
-                val label = stringResource(penLabel(family))
-                WithTooltip(label) {
-                    FilledIconToggleButton(
-                        checked = !tools.eraserActive && tools.activePen == family,
-                        onCheckedChange = { onPen(family) },
-                        modifier = Modifier.testTag(NoteScreenTags.pen(family)),
-                    ) {
-                        Icon(penIcon(family), contentDescription = label)
+                for (family in BrushFamily.entries) {
+                    val label = stringResource(penLabel(family))
+                    WithTooltip(label) {
+                        FilledIconToggleButton(
+                            checked = !tools.eraserActive && tools.activePen == family,
+                            onCheckedChange = { onPen(family) },
+                            modifier = Modifier.testTag(NoteScreenTags.pen(family)),
+                        ) {
+                            Icon(penIcon(family), contentDescription = label)
+                        }
                     }
                 }
-            }
-            for (mode in EraserMode.entries) {
-                val label = stringResource(if (mode == EraserMode.OBJECT) R.string.eraser_object else R.string.eraser_pixel)
-                WithTooltip(label) {
-                    FilledIconToggleButton(
-                        checked = tools.eraserActive && tools.eraserMode == mode,
-                        onCheckedChange = { onEraser(mode) },
-                        modifier = Modifier.testTag(NoteScreenTags.eraserMode(mode)),
-                    ) {
-                        Icon(eraserIcon(mode), contentDescription = label)
+                for (mode in EraserMode.entries) {
+                    val label = stringResource(if (mode == EraserMode.OBJECT) R.string.eraser_object else R.string.eraser_pixel)
+                    WithTooltip(label) {
+                        FilledIconToggleButton(
+                            checked = tools.eraserActive && tools.eraserMode == mode,
+                            onCheckedChange = { onEraser(mode) },
+                            modifier = Modifier.testTag(NoteScreenTags.eraserMode(mode)),
+                        ) {
+                            Icon(eraserIcon(mode), contentDescription = label)
+                        }
                     }
                 }
-            }
-            val lassoLabel = stringResource(R.string.lasso)
-            WithTooltip(lassoLabel) {
-                FilledIconToggleButton(
-                    checked = tools.lassoActive,
-                    onCheckedChange = { onLasso() },
-                    modifier = Modifier.testTag(NoteScreenTags.LASSO),
-                ) {
-                    Icon(Icons.Filled.HighlightAlt, contentDescription = lassoLabel)
-                }
-            }
-            Divider()
-            when (tools.tool) {
-                Tool.ERASER -> EraserOptions(tools, onEraserSize)
-                Tool.LASSO -> SelectionActions(hasSelection, canPaste, onDeleteSelection, onCopySelection, onPaste)
-                Tool.PEN -> PenOptions(tools, onColor, onSize)
-            }
-            Divider()
-            if (onTogglePageBreaks != null) {
-                val breaksLabel = stringResource(R.string.page_breaks)
-                WithTooltip(breaksLabel) {
+                val lassoLabel = stringResource(R.string.lasso)
+                WithTooltip(lassoLabel) {
                     FilledIconToggleButton(
-                        checked = showPageBreaks,
-                        onCheckedChange = onTogglePageBreaks,
-                        modifier = Modifier.testTag(NoteScreenTags.PAGE_BREAKS),
+                        checked = tools.lassoActive,
+                        onCheckedChange = { onLasso() },
+                        modifier = Modifier.testTag(NoteScreenTags.LASSO),
                     ) {
-                        Icon(Icons.Filled.InsertPageBreak, contentDescription = breaksLabel)
+                        Icon(Icons.Filled.HighlightAlt, contentDescription = lassoLabel)
                     }
                 }
-            }
-            val backgroundLabel = stringResource(BackgroundR.string.background_paper)
-            WithTooltip(backgroundLabel) {
-                IconButton(onClick = onBackground, modifier = Modifier.testTag(NoteScreenTags.BACKGROUND)) {
-                    Icon(Icons.Filled.GridOn, contentDescription = backgroundLabel)
+                val textLabel = stringResource(R.string.text_tool)
+                WithTooltip(textLabel) {
+                    FilledIconToggleButton(
+                        checked = tools.textActive,
+                        onCheckedChange = { onText() },
+                        modifier = Modifier.testTag(NoteScreenTags.TEXT),
+                    ) {
+                        Icon(Icons.Filled.TextFields, contentDescription = textLabel)
+                    }
                 }
-            }
-            val fingerLabel = stringResource(R.string.draw_with_finger)
-            WithTooltip(fingerLabel) {
-                FilledIconToggleButton(
-                    checked = tools.drawWithFinger,
-                    onCheckedChange = onFingerToggle,
-                    modifier = Modifier.testTag(NoteScreenTags.FINGER_TOGGLE),
-                ) {
-                    Icon(Icons.Filled.TouchApp, contentDescription = fingerLabel)
+                Divider()
+                ScrollingRow(Modifier.weight(1f)) {
+                    when (tools.tool) {
+                        Tool.ERASER -> EraserOptions(tools, onEraserSize)
+                        Tool.LASSO -> SelectionActions(hasSelection, canPaste, onDeleteSelection, onCopySelection, onPaste)
+                        Tool.PEN -> PenOptions(tools, onColor, onSize)
+                        Tool.TEXT -> Unit
+                    }
+                }
+                Divider()
+                if (onTogglePageBreaks != null) {
+                    val breaksLabel = stringResource(R.string.page_breaks)
+                    WithTooltip(breaksLabel) {
+                        FilledIconToggleButton(
+                            checked = showPageBreaks,
+                            onCheckedChange = onTogglePageBreaks,
+                            modifier = Modifier.testTag(NoteScreenTags.PAGE_BREAKS),
+                        ) {
+                            Icon(Icons.Filled.InsertPageBreak, contentDescription = breaksLabel)
+                        }
+                    }
+                }
+                val backgroundLabel = stringResource(BackgroundR.string.background_paper)
+                WithTooltip(backgroundLabel) {
+                    IconButton(onClick = onBackground, modifier = Modifier.testTag(NoteScreenTags.BACKGROUND)) {
+                        Icon(Icons.Filled.GridOn, contentDescription = backgroundLabel)
+                    }
+                }
+                val fingerLabel = stringResource(R.string.draw_with_finger)
+                WithTooltip(fingerLabel) {
+                    FilledIconToggleButton(
+                        checked = tools.drawWithFinger,
+                        onCheckedChange = onFingerToggle,
+                        modifier = Modifier.testTag(NoteScreenTags.FINGER_TOGGLE),
+                    ) {
+                        Icon(Icons.Filled.TouchApp, contentDescription = fingerLabel)
+                    }
                 }
             }
             toolbarEnd()
@@ -389,6 +528,15 @@ private fun WithTooltip(text: String, content: @Composable () -> Unit) {
 }
 
 @Composable
+private fun ScrollingRow(modifier: Modifier, content: @Composable () -> Unit) {
+    Row(
+        modifier.horizontalScroll(rememberScrollState()),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
+    ) { content() }
+}
+
+@Composable
 private fun Divider() {
     Spacer(Modifier.width(4.dp))
     VerticalDivider(Modifier.height(32.dp))
@@ -400,7 +548,7 @@ private fun ColorSwatch(argb: Int, selected: Boolean, description: String, modif
     val ring = if (selected) MaterialTheme.colorScheme.primary else Color.Transparent
     Box(
         modifier
-            .size(40.dp)
+            .size(36.dp)
             .border(3.dp, ring, CircleShape)
             .padding(6.dp)
             .background(Color(argb), CircleShape)

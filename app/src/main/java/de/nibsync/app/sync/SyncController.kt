@@ -42,6 +42,13 @@ class SyncController(
     private val _config = MutableStateFlow(accounts.load())
     val config: StateFlow<SyncConfig?> = _config.asStateFlow()
 
+    /**
+     * While true no sync runs. Instrumented tests set it so they never sync test data with
+     * the account configured on the device. Not persisted.
+     */
+    @Volatile
+    var paused: Boolean = false
+
     private var engine: SyncEngine? = null
     private val runLock = Mutex()
     private var loop: Job? = null
@@ -88,6 +95,7 @@ class SyncController(
      * costs one PROPFIND).
      */
     suspend fun runOnce() {
+        if (paused) return
         runLock.withLock {
             val engine = engine ?: return
             // Flush local writes first so the newest strokes go out in this run.

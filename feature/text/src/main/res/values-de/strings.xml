@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="text_bold">Fett</string>
+    <string name="text_italic">Kursiv</string>
+    <string name="text_bullets">Aufzählung</string>
+    <string name="text_numbers">Nummerierte Liste</string>
+    <string name="text_indent">Einzug vergrößern</string>
+    <string name="text_outdent">Einzug verkleinern</string>
+    <string name="text_delete">Textbox löschen</string>
+    <string name="text_size_pt">%1$s pt</string>
+    <string name="font_sans">Serifenlos</string>
+    <string name="font_serif">Serif</string>
+    <string name="font_mono">Festbreite</string>
+    <string name="font_handwriting">Handschrift</string>
+</resources>

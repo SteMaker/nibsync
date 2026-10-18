@@ -38,21 +38,21 @@ data class StrokePoint(
  * re-render the stroke with its own brush engine.
  */
 data class Stroke(
-    val id: StrokeId,
-    val layer: Layer,
+    override val id: StrokeId,
+    override val layer: Layer,
     val brush: BrushSpec,
     val tool: InputTool,
     val points: List<StrokePoint>,
-    val createdAtEpochMs: Long,
-    val author: DeviceId,
-) {
+    override val createdAtEpochMs: Long,
+    override val author: DeviceId,
+) : PageElement {
     init {
         require(points.isNotEmpty()) { "A stroke needs at least one point" }
         require(layer.holdsStrokes) { "Strokes cannot be placed on layer $layer" }
     }
 
     /** Axis-aligned bounds of the stroke including half the brush width on every side. */
-    val bounds: Rect by lazy {
+    override val bounds: Rect by lazy {
         var minX = Float.POSITIVE_INFINITY
         var minY = Float.POSITIVE_INFINITY
         var maxX = Float.NEGATIVE_INFINITY
@@ -77,4 +77,7 @@ data class StrokeDraft(
     val tool: InputTool,
     val points: List<StrokePoint>,
     val layer: Layer = brush.family.defaultLayer,
-)
+) : ElementDraft {
+    override fun translated(dx: Float, dy: Float): StrokeDraft =
+        copy(points = points.map { it.copy(x = it.x + dx, y = it.y + dy) })
+}

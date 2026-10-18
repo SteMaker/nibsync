@@ -22,6 +22,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.material3.rememberDrawerState
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -70,6 +71,10 @@ class MainActivity : ComponentActivity() {
         private set
 
     var session: DocumentSession? = null
+        private set
+
+    /** View model of the open document. Exposed for instrumented tests. */
+    var canvasViewModel: CanvasViewModel? = null
         private set
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -177,6 +182,11 @@ class MainActivity : ComponentActivity() {
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
         } else {
             val vm = viewModel(key = docId.value) { CanvasViewModel(current, GeometricShapeRecognizer(), container.clipboard) }
+            DisposableEffect(vm) {
+                canvasViewModel = vm
+                // Leaving the document (or the screen) ends text editing, so the text is stored.
+                onDispose { vm.finishText() }
+            }
             NoteScreen(
                 vm,
                 Modifier.safeDrawingPadding(),
@@ -199,6 +209,8 @@ class MainActivity : ComponentActivity() {
     @SuppressLint("RestrictedApi")
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
         val s = session
+        // While a text box is edited, the editor handles its own undo and redo.
+        if (canvasViewModel?.textEditing?.value != null) return super.dispatchKeyEvent(event)
         if (s != null && event.isCtrlPressed && (event.keyCode == KeyEvent.KEYCODE_Z || event.keyCode == KeyEvent.KEYCODE_Y)) {
             if (event.action == KeyEvent.ACTION_DOWN) {
                 if (event.keyCode == KeyEvent.KEYCODE_Z && !event.isShiftPressed) s.undo() else s.redo()
@@ -216,6 +228,7 @@ class MainActivity : ComponentActivity() {
     override fun onStop() {
         super.onStop()
         sync.stop()
+        canvasViewModel?.saveText()
         // Make sure everything written so far reaches the disk while the app is in background.
         val s = session ?: return
         container.appScope.launch { s.flush() }

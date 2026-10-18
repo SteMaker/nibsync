@@ -11,6 +11,8 @@ import androidx.compose.ui.test.junit4.createEmptyComposeRule
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.test.onAllNodesWithTag
+import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.performClick
 import androidx.test.core.app.ActivityScenario
 import androidx.test.core.app.ApplicationProvider
@@ -25,6 +27,11 @@ import de.nibsync.model.BackgroundKind
 import de.nibsync.model.BackgroundPattern
 import de.nibsync.model.BackgroundSpec
 import de.nibsync.model.BrushFamily
+import de.nibsync.model.ListKind
+import de.nibsync.model.MarkStyle
+import de.nibsync.model.TextFont
+import de.nibsync.model.TextMark
+import de.nibsync.text.TextTags
 import de.nibsync.model.DocumentId
 import de.nibsync.model.InputTool
 import de.nibsync.model.Layer
@@ -55,11 +62,13 @@ class NoteAppTest {
 
     @Before
     fun launch() {
+        app.sync.paused = true // never sync test data with the account on the device
         scenario = launchActivity()
     }
 
     @After
     fun cleanUp() {
+        app.sync.paused = false
         if (::scenario.isInitialized) scenario.close()
         runBlocking {
             app.container.closeSession(documentId)
@@ -641,5 +650,203 @@ class NoteAppTest {
         drag(listOf(900f to 900f, 901f to 900f))
         waitUntil("cleared") { selection().isEmpty() }
         compose.onNodeWithTag(NoteScreenTags.DELETE_SELECTION).assertIsNotEnabled()
+    }
+
+    // ---- text boxes -----------------------------------------------------------------------
+
+    private fun editing(): de.nibsync.canvas.TextEditing? {
+        var e: de.nibsync.canvas.TextEditing? = null
+        scenario.onActivity { e = it.canvasViewModel?.textEditing?.value }
+        return e
+    }
+
+    private fun textBoxes() = session().state.value.textBoxes
+
+    /** A stylus tap in canvas pixels. */
+    private fun tap(x: Float, y: Float) = drag(listOf(x to y, x to y))
+
+    /** Text tool, then a frame dragged from ([x], [y]) canvas pixels, 60 mm wide. */
+    private fun newTextBox(x: Float = 200f, y: Float = 300f) {
+        compose.onNodeWithTag(NoteScreenTags.TEXT).performClick()
+        val scale = checkNotNull(canvas()).viewport.scale
+        drag(line(x, y, x + 60f * scale, y + 30f))
+        waitUntil("editing a new text box") { editing() != null }
+    }
+
+    /** Taps the page away from the boxes, which ends editing; waits until the editor is gone. */
+    private fun tapOutside() {
+        tap(2600f, 1400f)
+        waitUntil("editing ended") { editing() == null }
+        compose.waitForIdle()
+    }
+
+    @Test
+    fun textBoxIsTypedFormattedAndStored() {
+        newTextBox()
+        // The tool bar now formats text.
+        compose.onNodeWithTag(TextTags.BOLD).assertExists()
+        compose.onNodeWithTag(NoteScreenTags.pen(BrushFamily.BALLPOINT)).assertDoesNotExist()
+
+        compose.onNodeWithTag(TextTags.EDITOR).performTextInput("Hallo ")
+        compose.onNodeWithTag(TextTags.BOLD).performClick()
+        compose.onNodeWithTag(TextTags.EDITOR).performTextInput("fett")
+        tapOutside()
+        // Back to the pen, without a dot from that tap.
+        compose.onNodeWithTag(NoteScreenTags.pen(BrushFamily.BALLPOINT)).assertExists()
+        assertThat(strokes()).isEmpty()
+
+        val box = textBoxes().single()
+        val p = box.text.paragraphs.single()
+        assertThat(p.text).isEqualTo("Hallo fett")
+        assertThat(p.marks).contains(TextMark(6, 10, MarkStyle.Bold))
+        assertThat(box.heightMm).isGreaterThan(3f)
+        assertThat(compose.onAllNodesWithTag(TextTags.EDITOR).fetchSemanticsNodes()).isEmpty()
+
+        // It is drawn on the page: dark pixels inside its frame.
+        val view = checkNotNull(canvas())
+        waitUntil("canvas shows the box") { view.textBoxes.isNotEmpty() }
+        val bitmap = Bitmap.createBitmap(view.width, view.height, Bitmap.Config.ARGB_8888)
+        scenario.onActivity { view.draw(Canvas(bitmap)) }
+        val t = view.viewport.documentToView
+        var dark = 0
+        for (x in t.mapX(box.x).toInt() until t.mapX(box.x + box.widthMm).toInt() step 2) {
+            for (y in t.mapY(box.y).toInt() until t.mapY(box.y + box.heightMm).toInt() step 2) {
+                if (Color.red(bitmap.getPixel(x, y)) < 100) dark++
+            }
+        }
+        assertThat(dark).isGreaterThan(20)
+
+        // And survives a restart from disk.
+        scenario.close()
+        runBlocking { app.container.closeSession(documentId) }
+        scenario = launchActivity()
+        waitUntil("reloaded") { textBoxes().size == 1 }
+        assertThat(textBoxes().single().text).isEqualTo(box.text)
+    }
+
+    @Test
+    fun fontsSizesAndListsFromTheToolBar() {
+        newTextBox()
+        compose.onNodeWithTag(TextTags.FONT).performClick()
+        compose.onNodeWithTag(TextTags.font(TextFont.HANDWRITING)).performClick()
+        compose.onNodeWithTag(TextTags.SIZE).performClick()
+        compose.onNodeWithTag(TextTags.size(24f)).performClick()
+        compose.onNodeWithTag(TextTags.BULLETS).performClick()
+        compose.waitForIdle()
+        compose.onNodeWithTag(TextTags.EDITOR).performTextInput("Punkt")
+        tapOutside()
+        val p = textBoxes().single().text.paragraphs.single()
+        assertThat(p.text).isEqualTo("Punkt")
+        assertThat(p.list).isEqualTo(ListKind.BULLET)
+        assertThat(p.marks).containsAtLeast(
+            TextMark(0, 5, MarkStyle.Font(TextFont.HANDWRITING)),
+            TextMark(0, 5, MarkStyle.Size(24f)),
+        )
+    }
+
+    @Test
+    fun penTapOnABoxOpensItAndDeleteRemovesIt() {
+        newTextBox()
+        compose.onNodeWithTag(TextTags.EDITOR).performTextInput("Notiz")
+        tapOutside()
+        val box = textBoxes().single()
+
+        // With the pen selected, a tap on the box opens it (text mode) instead of a dot.
+        compose.onNodeWithTag(NoteScreenTags.pen(BrushFamily.BALLPOINT)).performClick()
+        val t = checkNotNull(canvas()).viewport.documentToView
+        tap(t.mapX(box.x + 2f), t.mapY(box.y + box.heightMm / 2))
+        waitUntil("editing the box") { editing()?.boxId == box.id }
+        assertThat(strokes()).isEmpty()
+        compose.onNodeWithTag(TextTags.DELETE).performClick()
+        waitUntil("removed") { textBoxes().isEmpty() && editing() == null }
+        // Undo brings it back.
+        compose.onNodeWithTag(NoteScreenTags.UNDO).performClick()
+        waitUntil("restored") { textBoxes().singleOrNull()?.text == box.text }
+    }
+
+    @Test
+    fun draggedFrameSetsTheWidth() {
+        compose.onNodeWithTag(NoteScreenTags.TEXT).performClick()
+        val v = checkNotNull(canvas()).viewport
+        drag(line(100f, 200f, 100f + 40f * v.scale, 260f))
+        waitUntil("editing") { editing() != null }
+        assertThat(editing()!!.widthMm).isWithin(0.5f).of(40f)
+        compose.onNodeWithTag(TextTags.EDITOR).performTextInput("schmal")
+        tapOutside()
+        assertThat(textBoxes().single().widthMm).isWithin(0.5f).of(40f)
+    }
+
+    @Test
+    fun fingerDrawsATextFrameToo() {
+        compose.onNodeWithTag(NoteScreenTags.TEXT).performClick()
+        val v = checkNotNull(canvas()).viewport
+        drag(line(100f, 200f, 100f + 60f * v.scale, 260f), toolType = MotionEvent.TOOL_TYPE_FINGER)
+        waitUntil("editing") { editing() != null }
+        assertThat(editing()!!.widthMm).isWithin(0.5f).of(60f)
+        // The page did not scroll.
+        assertThat(checkNotNull(canvas()).viewport).isEqualTo(v)
+    }
+
+    @Test
+    fun emptyBoxLeavesNothingBehind() {
+        newTextBox()
+        tapOutside()
+        assertThat(textBoxes()).isEmpty()
+        compose.onNodeWithTag(NoteScreenTags.UNDO).assertIsNotEnabled()
+    }
+
+    @Test
+    fun editorSitsExactlyOverTheBox() {
+        newTextBox(400f, 400f)
+        compose.onNodeWithTag(TextTags.EDITOR).performTextInput("Position")
+        // Three paragraphs: line spacing on the page must match the editor's.
+        editing()!!.controller.setContent(de.nibsync.model.RichText.plain("Position\nzweite Zeile\ndritte Zeile"))
+        tapOutside()
+        val box = textBoxes().single()
+        val view = checkNotNull(canvas())
+        val viewportBefore = view.viewport
+        val locBefore = IntArray(2).also { l -> scenario.onActivity { view.getLocationInWindow(l) } }
+
+        val t = viewportBefore.documentToView
+        // A finger tap opens it as well.
+        drag(listOf(t.mapX(box.x + 2f) to t.mapY(box.y + box.heightMm / 2), t.mapX(box.x + 2f) to t.mapY(box.y + box.heightMm / 2)), toolType = MotionEvent.TOOL_TYPE_FINGER)
+        waitUntil("editing the box") { editing()?.boxId == box.id }
+        compose.waitForIdle()
+        val locAfter = IntArray(2).also { l -> scenario.onActivity { view.getLocationInWindow(l) } }
+        val editor = compose.onNodeWithTag(TextTags.EDITOR).fetchSemanticsNode().boundsInWindow
+        val expectedLeft = locAfter[0] + view.viewport.documentToView.mapX(box.x)
+        val expectedTop = locAfter[1] + view.viewport.documentToView.mapY(box.y)
+        // Where the glyphs are: on the page (closed) vs. in the editor (screen shot).
+        fun inkBounds(bmp: Bitmap, ox: Int, oy: Int): List<Int> {
+            val l0 = ox + t.mapX(box.x).toInt() - 20
+            val t0 = oy + t.mapY(box.y).toInt() - 20
+            // Only the first letters: the editor's cursor sits after the last one.
+            val r0 = ox + t.mapX(box.x + 6f).toInt()
+            val b0 = oy + t.mapY(box.y + box.heightMm).toInt() + 20
+            var l = Int.MAX_VALUE; var tp = Int.MAX_VALUE; var r = -1; var b = -1
+            for (x in l0 until r0) for (y in t0 until b0) {
+                val c = bmp.getPixel(x, y)
+                if (Color.red(c) < 90 && Color.green(c) < 90 && Color.blue(c) < 90) {
+                    l = minOf(l, x - ox); r = maxOf(r, x - ox); tp = minOf(tp, y - oy); b = maxOf(b, y - oy)
+                }
+            }
+            return listOf(l, tp, r, b)
+        }
+        val shot = instrumentation.uiAutomation.takeScreenshot()
+        val inEditor = inkBounds(shot, locAfter[0], locAfter[1])
+        val closed = Bitmap.createBitmap(view.width, view.height, Bitmap.Config.ARGB_8888)
+        scenario.onActivity {
+            view.editingTextBox = null
+            view.draw(Canvas(closed))
+        }
+        val onPage = inkBounds(closed, 0, 0)
+        for (i in 0..3) assertThat(inEditor[i]).isWithin(3).of(onPage[i])
+        assertThat(locAfter.toList()).isEqualTo(locBefore.toList())
+        assertThat(view.viewport).isEqualTo(viewportBefore)
+        assertThat(editor.left).isWithin(2f).of(expectedLeft)
+        assertThat(editor.top).isWithin(2f).of(expectedTop)
+        assertThat(editor.width).isWithin(2f).of(box.widthMm * view.viewport.scale)
+        // The stored height comes from the page layout; the editor is as tall.
+        assertThat(editor.height).isWithin(3f).of(box.heightMm * view.viewport.scale)
     }
 }

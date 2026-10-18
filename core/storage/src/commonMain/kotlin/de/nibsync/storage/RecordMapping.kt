@@ -10,14 +10,21 @@ import de.nibsync.model.DeviceId
 import de.nibsync.model.DocumentId
 import de.nibsync.model.DocumentMeta
 import de.nibsync.model.InputTool
+import de.nibsync.model.ListKind
+import de.nibsync.model.MarkStyle
 import de.nibsync.model.Layer
 import de.nibsync.model.Orientation
 import de.nibsync.model.PageFormat
 import de.nibsync.model.PaperSize
 import de.nibsync.model.Quantization
+import de.nibsync.model.RichText
 import de.nibsync.model.Stroke
 import de.nibsync.model.StrokeId
 import de.nibsync.model.StrokePoint
+import de.nibsync.model.TextBox
+import de.nibsync.model.TextFont
+import de.nibsync.model.TextMark
+import de.nibsync.model.TextParagraph
 
 internal const val FORMAT_VERSION = 1
 
@@ -55,6 +62,12 @@ internal fun DocumentOp.toRecord(): OpRecord = when (this) {
         type = OpRecord.TYPE_REMOVE,
         removed = ids.map { it.value }.sorted(),
     )
+    is DocumentOp.AddTextBoxes -> OpRecord(
+        counter = stamp.counter,
+        device = stamp.device.value,
+        type = OpRecord.TYPE_ADD_TEXT,
+        textBoxes = boxes.map { it.toRecord() },
+    )
     is DocumentOp.SetBackground -> OpRecord(
         counter = stamp.counter,
         device = stamp.device.value,
@@ -75,6 +88,7 @@ internal fun OpRecord.toDomain(): DocumentOp? {
         OpRecord.TYPE_ADD -> DocumentOp.AddStrokes(stamp, strokes.mapNotNull { it.toDomain() })
         OpRecord.TYPE_REMOVE -> DocumentOp.RemoveStrokes(stamp, removed.map(::StrokeId).toSet())
         OpRecord.TYPE_BACKGROUND -> background?.let { DocumentOp.SetBackground(stamp, it.toDomain()) }
+        OpRecord.TYPE_ADD_TEXT -> DocumentOp.AddTextBoxes(stamp, textBoxes.map { it.toDomain() })
         else -> null
     }
 }
@@ -107,6 +121,62 @@ internal fun StrokeRecord.toDomain(): Stroke? {
         author = DeviceId(author),
     )
 }
+
+internal fun TextBox.toRecord() = TextBoxRecord(
+    id = id.value,
+    x = Quantization.positionToSteps(x),
+    y = Quantization.positionToSteps(y),
+    width = Quantization.positionToSteps(widthMm),
+    height = Quantization.positionToSteps(heightMm),
+    createdAtEpochMs = createdAtEpochMs,
+    author = author.value,
+    paragraphs = text.paragraphs.map { p ->
+        ParagraphRecord(p.text, p.list.name, p.indent, p.marks.map { it.toRecord() })
+    },
+)
+
+private fun TextMark.toRecord(): MarkRecord = when (val s = style) {
+    MarkStyle.Bold -> MarkRecord(start, end, MARK_BOLD)
+    MarkStyle.Italic -> MarkRecord(start, end, MARK_ITALIC)
+    is MarkStyle.Size -> MarkRecord(start, end, MARK_SIZE, s.pt.toString())
+    is MarkStyle.Font -> MarkRecord(start, end, MARK_FONT, s.font.name)
+}
+
+internal fun TextBoxRecord.toDomain(): TextBox {
+    val paragraphs = paragraphs.map { p ->
+        TextParagraph(p.text, enumOr(p.list, ListKind.NONE), p.indent.coerceAtLeast(0), p.marks.mapNotNull { it.toDomain(p.text.length) })
+    }
+    return TextBox(
+        id = StrokeId(id),
+        x = Quantization.stepsToPosition(x),
+        y = Quantization.stepsToPosition(y),
+        widthMm = Quantization.stepsToPosition(width).coerceAtLeast(TextBox.MIN_WIDTH_MM),
+        heightMm = Quantization.stepsToPosition(height).coerceAtLeast(0f),
+        text = if (paragraphs.isEmpty()) RichText.EMPTY else RichText(paragraphs),
+        createdAtEpochMs = createdAtEpochMs,
+        author = DeviceId(author),
+    )
+}
+
+/** Marks of unknown kinds (from a newer app version) or with bad values are dropped. */
+private fun MarkRecord.toDomain(length: Int): TextMark? {
+    val s = start.coerceIn(0, length)
+    val e = end.coerceIn(0, length)
+    if (s >= e) return null
+    val style = when (kind) {
+        MARK_BOLD -> MarkStyle.Bold
+        MARK_ITALIC -> MarkStyle.Italic
+        MARK_SIZE -> value?.toFloatOrNull()?.takeIf { it > 0f }?.let { MarkStyle.Size(it) }
+        MARK_FONT -> TextFont.entries.firstOrNull { it.name == value }?.let { MarkStyle.Font(it) }
+        else -> null
+    } ?: return null
+    return TextMark(s, e, style)
+}
+
+private const val MARK_BOLD = "b"
+private const val MARK_ITALIC = "i"
+private const val MARK_SIZE = "z"
+private const val MARK_FONT = "f"
 
 internal fun encodePoints(points: List<StrokePoint>): PointsRecord {
     fun deltas(values: IntArray): IntArray {

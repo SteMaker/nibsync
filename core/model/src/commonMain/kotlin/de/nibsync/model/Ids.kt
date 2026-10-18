@@ -3,7 +3,11 @@ package de.nibsync.model
 import kotlin.jvm.JvmInline
 import kotlin.random.Random
 
-/** Globally unique, stable identifier of a stroke. Stays the same across devices and syncs. */
+/**
+ * Globally unique, stable identifier of a page element: a stroke or a [TextBox] (the name is
+ * historical). All elements share this id space, so removal ops and tombstones cover every
+ * kind. Stays the same across devices and syncs.
+ */
 @JvmInline
 value class StrokeId(val value: String) {
     init {

@@ -41,6 +41,14 @@ class InputRoutingTest {
     }
 
     @Test
+    fun withTextToolWritingToolsPlaceText() {
+        assertThat(InputRouting.actionFor(MotionEvent.TOOL_TYPE_STYLUS, drawWithFinger = false, tool = Tool.TEXT)).isEqualTo(Action.TEXT)
+        assertThat(InputRouting.actionFor(MotionEvent.TOOL_TYPE_FINGER, drawWithFinger = true, tool = Tool.TEXT)).isEqualTo(Action.TEXT)
+        // A finger places text even without finger drawing; two fingers scroll (canvas view).
+        assertThat(InputRouting.actionFor(MotionEvent.TOOL_TYPE_FINGER, drawWithFinger = false, tool = Tool.TEXT)).isEqualTo(Action.TEXT)
+    }
+
+    @Test
     fun unknownToolNavigates() {
         assertThat(InputRouting.actionFor(MotionEvent.TOOL_TYPE_UNKNOWN, drawWithFinger = false)).isEqualTo(Action.NAVIGATE)
     }

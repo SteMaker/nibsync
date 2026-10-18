@@ -19,6 +19,7 @@ object Quantization {
 
     fun positionToSteps(mm: Float): Int = (mm * POSITION_STEPS_PER_MM).roundToInt()
     fun stepsToPosition(steps: Int): Float = steps.toFloat() / POSITION_STEPS_PER_MM
+    fun quantizePosition(mm: Float): Float = stepsToPosition(positionToSteps(mm))
 
     /** Missing values ([StrokePoint.NO_VALUE]) map to -1. */
     fun pressureToSteps(p: Float): Int = if (p < 0f) -1 else (p.coerceAtMost(1f) * PRESSURE_STEPS).roundToInt()

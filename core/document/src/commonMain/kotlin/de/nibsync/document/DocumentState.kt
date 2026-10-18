@@ -2,13 +2,15 @@ package de.nibsync.document
 
 import de.nibsync.model.BackgroundSpec
 import de.nibsync.model.DocumentMeta
+import de.nibsync.model.PageElement
 import de.nibsync.model.Stroke
 import de.nibsync.model.StrokeId
+import de.nibsync.model.TextBox
 
 /**
  * Immutable state of a note document, built purely from ops.
  *
- * Merge semantics (a "two-phase set" CRDT):
+ * Merge semantics (a "two-phase set" CRDT over page elements, i.e. strokes and text boxes):
  * - an op that was already applied is ignored (idempotent),
  * - a removed stroke id stays removed for good (tombstone); a later or earlier add of the same
  *   id has no effect. Edits therefore always create strokes with fresh ids.
@@ -28,23 +30,32 @@ class DocumentState private constructor(
     /** Paper pattern currently in effect. */
     val background: BackgroundSpec,
 ) {
-    private class Entry(val stroke: Stroke, val addedAt: OpStamp)
+    private class Entry(val element: PageElement, val addedAt: OpStamp)
 
-    val strokeCount: Int get() = entries.size
-
-    /** All visible strokes, back to front: by layer, then by the stamp of the op that added them. */
-    val strokes: List<Stroke> by lazy {
+    /** All visible elements, back to front: by layer, then by the stamp of the op that added them. */
+    val elements: List<PageElement> by lazy {
         entries.values
-            .sortedWith(compareBy<Entry> { it.stroke.layer.zIndex }.thenBy { it.addedAt })
-            .map { it.stroke }
+            .sortedWith(compareBy<Entry> { it.element.layer.zIndex }.thenBy { it.addedAt })
+            .map { it.element }
     }
 
-    /** Largest y coordinate covered by any stroke, 0 for an empty document. */
+    /** Visible strokes, back to front. */
+    val strokes: List<Stroke> by lazy { elements.filterIsInstance<Stroke>() }
+
+    /** Visible text boxes, back to front. */
+    val textBoxes: List<TextBox> by lazy { elements.filterIsInstance<TextBox>() }
+
+    val strokeCount: Int get() = strokes.size
+
+    /** Largest y coordinate covered by any element, 0 for an empty document. */
     val contentBottomMm: Float by lazy {
-        entries.values.maxOfOrNull { it.stroke.bounds.bottom } ?: 0f
+        entries.values.maxOfOrNull { it.element.bounds.bottom } ?: 0f
     }
 
-    operator fun get(id: StrokeId): Stroke? = entries[id]?.stroke
+    /** The stroke with this id, or null if there is none (or the id belongs to another kind). */
+    operator fun get(id: StrokeId): Stroke? = entries[id]?.element as? Stroke
+
+    fun element(id: StrokeId): PageElement? = entries[id]?.element
 
     operator fun contains(id: StrokeId): Boolean = id in entries
 
@@ -56,16 +67,8 @@ class DocumentState private constructor(
         if (op.stamp in applied) return this
         val newClock = maxOf(clock, op.stamp.counter)
         return when (op) {
-            is DocumentOp.AddStrokes -> {
-                val added = op.strokes.filter { it.id !in tombstones }
-                // A duplicate add of an existing id keeps the earlier one so ordering stays stable.
-                val newEntries = entries.toMutableMap()
-                for (s in added) {
-                    val existing = newEntries[s.id]
-                    if (existing == null || op.stamp < existing.addedAt) newEntries[s.id] = Entry(s, op.stamp)
-                }
-                DocumentState(meta, newEntries, tombstones, applied + op.stamp, newClock, backgroundSetAt, background)
-            }
+            is DocumentOp.AddStrokes -> add(op.stamp, op.strokes, newClock)
+            is DocumentOp.AddTextBoxes -> add(op.stamp, op.boxes, newClock)
             is DocumentOp.RemoveStrokes ->
                 DocumentState(meta, entries - op.ids, tombstones + op.ids, applied + op.stamp, newClock, backgroundSetAt, background)
             is DocumentOp.SetBackground ->
@@ -75,6 +78,17 @@ class DocumentState private constructor(
                     DocumentState(meta, entries, tombstones, applied + op.stamp, newClock, backgroundSetAt, background)
                 }
         }
+    }
+
+    private fun add(stamp: OpStamp, elements: List<PageElement>, newClock: Long): DocumentState {
+        // A duplicate add of an existing id keeps the earlier one so ordering stays stable.
+        val newEntries = entries.toMutableMap()
+        for (e in elements) {
+            if (e.id in tombstones) continue
+            val existing = newEntries[e.id]
+            if (existing == null || stamp < existing.addedAt) newEntries[e.id] = Entry(e, stamp)
+        }
+        return DocumentState(meta, newEntries, tombstones, applied + stamp, newClock, backgroundSetAt, background)
     }
 
     fun applyAll(ops: Iterable<DocumentOp>): DocumentState = ops.fold(this) { s, op -> s.apply(op) }

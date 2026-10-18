@@ -18,6 +18,7 @@ class OpLogCodecTest {
             de.nibsync.document.OpStamp(4, DEV_A),
             de.nibsync.model.BackgroundSpec(de.nibsync.model.BackgroundKind.DOTTED, 5f),
         ),
+        de.nibsync.document.DocumentOp.AddTextBoxes(de.nibsync.document.OpStamp(5, DEV_A), listOf(formattedTextBox("t1"))),
     )
 
     private fun encode(list: List<de.nibsync.document.DocumentOp>): Buffer {
@@ -86,6 +87,34 @@ class OpLogCodecTest {
             de.nibsync.model.BackgroundSpec(de.nibsync.model.BackgroundKind.BLANK, 6f),
             (op as de.nibsync.document.DocumentOp.SetBackground).background,
         )
+    }
+
+    @Test
+    fun badTextMarksAreDroppedNotFatal() {
+        val record = OpRecord(
+            counter = 9, device = "x", type = OpRecord.TYPE_ADD_TEXT,
+            textBoxes = listOf(
+                TextBoxRecord(
+                    "t", 0, 0, 5000, 1000, 0, "x",
+                    listOf(
+                        ParagraphRecord(
+                            "abc", list = "CHECKBOX",
+                            marks = listOf(
+                                MarkRecord(0, 2, "u"), // unknown kind
+                                MarkRecord(1, 99, "b"), // clipped to the text
+                                MarkRecord(0, 3, "z", "huge"), // bad value
+                                MarkRecord(0, 3, "f", "COMIC"), // unknown font
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        )
+        val payload = kotlinx.serialization.cbor.Cbor.encodeToByteArray(OpRecord.serializer(), record)
+        val op = OpLogCodec.read(Buffer().write(OpLogCodec.header()).writeInt(payload.size).write(payload)).ops.single()
+        val p = (op as de.nibsync.document.DocumentOp.AddTextBoxes).boxes.single().text.paragraphs.single()
+        assertEquals(de.nibsync.model.ListKind.NONE, p.list)
+        assertEquals(listOf(de.nibsync.model.TextMark(1, 3, de.nibsync.model.MarkStyle.Bold)), p.marks)
     }
 
     @Test

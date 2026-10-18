@@ -87,7 +87,7 @@ class CanvasViewModelTest {
     fun recognisedShapeIsAddedInsteadOfTheStroke() = runTest {
         val vm = viewModel { d, _ -> de.nibsync.model.Recognition(d.copy(points = straightened)) }
         val shape = vm.commitShape(draftWith(vm.tools.value.activeBrush))!!
-        assertThat(shape.added.single().points).isEqualTo(straightened)
+        assertThat((shape.added.single() as de.nibsync.model.Stroke).points).isEqualTo(straightened)
         assertThat(shape.removed).isEmpty()
         assertThat(vm.document.value.strokes).containsExactly(shape.added.single())
     }
@@ -219,7 +219,7 @@ class CanvasViewModelTest {
         assertThat(vm.clipboard.content.value).isNull()
         vm.copySelection()
         val pasted = vm.paste(100f, 200f)!!
-        val p = pasted.added.single().points
+        val p = (pasted.added.single() as de.nibsync.model.Stroke).points
         assertThat((p.first().x + p.last().x) / 2).isWithin(0.01f).of(100f)
         assertThat(p.first().y).isWithin(0.01f).of(200f)
         assertThat(vm.document.value.strokeCount).isEqualTo(2)
@@ -248,5 +248,164 @@ class CanvasViewModelTest {
         vm.selectByLasso(box(100f, 100f, 120f, 120f))
         assertThat(vm.selection.value).isEmpty()
         assertThat(vm.moveSelection(1f, 1f)).isNull()
+    }
+
+    // ---- text boxes ----------------------------------------------------------------------
+
+    private fun CanvasViewModel.type(text: String) {
+        textEditing.value!!.controller.setContent(de.nibsync.model.RichText.plain(text))
+    }
+
+    @Test
+    fun frameStartsANewBoxThatIsOnlyStoredWithText() = runTest {
+        val vm = viewModel()
+        vm.selectText()
+        vm.requestText(30f, 50f, 80f, pageWidthMm = 210f)
+        val editing = vm.textEditing.value!!
+        assertThat(editing.boxId).isNull()
+        assertThat(editing.x).isEqualTo(30f)
+        assertThat(editing.y).isEqualTo(50f)
+        assertThat(editing.widthMm).isEqualTo(80f)
+        vm.saveText()
+        vm.finishText()
+        assertThat(vm.document.value.textBoxes).isEmpty()
+        assertThat(vm.canUndo.value).isFalse()
+    }
+
+    @Test
+    fun tapOnABoxEntersTextModeAndATapElsewhereGoesBack() = runTest {
+        val vm = viewModel()
+        vm.selectPen(BrushFamily.BALLPOINT)
+        vm.requestText(30f, 50f, 80f, pageWidthMm = 210f) // via the text tool
+        vm.type("Box")
+        vm.finishText()
+        val box = vm.document.value.textBoxes.single()
+        vm.selectPen(BrushFamily.BALLPOINT)
+        assertThat(vm.tools.value.tool).isEqualTo(Tool.PEN)
+
+        // Tap on the box with the pen tool: text mode, box open.
+        vm.requestText(box.x + 1f, box.y + 1f, null, pageWidthMm = 210f)
+        assertThat(vm.tools.value.tool).isEqualTo(Tool.TEXT)
+        assertThat(vm.textEditing.value!!.boxId).isEqualTo(box.id)
+        // Tap off any box: editing ends, back to the pen.
+        vm.requestText(150f, 250f, null, pageWidthMm = 210f)
+        assertThat(vm.textEditing.value).isNull()
+        assertThat(vm.tools.value.tool).isEqualTo(Tool.PEN)
+        assertThat(vm.tools.value.activePen).isEqualTo(BrushFamily.BALLPOINT)
+        assertThat(vm.textBoxAt(box.x + 1f, box.y + 1f)).isEqualTo(box)
+        assertThat(vm.textBoxAt(150f, 250f)).isNull()
+    }
+
+    @Test
+    fun textModeReturnsToTheToolUsedBefore() = runTest {
+        val vm = viewModel()
+        vm.selectLasso()
+        vm.selectText()
+        vm.requestText(150f, 250f, null, pageWidthMm = 210f) // tap, no box: leave text mode
+        assertThat(vm.tools.value.tool).isEqualTo(Tool.LASSO)
+    }
+
+    @Test
+    fun typedTextIsSavedOnceAndEditedInPlace() = runTest {
+        val vm = viewModel()
+        vm.measureText = { _, _ -> 9f }
+        vm.requestText(30f, 50f, 80f, pageWidthMm = 210f)
+        vm.type("Hallo")
+        vm.saveText()
+        val box = vm.document.value.textBoxes.single()
+        assertThat(box.text.plainText).isEqualTo("Hallo")
+        assertThat(box.heightMm).isEqualTo(9f)
+        assertThat(vm.textEditing.value!!.boxId).isEqualTo(box.id)
+        vm.saveText() // unchanged: the box is not replaced
+        assertThat(vm.document.value.textBoxes.single().id).isEqualTo(box.id)
+
+        vm.type("Hallo Welt")
+        vm.finishText()
+        assertThat(vm.textEditing.value).isNull()
+        val edited = vm.document.value.textBoxes.single()
+        assertThat(edited.text.plainText).isEqualTo("Hallo Welt")
+
+        // A tap into the box opens it again.
+        vm.requestText(edited.x + 5f, edited.y + 2f, null, pageWidthMm = 210f)
+        assertThat(vm.textEditing.value!!.boxId).isEqualTo(edited.id)
+        assertThat(vm.textEditing.value!!.controller.text.plainText).isEqualTo("Hallo Welt")
+    }
+
+    @Test
+    fun clearedOrDeletedBoxesAreRemoved() = runTest {
+        val vm = viewModel()
+        vm.requestText(30f, 50f, 80f, pageWidthMm = 210f)
+        vm.type("weg damit")
+        vm.finishText()
+        val box = vm.document.value.textBoxes.single()
+        vm.requestText(box.x + 1f, box.y + 1f, null, pageWidthMm = 210f)
+        vm.type("")
+        vm.finishText()
+        assertThat(vm.document.value.textBoxes).isEmpty()
+
+        vm.requestText(30f, 50f, 80f, pageWidthMm = 210f)
+        vm.type("auch weg")
+        vm.saveText()
+        vm.deleteText()
+        assertThat(vm.document.value.textBoxes).isEmpty()
+        assertThat(vm.textEditing.value).isNull()
+    }
+
+    @Test
+    fun draggedFrameSetsTheWidthWithinThePage() = runTest {
+        val vm = viewModel()
+        vm.requestText(20f, 40f, 50f, pageWidthMm = 148f)
+        assertThat(vm.textEditing.value!!.widthMm).isEqualTo(50f)
+        assertThat(vm.textEditing.value!!.y).isEqualTo(40f)
+        vm.requestText(120f, 40f, 300f, pageWidthMm = 148f)
+        val e = vm.textEditing.value!!
+        assertThat(e.widthMm).isEqualTo(143f)
+        assertThat(e.x).isEqualTo(5f) // moved left to stay on the page
+        vm.resizeText(-500f)
+        assertThat(vm.textEditing.value!!.widthMm).isEqualTo(de.nibsync.model.TextBox.MIN_WIDTH_MM)
+        vm.moveText(-100f, 10f)
+        assertThat(vm.textEditing.value!!.x).isEqualTo(0f)
+        assertThat(vm.textEditing.value!!.y).isEqualTo(50f)
+    }
+
+    @Test
+    fun undoWhileEditingStoresTheTextFirst() = runTest {
+        val vm = viewModel()
+        vm.requestText(30f, 50f, 80f, pageWidthMm = 210f)
+        vm.type("eins")
+        assertThat(vm.undo()).isTrue() // stores "eins", then undoes that
+        assertThat(vm.textEditing.value).isNull()
+        assertThat(vm.document.value.textBoxes).isEmpty()
+        assertThat(vm.redo()).isTrue()
+        assertThat(vm.document.value.textBoxes.single().text.plainText).isEqualTo("eins")
+    }
+
+    @Test
+    fun lassoMovesAndCopiesTextBoxesWithStrokes() = runTest {
+        val vm = viewModel()
+        vm.measureText = { _, _ -> 6f }
+        vm.commitStroke(lineAt(10f))
+        vm.requestText(10f, 20f, 40f, pageWidthMm = 210f)
+        vm.type("Notiz")
+        vm.finishText()
+        vm.selectLasso()
+        vm.selectByLasso(box(0f, 0f, 60f, 30f))
+        assertThat(vm.selection.value).hasSize(2)
+        vm.moveSelection(0f, 100f)
+        assertThat(vm.document.value.textBoxes.single().y).isEqualTo(120f)
+        vm.copySelection()
+        vm.paste(100f, 100f)
+        assertThat(vm.document.value.textBoxes).hasSize(2)
+        assertThat(vm.document.value.strokeCount).isEqualTo(2)
+    }
+
+    @Test
+    fun otherToolsEndTextEditing() = runTest {
+        val vm = viewModel()
+        vm.requestText(30f, 50f, 80f, pageWidthMm = 210f)
+        vm.type("x")
+        vm.selectPen(BrushFamily.BALLPOINT)
+        assertThat(vm.textEditing.value).isNull()
+        assertThat(vm.document.value.textBoxes).hasSize(1)
     }
 }

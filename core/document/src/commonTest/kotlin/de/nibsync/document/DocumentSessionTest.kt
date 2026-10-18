@@ -1,5 +1,7 @@
 package de.nibsync.document
 
+import de.nibsync.document.select.translated
+import de.nibsync.model.PageElement
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.runTest
@@ -109,6 +111,44 @@ class DocumentSessionTest {
         assertTrue(s.undo())
         assertEquals(grid, s.state.value.background)
         assertEquals(0, s.state.value.strokeCount)
+    }
+
+    @Test
+    fun textBoxesAreAddedEditedAndUndone() = runTest {
+        val s = session()
+        val box = s.addTextBox(textDraft(text = "Hallo").copy(x = 10.123456f))
+        assertEquals(10.12f, box.x) // on the storage grid
+        val edited = s.replaceElements(listOf(box.id), listOf(textDraft(text = "Hallo Welt"))).single()
+        assertEquals(listOf("Hallo Welt"), s.state.value.textBoxes.map { it.text.plainText })
+        s.flush()
+        assertEquals(
+            listOf(DocumentOp.AddTextBoxes::class, DocumentOp.RemoveStrokes::class, DocumentOp.AddTextBoxes::class),
+            written.map { it::class },
+        )
+        // Undo restores the earlier text (as a copy with a new id), redo the edit.
+        assertTrue(s.undo())
+        val restored = s.state.value.textBoxes.single()
+        assertEquals("Hallo", restored.text.plainText)
+        assertNotEquals(box.id, restored.id)
+        assertTrue(s.redo())
+        assertEquals("Hallo Welt", s.state.value.textBoxes.single().text.plainText)
+        assertFalse(edited.id in s.state.value) // redo re-adds a copy, too
+        assertTrue(s.undo())
+        assertTrue(s.undo())
+        assertEquals(emptyList(), s.state.value.elements)
+    }
+
+    @Test
+    fun mixedSelectionMovesInOneStep() = runTest {
+        val s = session()
+        val stroke = s.addStroke(draft())
+        val box = s.addTextBox(textDraft())
+        val moved = s.replaceElements(listOf(stroke.id, box.id), listOf<PageElement>(stroke, box).map { it.translated(0f, 20f) })
+        assertEquals(2, moved.size)
+        assertEquals(20f, s.state.value.textBoxes.single().y)
+        assertEquals(1, s.state.value.strokeCount)
+        assertTrue(s.undo())
+        assertEquals(0f, s.state.value.textBoxes.single().y)
     }
 
     @Test

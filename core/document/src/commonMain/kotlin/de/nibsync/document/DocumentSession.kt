@@ -2,11 +2,15 @@ package de.nibsync.document
 
 import de.nibsync.model.BackgroundSpec
 import de.nibsync.model.DeviceId
+import de.nibsync.model.ElementDraft
 import de.nibsync.model.IdGenerator
+import de.nibsync.model.PageElement
 import de.nibsync.model.Quantization
 import de.nibsync.model.Stroke
 import de.nibsync.model.StrokeDraft
 import de.nibsync.model.StrokeId
+import de.nibsync.model.TextBox
+import de.nibsync.model.TextBoxDraft
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.channels.Channel
@@ -72,6 +76,20 @@ class DocumentSession(
         return stroke
     }
 
+    private fun newElement(draft: ElementDraft): PageElement = when (draft) {
+        is StrokeDraft -> newStroke(draft)
+        is TextBoxDraft -> TextBox(
+            id = ids.newStrokeId(),
+            x = Quantization.quantizePosition(draft.x),
+            y = Quantization.quantizePosition(draft.y),
+            widthMm = Quantization.quantizePosition(draft.widthMm),
+            heightMm = Quantization.quantizePosition(draft.heightMm),
+            text = draft.text,
+            createdAtEpochMs = clock(),
+            author = device,
+        )
+    }
+
     private fun newStroke(draft: StrokeDraft): Stroke {
         return Stroke(
             id = ids.newStrokeId(),
@@ -95,10 +113,21 @@ class DocumentSession(
      * Removes [replaces] and adds [drafts] in one undo step (erasing, shape merging). Returns the
      * added strokes. Ids that no longer exist are ignored.
      */
-    fun replaceStrokes(replaces: Collection<StrokeId>, drafts: List<StrokeDraft>): List<Stroke> {
+    fun replaceStrokes(replaces: Collection<StrokeId>, drafts: List<StrokeDraft>): List<Stroke> =
+        replaceElements(replaces, drafts).map { it as Stroke }
+
+    /** Adds a text box; see [replaceElements] for changing one. */
+    fun addTextBox(draft: TextBoxDraft): TextBox = replaceElements(emptySet(), listOf(draft)).single() as TextBox
+
+    /**
+     * Removes [replaces] (elements of any kind) and adds [drafts] in one undo step: moving or
+     * pasting a selection, storing an edited text box. Returns the added elements in the
+     * order of [drafts]. Ids that no longer exist are ignored.
+     */
+    fun replaceElements(replaces: Collection<StrokeId>, drafts: List<ElementDraft>): List<PageElement> {
         val current = _state.value
-        val removed = replaces.mapNotNull { current[it] }
-        val added = drafts.map(::newStroke)
+        val removed = replaces.mapNotNull { current.element(it) }
+        val added = drafts.map(::newElement)
         val edit = when {
             removed.isEmpty() && added.isEmpty() -> return emptyList()
             removed.isEmpty() -> Edit.Added(added)
@@ -109,9 +138,10 @@ class DocumentSession(
         return added
     }
 
+    /** Removes elements of any kind in one undo step. */
     fun removeStrokes(ids: Collection<StrokeId>) {
         val current = _state.value
-        val strokes = ids.mapNotNull { current[it] }
+        val strokes = ids.mapNotNull { current.element(it) }
         if (strokes.isNotEmpty()) applyEdit(Edit.Removed(strokes), record = true)
     }
 
@@ -161,13 +191,21 @@ class DocumentSession(
         pending.trySend(Pending.Write(op))
     }
 
+    /** One add op per element kind, strokes first. */
+    private fun emitAdd(elements: List<PageElement>) {
+        val strokes = elements.filterIsInstance<Stroke>()
+        val boxes = elements.filterIsInstance<TextBox>()
+        if (strokes.isNotEmpty()) emit { DocumentOp.AddStrokes(it, strokes) }
+        if (boxes.isNotEmpty()) emit { DocumentOp.AddTextBoxes(it, boxes) }
+    }
+
     private fun applyEdit(edit: Edit, record: Boolean) {
         when (edit) {
-            is Edit.Added -> emit { DocumentOp.AddStrokes(it, edit.strokes) }
+            is Edit.Added -> emitAdd(edit.strokes)
             is Edit.Removed -> emit { DocumentOp.RemoveStrokes(it, edit.strokes.map { s -> s.id }.toSet()) }
             is Edit.Replaced -> {
                 emit { DocumentOp.RemoveStrokes(it, edit.removed.map { s -> s.id }.toSet()) }
-                emit { DocumentOp.AddStrokes(it, edit.added) }
+                emitAdd(edit.added)
             }
         }
         if (record) undo.record(edit)

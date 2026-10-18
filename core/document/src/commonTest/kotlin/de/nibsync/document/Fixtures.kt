@@ -10,6 +10,9 @@ import de.nibsync.model.Stroke
 import de.nibsync.model.StrokeDraft
 import de.nibsync.model.StrokeId
 import de.nibsync.model.StrokePoint
+import de.nibsync.model.RichText
+import de.nibsync.model.TextBox
+import de.nibsync.model.TextBoxDraft
 
 val DEV_A = DeviceId("a")
 val DEV_B = DeviceId("b")
@@ -37,3 +40,13 @@ fun remove(counter: Long, device: DeviceId, vararg ids: String) =
     DocumentOp.RemoveStrokes(OpStamp(counter, device), ids.map(::StrokeId).toSet())
 
 val DocumentState.ids: List<String> get() = strokes.map { it.id.value }
+
+fun textBox(id: String, y: Float = 0f, text: String = "Text", author: DeviceId = DEV_A) =
+    TextBox(StrokeId(id), 10f, y, 50f, 10f, RichText.plain(text), 0, author)
+
+fun textDraft(y: Float = 0f, text: String = "Text") = TextBoxDraft(10f, y, 50f, 10f, RichText.plain(text))
+
+fun addText(counter: Long, device: DeviceId, vararg boxes: TextBox) =
+    DocumentOp.AddTextBoxes(OpStamp(counter, device), boxes.toList())
+
+val DocumentState.elementIds: List<String> get() = elements.map { it.id.value }

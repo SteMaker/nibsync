@@ -6,6 +6,7 @@
 app/              Android app: wiring (AppContainer), MainActivity with the library drawer
 feature/library/  Library drawer (tree of books/chapters/documents), LibraryViewModel
 feature/canvas/   Endless page (NoteCanvasView), tool bar (Compose), CanvasViewModel
+feature/text/     Text boxes: embedded fonts, page renderer, rich text editor + format bar
 ui/background/    Paper pattern picker and preview, used by canvas and library drawer
 ink/android/      Adapter domain <-> androidx.ink (brushes, stroke conversion, mesh cache)
 core/sync/        Sync engine (platform-neutral) against a RemoteStore
@@ -31,7 +32,9 @@ input (x, y, t, pressure, tilt, orientation in millimetres) plus a platform-neut
 
 ## Data model and sync readiness
 
-- A document is a set of ops (`AddStrokes`, `RemoveStrokes`) with Lamport stamps.
+- A document is a set of ops (`AddStrokes`, `AddTextBoxes`, `RemoveStrokes`,
+  `SetBackground`) with Lamport stamps. Strokes and text boxes are `PageElement`s sharing
+  one id space (`StrokeId`, a historical name), so removal and tombstones cover both.
 - `DocumentState` is a two-phase-set CRDT: idempotent, order-independent, removals win.
   Stroke z-order = (layer, stamp of the adding op), identical on every device.
 - Every device appends only to its own `ops/<deviceId>.oplog`, so file-level sync over
@@ -62,7 +65,7 @@ versions (`default`) was adopted into a first book on upgrade.
 
 ## Layers
 
-`BACKGROUND` (pattern) -> `MARKER` (highlighter) -> `INK`. Highlighter strokes are placed on
+`BACKGROUND` (pattern) -> `MARKER` (highlighter) -> `TEXT` (text boxes) -> `INK`. Highlighter strokes are placed on
 `MARKER` and therefore always appear behind the ink. While being drawn, the in-progress
 highlighter is shown on top (Ink overlay limitation) and drops behind once finished.
 
@@ -75,6 +78,29 @@ with the highest stamp wins in any arrival order; it is a setting, not an edit, 
 leaves it alone. Where lines and dots go is computed platform-neutrally in
 `BackgroundPattern` (rows from one spacing below the top, columns centred on the page); the
 Android view only draws them and skips the pattern when zoomed out below 6 px spacing.
+
+## Text boxes
+
+A `TextBox` has a position, a user-chosen width and formatted text (`RichText`: paragraphs
+with list kind and indent, character marks bold/italic/size/font). Its stored `heightMm` is
+the laid-out height at save time, so platform-neutral code (lasso, page growth) knows its
+extent. Like strokes, a box is immutable: every save of an edit is remove + add with a new
+id (one undo step). Two devices editing the same box at once therefore end up with both
+versions side by side, nothing is lost.
+
+- Fonts: Noto Sans/Serif/Sans Mono and Caveat (handwriting), latin subsets embedded in
+  `feature/text/src/main/res/font` (SIL OFL, licences in `feature/text/licenses`). Sizes are
+  points; 1 pt = 25.4/72 mm, so text scales with the page like strokes.
+- Editing uses the Compose Rich Editor library (`com.mohamedrejeb.richeditor`), confined to
+  `feature/text`; `RichTextConversion` maps to and from the stored model. Fonts are a custom
+  span (`FontRun`), since the library has no font mark.
+- The page shows boxes with `TextBoxRenderer`: Compose text layout at 20 px/mm, cached per
+  box, painted onto the view canvas between marker and ink strokes. While a box is edited it
+  is hidden on the page and the editor is drawn over it at the current zoom.
+- Text tool: tap = new box (80 mm, or the tapped box is opened), dragged frame = box of that
+  width. The tool bar switches to formatting while a box is open; the text is saved 1.5 s
+  after typing stops, on "Done", on tool change and when the app goes to the background.
+  An emptied box is removed. Erasers ignore text; the lasso selects, moves and copies it.
 
 ## Input
 
@@ -161,4 +187,5 @@ into segments later); no background sync while the app is closed.
 | F ✅ | Pixel and object eraser | `core/document/erase`; two eraser buttons in the tool bar |
 | G ✅ | Lasso: delete, move, copy/paste | `core/document/select`; lasso tool + actions in the tool bar |
 | H ✅ | Undo/redo | tool bar buttons, Ctrl+Z / Ctrl+Y / Ctrl+Shift+Z; history per open document and app run |
+| T ✅ | Text boxes with formatting (bold, italic, font, size, lists) | `TextBox`, `feature/text`, text tool in `NoteScreen` |
 | I ✅ | Lined/grid/dotted backgrounds | `BackgroundPattern`, `DocumentOp.SetBackground`, `ui/background`, `NoteCanvasView.drawPattern` |

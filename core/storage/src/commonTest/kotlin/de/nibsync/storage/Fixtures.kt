@@ -59,3 +59,36 @@ fun addOp(counter: Long, device: DeviceId, vararg strokes: Stroke) =
 
 fun removeOp(counter: Long, device: DeviceId, vararg ids: String) =
     DocumentOp.RemoveStrokes(OpStamp(counter, device), ids.map(::StrokeId).toSet())
+
+/** A formatted text box on the quantization grid, exercising every mark kind and list type. */
+fun formattedTextBox(id: String) = de.nibsync.model.TextBox(
+    id = StrokeId(id),
+    x = 12.5f,
+    y = 40.25f,
+    widthMm = 80f,
+    heightMm = 21.37f,
+    text = de.nibsync.model.RichText(
+        listOf(
+            de.nibsync.model.TextParagraph(
+                "Überschrift fett",
+                marks = listOf(
+                    de.nibsync.model.TextMark(0, 16, de.nibsync.model.MarkStyle.Size(18f)),
+                    de.nibsync.model.TextMark(12, 16, de.nibsync.model.MarkStyle.Bold),
+                ),
+            ),
+            de.nibsync.model.TextParagraph("Punkt", list = de.nibsync.model.ListKind.BULLET),
+            de.nibsync.model.TextParagraph(
+                "Unterpunkt kursiv",
+                list = de.nibsync.model.ListKind.NUMBERED,
+                indent = 1,
+                marks = listOf(
+                    de.nibsync.model.TextMark(11, 17, de.nibsync.model.MarkStyle.Italic),
+                    de.nibsync.model.TextMark(0, 10, de.nibsync.model.MarkStyle.Font(de.nibsync.model.TextFont.HANDWRITING)),
+                ),
+            ),
+            de.nibsync.model.TextParagraph(""),
+        ),
+    ),
+    createdAtEpochMs = 1_700_000_000_789,
+    author = DEV_A,
+)

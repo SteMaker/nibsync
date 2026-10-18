@@ -20,6 +20,27 @@ class LassoTest {
     private fun rect(l: Float, t: Float, r: Float, b: Float) = floatArrayOf(l, t, r, t, r, b, l, b)
 
     @Test
+    fun selectsTextBoxesMostlyInside() {
+        val box = de.nibsync.document.textBox("t", y = 60f) // x 10..60, y 60..70
+        assertEquals(setOf(box.id), Lasso.select(strokes + box, rect(5f, 55f, 65f, 75f)))
+        // Lasso over the left 40 % of the box only.
+        assertEquals(emptySet(), Lasso.select(listOf(box), rect(5f, 55f, 30f, 75f)))
+        assertEquals(setOf(box.id), Lasso.select(listOf(box), rect(5f, 55f, 45f, 75f)))
+    }
+
+    @Test
+    fun clipboardCarriesTextBoxes() {
+        val box = de.nibsync.document.textBox("t", y = 60f)
+        val clip = assertNotNull(ClipContent.of(listOf(a, box)))
+        val placed = clip.placedAt(100f, 100f)
+        val movedBox = placed[1] as de.nibsync.model.TextBoxDraft
+        // Bounds of a (9.75..20.25 x 9.75..10.25) and the box (10..60 x 60..70) are centred at (34.875, 39.875).
+        assertEquals(75.125f, movedBox.x, 0.001f)
+        assertEquals(120.125f, movedBox.y, 0.001f)
+        assertEquals(box.text, movedBox.text)
+    }
+
+    @Test
     fun selectsEnclosedStrokes() {
         assertEquals(setOf(a.id), Lasso.select(strokes, rect(5f, 5f, 25f, 15f)))
         assertEquals(setOf(a.id, b.id), Lasso.select(strokes, rect(5f, 5f, 25f, 35f)))
@@ -76,7 +97,7 @@ class LassoTest {
     fun clipboardPastesCentredAtTarget() {
         val clip = assertNotNull(ClipContent.of(listOf(a, b)))
         assertEquals(10.5f, clip.width)
-        val pasted = clip.placedAt(100f, 200f)
+        val pasted = clip.placedAt(100f, 200f).map { it as de.nibsync.model.StrokeDraft }
         assertEquals(2, pasted.size)
         val xs = pasted.flatMap { it.points }.map { it.x }
         val ys = pasted.flatMap { it.points }.map { it.y }

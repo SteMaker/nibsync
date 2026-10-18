@@ -17,4 +17,7 @@
     <string name="paste">Einfügen</string>
     <string name="library_menu">Bibliothek</string>
     <string name="page_breaks">Seitenumbrüche anzeigen</string>
+    <string name="text_tool">Textbox</string>
+    <string name="move_text_box">Textbox verschieben</string>
+    <string name="resize_text_box">Breite ändern</string>
 </resources>

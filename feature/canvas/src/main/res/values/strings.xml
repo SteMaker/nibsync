@@ -17,4 +17,7 @@
     <string name="paste">Paste</string>
     <string name="library_menu">Library</string>
     <string name="page_breaks">Show page breaks</string>
+    <string name="text_tool">Text box</string>
+    <string name="move_text_box">Move text box</string>
+    <string name="resize_text_box">Change width</string>
 </resources>

@@ -33,13 +33,48 @@ internal data class OpRecord(
     @SerialName("s") val strokes: List<StrokeRecord> = emptyList(),
     @SerialName("r") val removed: List<String> = emptyList(),
     @SerialName("b") val background: BackgroundRecord? = null,
+    @SerialName("x") val textBoxes: List<TextBoxRecord> = emptyList(),
 ) {
     companion object {
         const val TYPE_ADD = 1
         const val TYPE_REMOVE = 2
         const val TYPE_BACKGROUND = 3
+        const val TYPE_ADD_TEXT = 4
     }
 }
+
+/** A text box; position and size in [de.nibsync.model.Quantization] position steps. */
+@Serializable
+internal data class TextBoxRecord(
+    @SerialName("id") val id: String,
+    @SerialName("x") val x: Int,
+    @SerialName("y") val y: Int,
+    @SerialName("w") val width: Int,
+    @SerialName("h") val height: Int,
+    @SerialName("ts") val createdAtEpochMs: Long,
+    @SerialName("a") val author: String,
+    @SerialName("p") val paragraphs: List<ParagraphRecord>,
+)
+
+@Serializable
+internal data class ParagraphRecord(
+    @SerialName("t") val text: String,
+    @SerialName("l") val list: String = "NONE",
+    @SerialName("n") val indent: Int = 0,
+    @SerialName("m") val marks: List<MarkRecord> = emptyList(),
+)
+
+/**
+ * A character style over [start] until [end] (exclusive). [kind]: "b" bold, "i" italic,
+ * "z" size ([value] = points), "f" font ([value] = TextFont name). Unknown kinds are skipped.
+ */
+@Serializable
+internal data class MarkRecord(
+    @SerialName("s") val start: Int,
+    @SerialName("e") val end: Int,
+    @SerialName("k") val kind: String,
+    @SerialName("v") val value: String? = null,
+)
 
 @Serializable
 internal data class StrokeRecord(

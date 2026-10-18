@@ -1,14 +1,24 @@
 package de.nibsync.document.select
 
+import de.nibsync.model.ElementDraft
+import de.nibsync.model.PageElement
 import de.nibsync.model.Stroke
 import de.nibsync.model.StrokeDraft
 import de.nibsync.model.StrokeId
+import de.nibsync.model.TextBox
+import de.nibsync.model.toDraft
 import de.nibsync.model.geometry.Rect
 
-/** Freehand selection of strokes. Platform-neutral so every client selects the same way. */
+/** Freehand selection of page elements. Platform-neutral so every client selects the same way. */
 object Lasso {
-    /** A stroke is selected when at least this share of its points lies inside the lasso. */
+    /**
+     * A stroke is selected when at least this share of its points lies inside the lasso; a
+     * text box when this share of a grid of sample points over its area does.
+     */
     const val INSIDE_SHARE = 0.5f
+
+    /** Sample points per side of a text box. */
+    private const val BOX_SAMPLES = 5
 
     /** Lassos with a smaller area (mm²) select nothing; they are taps. */
     const val MIN_AREA_MM2 = 4f
@@ -17,12 +27,25 @@ object Lasso {
      * Ids of the strokes enclosed by the lasso [polygon] (x0, y0, x1, y1, ... in mm; it is
      * closed implicitly).
      */
-    fun select(strokes: List<Stroke>, polygon: FloatArray): Set<StrokeId> {
+    fun select(strokes: List<PageElement>, polygon: FloatArray): Set<StrokeId> {
         if (polygon.size < 6 || area(polygon) < MIN_AREA_MM2) return emptySet()
         val box = bounds(polygon)
-        return strokes.filter { s ->
-            s.bounds.intersects(box) && s.points.count { contains(polygon, it.x, it.y) } >= INSIDE_SHARE * s.points.size
-        }.mapTo(LinkedHashSet()) { it.id }
+        return strokes.filter { e -> e.bounds.intersects(box) && insideShare(e, polygon) >= INSIDE_SHARE }
+            .mapTo(LinkedHashSet()) { it.id }
+    }
+
+    private fun insideShare(e: PageElement, polygon: FloatArray): Float = when (e) {
+        is Stroke -> e.points.count { contains(polygon, it.x, it.y) }.toFloat() / e.points.size
+        is TextBox -> {
+            val b = e.bounds
+            var inside = 0
+            for (i in 0 until BOX_SAMPLES) for (j in 0 until BOX_SAMPLES) {
+                val x = b.left + b.width * (i + 0.5f) / BOX_SAMPLES
+                val y = b.top + b.height * (j + 0.5f) / BOX_SAMPLES
+                if (contains(polygon, x, y)) inside++
+            }
+            inside.toFloat() / (BOX_SAMPLES * BOX_SAMPLES)
+        }
     }
 
     /** Even-odd point-in-polygon test. */
@@ -66,7 +89,7 @@ object Lasso {
 }
 
 /** Union of the bounds of [strokes], or null if there are none. */
-fun boundsOf(strokes: Collection<Stroke>): Rect? {
+fun boundsOf(strokes: Collection<PageElement>): Rect? {
     if (strokes.isEmpty()) return null
     return strokes.map { it.bounds }.reduce { a, b ->
         Rect(minOf(a.left, b.left), minOf(a.top, b.top), maxOf(a.right, b.right), maxOf(a.bottom, b.bottom))
@@ -77,18 +100,19 @@ fun boundsOf(strokes: Collection<Stroke>): Rect? {
 fun Stroke.translated(dx: Float, dy: Float): StrokeDraft =
     StrokeDraft(brush, tool, points.map { it.copy(x = it.x + dx, y = it.y + dy) }, layer)
 
-/**
- * Copied strokes, kept relative to the centre of their bounds so they can be pasted anywhere.
- */
-class ClipContent private constructor(val drafts: List<StrokeDraft>, val width: Float, val height: Float) {
+/** The element moved by ([dx], [dy]) mm, as a draft for a new element. */
+fun PageElement.translated(dx: Float, dy: Float): ElementDraft = toDraft().translated(dx, dy)
 
-    /** The copied strokes centred at ([cx], [cy]). */
-    fun placedAt(cx: Float, cy: Float): List<StrokeDraft> = drafts.map { d ->
-        d.copy(points = d.points.map { it.copy(x = it.x + cx, y = it.y + cy) })
-    }
+/**
+ * Copied elements, kept relative to the centre of their bounds so they can be pasted anywhere.
+ */
+class ClipContent private constructor(val drafts: List<ElementDraft>, val width: Float, val height: Float) {
+
+    /** The copied elements centred at ([cx], [cy]). */
+    fun placedAt(cx: Float, cy: Float): List<ElementDraft> = drafts.map { it.translated(cx, cy) }
 
     companion object {
-        fun of(strokes: List<Stroke>): ClipContent? {
+        fun of(strokes: List<PageElement>): ClipContent? {
             val b = boundsOf(strokes) ?: return null
             val cx = (b.left + b.right) / 2
             val cy = (b.top + b.bottom) / 2

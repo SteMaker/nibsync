@@ -67,10 +67,13 @@ class SyncAppTest {
         val reachable = runCatching { WebDavRemoteStore(serverUrl, account.loginName, account.appPassword, "").list("") != null }.getOrDefault(false)
         assumeTrue("Nextcloud at $serverUrl not reachable", reachable)
         previousConfig = app.sync.config.value
+        previousStateFiles = stateFiles()
+        // Switch to the test server first: the test book must never reach the account
+        // configured on the device.
+        app.sync.configure(SyncConfig(account, folder))
         app.container.ensureLibraryLoaded("Notizen", "Notizen")
         book = app.container.library.createBook("Sync-Test-" + UUID.randomUUID().toString().take(6))
         docId = app.container.library.createDocument(book.id, "Seite", PageFormat()).id.value
-        app.sync.configure(SyncConfig(account, folder))
         scenario = ActivityScenario.launch(Intent(app, MainActivity::class.java).putExtra(MainActivity.EXTRA_DOCUMENT_ID, doc.value))
         waitUntil("canvas") { activity { it.canvasView }?.viewport?.hasSize == true && activity { it.session } != null }
     }
@@ -79,15 +82,24 @@ class SyncAppTest {
     fun tearDown() = runBlocking {
         if (!::scenario.isInitialized) return@runBlocking
         scenario.close()
-        app.sync.configure(previousConfig)
-        runCatching { WebDavRemoteStore(serverUrl, account.loginName, account.appPassword, "").delete(folder) }
+        // Remove the test book (and what other "devices" added) while the test server is
+        // still configured, then go back to the previous account.
+        app.sync.paused = true
         val lib = app.container.library
         val ids = lib.tree.value.descendantsOf(book.id).map { it.id } + book.id
         app.container.beforeDelete(ids.map { it.asDocumentId }.toSet())
         lib.delete(book.id)
         ids.forEach { java.io.File(app.container.libraryRoot.toString(), "${it.value}.json").delete() }
-        app.container.localRoot.toFile().listFiles { f -> f.name.startsWith("sync-state-") }?.forEach { it.delete() }
+        runCatching { WebDavRemoteStore(serverUrl, account.loginName, account.appPassword, "").delete(folder) }
+        (stateFiles() - previousStateFiles).forEach { it.delete() }
+        app.sync.configure(previousConfig)
+        app.sync.paused = false
     }
+
+    private var previousStateFiles: Set<java.io.File> = emptySet()
+
+    private fun stateFiles(): Set<java.io.File> =
+        app.container.localRoot.toFile().listFiles { f -> f.name.startsWith("sync-state-") }.orEmpty().toSet()
 
     private fun <T> activity(get: (MainActivity) -> T): T {
         var value: T? = null

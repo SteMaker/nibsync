@@ -45,7 +45,7 @@ object PenPalette {
 data class PenSettings(val colorArgb: Int, val sizeMm: Float)
 
 /** What the pen does on the page. */
-enum class Tool { PEN, ERASER, LASSO }
+enum class Tool { PEN, ERASER, LASSO, TEXT }
 
 /** Tool bar state. Every pen type remembers its own colour and width. */
 data class ToolState(
@@ -64,10 +64,13 @@ data class ToolState(
 
     val eraserActive: Boolean get() = tool == Tool.ERASER
     val lassoActive: Boolean get() = tool == Tool.LASSO
+    val textActive: Boolean get() = tool == Tool.TEXT
 
     fun withEraser(mode: EraserMode = eraserMode) = copy(tool = Tool.ERASER, eraserMode = mode)
 
     fun withLasso() = copy(tool = Tool.LASSO)
+
+    fun withText() = copy(tool = Tool.TEXT)
 
     fun withEraserSize(mm: Float) = copy(eraserSizeMm = mm)
 

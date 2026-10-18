@@ -25,11 +25,12 @@ feature roadmap and where each feature lives.
 - `core/*` (model, document, storage, shapes, library, sync) are Kotlin Multiplatform (JVM target only for now). **No Android imports** there:
   they must later back a Windows client.
 - `androidx.ink` types stay inside `ink/android` and `feature/canvas`; they never appear in
-  public APIs of other modules.
+  public APIs of other modules. Likewise the rich text editor library stays inside
+  `feature/text` (convert via `RichTextConversion`).
 - Strokes are immutable and stored as raw input points in millimetres; edits are
   remove + add with a fresh id. Do not add mutating ops that break order-independent merging
   (`DocumentState` must give the same result for any op order; see its tests).
-- Persisted names (enum names in `BrushFamily`, `Layer`, ..., serial names in
+- Persisted names (enum names in `BrushFamily`, `Layer`, `TextFont`, `ListKind`, ..., serial names in
   `core/storage/Records.kt`) are part of the file format: never rename.
 - Ink stock brushes are pinned to explicit versions in `BrushMapper`.
 

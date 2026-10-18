@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="text_bold">Bold</string>
+    <string name="text_italic">Italic</string>
+    <string name="text_bullets">Bulleted list</string>
+    <string name="text_numbers">Numbered list</string>
+    <string name="text_indent">Indent more</string>
+    <string name="text_outdent">Indent less</string>
+    <string name="text_delete">Delete text box</string>
+    <string name="text_size_pt">%1$s pt</string>
+    <string name="font_sans">Sans serif</string>
+    <string name="font_serif">Serif</string>
+    <string name="font_mono">Monospace</string>
+    <string name="font_handwriting">Handwriting</string>
+</resources>

@@ -33,6 +33,10 @@ import de.nibsync.model.BackgroundPattern
 import de.nibsync.model.BackgroundSpec
 import de.nibsync.model.BrushFamily
 import de.nibsync.model.BrushSpec
+import de.nibsync.model.Layer
+import de.nibsync.model.PageElement
+import de.nibsync.model.TextBox
+import de.nibsync.text.TextBoxRenderer
 import de.nibsync.model.InputTool
 import de.nibsync.model.PageFormat
 import de.nibsync.model.Stroke
@@ -41,6 +45,7 @@ import de.nibsync.model.StrokeId
 import de.nibsync.model.StrokePoint
 import de.nibsync.model.geometry.Viewport
 import de.nibsync.shapes.HoldDetector
+import kotlin.math.abs
 import kotlin.math.roundToInt
 import androidx.ink.strokes.Stroke as InkStroke
 
@@ -77,7 +82,28 @@ class NoteCanvasView(context: Context) : FrameLayout(context) {
     /** Starting a new lasso drops the current selection. */
     var onSelectionCleared: () -> Unit = {}
 
-    /** Ids of the selected strokes, framed on the page and draggable. */
+    /**
+     * The page was touched for text at (x, y) mm: a tap with the text tool or on a text box
+     * (width null), or a frame of the given width dragged with the text tool from (x, y).
+     */
+    var onTextRequested: (Float, Float, Float?) -> Unit = { _, _, _ -> }
+
+    /** Lays out and draws text boxes; also used by the screen to measure them. */
+    val textRenderer = TextBoxRenderer(context)
+
+    /** Text box hidden from the page because the editor shows it, or null. */
+    var editingTextBox: StrokeId? = null
+        set(value) {
+            if (value == field) return
+            field = value
+            invalidate()
+        }
+
+    /** Text boxes currently shown, back to front. */
+    var textBoxes: List<TextBox> = emptyList()
+        private set
+
+    /** Ids of the selected elements, framed on the page and draggable. */
     var selection: Set<StrokeId> = emptySet()
         set(value) {
             if (value == field) return
@@ -193,6 +219,13 @@ class NoteCanvasView(context: Context) : FrameLayout(context) {
         pathEffect = android.graphics.DashPathEffect(floatArrayOf(18f, 12f), 0f)
     }
     private val lassoDrawPath = android.graphics.Path()
+
+    // Text tool gesture: where it started (mm) and the frame dragged so far.
+    private var textPointerId = NO_POINTER
+    private var textPointerIsFinger = false
+    private var textStartX = 0f
+    private var textStartY = 0f
+    private var textFrame: de.nibsync.model.geometry.Rect? = null
     private val eraserPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Paint.Style.STROKE
         strokeWidth = 2f
@@ -209,12 +242,25 @@ class NoteCanvasView(context: Context) : FrameLayout(context) {
             return true
         }
 
+        // A finger tap on a text box opens it, whatever the tool.
+        override fun onSingleTapUp(e: MotionEvent): Boolean {
+            if (!navigating) return false
+            val toDoc = viewport.viewToDocument
+            val x = toDoc.mapX(e.x)
+            val y = toDoc.mapY(e.y)
+            if (textBoxAt(x, y) == null) return false
+            onTextRequested(x, y, null)
+            return true
+        }
+
         override fun onScroll(e1: MotionEvent?, e2: MotionEvent, distanceX: Float, distanceY: Float): Boolean {
+            if (!navigating) return false
             setViewport(viewport.scrollByPx(distanceX, distanceY))
             return true
         }
 
         override fun onFling(e1: MotionEvent?, e2: MotionEvent, velocityX: Float, velocityY: Float): Boolean {
+            if (!navigating) return false
             flingLastX = 0
             flingLastY = 0
             scroller.fling(0, 0, -velocityX.roundToInt(), -velocityY.roundToInt(), Int.MIN_VALUE, Int.MAX_VALUE, Int.MIN_VALUE, Int.MAX_VALUE)
@@ -225,6 +271,7 @@ class NoteCanvasView(context: Context) : FrameLayout(context) {
 
     private val scaleGestures = ScaleGestureDetector(context, object : ScaleGestureDetector.SimpleOnScaleGestureListener() {
         override fun onScale(detector: ScaleGestureDetector): Boolean {
+            if (!navigating) return false
             setViewport(viewport.zoomBy(detector.scaleFactor, detector.focusX, detector.focusY))
             return true
         }
@@ -239,6 +286,15 @@ class NoteCanvasView(context: Context) : FrameLayout(context) {
         inProgressStrokesView.eagerInit()
     }
 
+    /** Shows the given text boxes (back to front). Cheap if nothing changed. */
+    fun setTextBoxes(boxes: List<TextBox>) {
+        if (boxes === textBoxes) return
+        textBoxes = boxes
+        textRenderer.retainOnly(boxes.mapTo(HashSet()) { it.id })
+        updateContentBottom()
+        invalidate()
+    }
+
     /** Shows the given document strokes (back to front). Cheap if nothing changed. */
     fun setStrokes(newStrokes: List<Stroke>) {
         if (newStrokes === strokes) return
@@ -249,7 +305,7 @@ class NoteCanvasView(context: Context) : FrameLayout(context) {
     }
 
     private fun updateContentBottom() {
-        val bottom = strokes.maxOfOrNull { it.bounds.bottom } ?: 0f
+        val bottom = maxOf(strokes.maxOfOrNull { it.bounds.bottom } ?: 0f, textBoxes.maxOfOrNull { it.bounds.bottom } ?: 0f)
         if (bottom != viewport.contentBottomMm) setViewport(viewport.withContentBottom(bottom))
     }
 
@@ -287,13 +343,23 @@ class NoteCanvasView(context: Context) : FrameLayout(context) {
         val shown = eraseGesture?.visible ?: strokes
         val moving = movePointerId != NO_POINTER
         canvas.withMatrix(documentToView) {
+            // Marker strokes, then text, then ink (see Layer).
+            var textDrawn = false
             for (stroke in shown) {
+                if (!textDrawn && stroke.layer.zIndex > Layer.TEXT.zIndex) {
+                    drawTextBoxes(this, visible, moving)
+                    textDrawn = true
+                }
                 if (moving && stroke.id in selection) {
                     withTranslation(moveDx, moveDy) { renderer.draw(this, inkCache[stroke], documentToView) }
                 } else if (stroke.bounds.intersects(visible)) {
                     renderer.draw(this, inkCache[stroke], documentToView)
                 }
             }
+            if (!textDrawn) drawTextBoxes(this, visible, moving)
+        }
+        textFrame?.let { f ->
+            canvas.drawRect(transform.mapX(f.left), transform.mapY(f.top), transform.mapX(f.right), transform.mapY(f.bottom), selectionPaint)
         }
         if (eraseGesture != null) canvas.drawCircle(eraserX, eraserY, eraserRadiusMm * viewport.scale, eraserPaint)
         selectionBounds()?.let { b ->
@@ -311,6 +377,17 @@ class NoteCanvasView(context: Context) : FrameLayout(context) {
                 if (i == 0) lassoDrawPath.moveTo(x, y) else lassoDrawPath.lineTo(x, y)
             }
             canvas.drawPath(lassoDrawPath, selectionPaint)
+        }
+    }
+
+    private fun drawTextBoxes(canvas: Canvas, visible: de.nibsync.model.geometry.Rect, moving: Boolean) {
+        for (box in textBoxes) {
+            if (box.id == editingTextBox) continue
+            if (moving && box.id in selection) {
+                canvas.withTranslation(moveDx, moveDy) { textRenderer.draw(this, box) }
+            } else if (box.bounds.intersects(visible)) {
+                textRenderer.draw(canvas, box)
+            }
         }
     }
 
@@ -388,10 +465,10 @@ class NoteCanvasView(context: Context) : FrameLayout(context) {
             MotionEvent.ACTION_UP, MotionEvent.ACTION_POINTER_UP -> onPointerUp(event)
             MotionEvent.ACTION_CANCEL -> onCancel(event)
         }
-        if (navigating) {
-            scaleGestures.onTouchEvent(event)
-            gestures.onTouchEvent(event)
-        }
+        // The detectors see every event, so navigation can also start with a second finger
+        // (text tool); their callbacks only act while navigating.
+        scaleGestures.onTouchEvent(event)
+        gestures.onTouchEvent(event)
         if (event.actionMasked == MotionEvent.ACTION_UP || event.actionMasked == MotionEvent.ACTION_CANCEL) {
             navigating = false
         }
@@ -402,8 +479,14 @@ class NoteCanvasView(context: Context) : FrameLayout(context) {
         val index = event.actionIndex
         val toolType = event.getToolType(index)
         val action = InputRouting.actionFor(toolType, drawWithFinger, tool)
+        // Text tool: a second finger turns a finger's frame gesture into scrolling/zooming.
+        if (textPointerId != NO_POINTER && textPointerIsFinger && toolType == MotionEvent.TOOL_TYPE_FINGER) {
+            finishTextFrame(null, commit = false)
+            navigating = true
+            return
+        }
         val busy = drawingPointerId != NO_POINTER || erasingPointerId != NO_POINTER ||
-            lassoPointerId != NO_POINTER || movePointerId != NO_POINTER
+            lassoPointerId != NO_POINTER || movePointerId != NO_POINTER || textPointerId != NO_POINTER
         // Stylus or finger on the selection drags it.
         if (!busy && event.actionMasked == MotionEvent.ACTION_DOWN && toolType != MotionEvent.TOOL_TYPE_ERASER &&
             hitsSelection(event.getX(index), event.getY(index))
@@ -411,7 +494,13 @@ class NoteCanvasView(context: Context) : FrameLayout(context) {
             startMove(event, index)
             return
         }
-        if (action == InputRouting.Action.SELECT && !busy) {
+        if (action == InputRouting.Action.TEXT && !busy) {
+            if (navigating) {
+                navigating = false
+                scroller.forceFinished(true)
+            }
+            startTextFrame(event, index)
+        } else if (action == InputRouting.Action.SELECT && !busy) {
             if (navigating) {
                 navigating = false
                 scroller.forceFinished(true)
@@ -504,7 +593,7 @@ class NoteCanvasView(context: Context) : FrameLayout(context) {
 
     private fun selectionBounds(): de.nibsync.model.geometry.Rect? {
         if (selection.isEmpty()) return null
-        val b = boundsOf(strokes.filter { it.id in selection }) ?: return null
+        val b = boundsOf(strokes.filter { it.id in selection } + textBoxes.filter { it.id in selection }) ?: return null
         return de.nibsync.model.geometry.Rect(b.left - SELECTION_PADDING_MM, b.top - SELECTION_PADDING_MM, b.right + SELECTION_PADDING_MM, b.bottom + SELECTION_PADDING_MM)
     }
 
@@ -512,6 +601,43 @@ class NoteCanvasView(context: Context) : FrameLayout(context) {
         val b = selectionBounds() ?: return false
         val toDoc = viewport.viewToDocument
         return b.contains(toDoc.mapX(x), toDoc.mapY(y))
+    }
+
+    private fun startTextFrame(event: MotionEvent, pointerIndex: Int) {
+        val toDoc = viewport.viewToDocument
+        textPointerId = event.getPointerId(pointerIndex)
+        textPointerIsFinger = event.getToolType(pointerIndex) == MotionEvent.TOOL_TYPE_FINGER
+        textStartX = toDoc.mapX(event.getX(pointerIndex))
+        textStartY = toDoc.mapY(event.getY(pointerIndex))
+        textFrame = null
+    }
+
+    private fun updateTextFrame(event: MotionEvent, pointerIndex: Int) {
+        val toDoc = viewport.viewToDocument
+        val x = toDoc.mapX(event.getX(pointerIndex))
+        val y = toDoc.mapY(event.getY(pointerIndex))
+        // Below the tap tolerance it is still a tap: no frame.
+        val tolerance = TEXT_TAP_TOLERANCE_DP * resources.displayMetrics.density / viewport.scale
+        textFrame = if (textFrame == null && abs(x - textStartX) < tolerance && abs(y - textStartY) < tolerance) {
+            null
+        } else {
+            de.nibsync.model.geometry.Rect(minOf(textStartX, x), minOf(textStartY, y), maxOf(textStartX, x), maxOf(textStartY, y))
+        }
+        invalidate()
+    }
+
+    private fun finishTextFrame(event: MotionEvent?, commit: Boolean) {
+        if (textPointerId == NO_POINTER) return
+        if (commit && event != null) {
+            val index = event.findPointerIndex(textPointerId)
+            if (index >= 0) updateTextFrame(event, index)
+        }
+        val frame = textFrame
+        textPointerId = NO_POINTER
+        textFrame = null
+        invalidate()
+        if (!commit) return
+        if (frame == null) onTextRequested(textStartX, textStartY, null) else onTextRequested(frame.left, frame.top, frame.width)
     }
 
     private fun startMove(event: MotionEvent, pointerIndex: Int) {
@@ -605,6 +731,11 @@ class NoteCanvasView(context: Context) : FrameLayout(context) {
     }
 
     private fun onMove(event: MotionEvent) {
+        if (textPointerId != NO_POINTER) {
+            val index = event.findPointerIndex(textPointerId)
+            if (index >= 0) updateTextFrame(event, index)
+            return
+        }
         if (lassoPath != null) {
             val index = event.findPointerIndex(lassoPointerId)
             if (index >= 0) extendLasso(event, index)
@@ -633,6 +764,10 @@ class NoteCanvasView(context: Context) : FrameLayout(context) {
 
     private fun onPointerUp(event: MotionEvent) {
         val pointerId = event.getPointerId(event.actionIndex)
+        if (pointerId == textPointerId) {
+            finishTextFrame(event, commit = !InputRouting.isCanceled(event))
+            return
+        }
         if (pointerId == lassoPointerId || pointerId == movePointerId) {
             finishSelectionGesture(event, commit = !InputRouting.isCanceled(event))
             return
@@ -646,6 +781,15 @@ class NoteCanvasView(context: Context) : FrameLayout(context) {
         }
         val id = drawingStrokeId ?: return
         if (event.getPointerId(event.actionIndex) != drawingPointerId) return
+        // A short tap of the pen on a text box opens the box instead of leaving a dot.
+        val tapped = tappedTextBox(event)
+        if (tapped != null) {
+            inProgressStrokesView.cancelStroke(id, event)
+            brushesInProgress.remove(id)
+            clearDrawingPointer()
+            onTextRequested(tapped.first, tapped.second, null)
+            return
+        }
         if (InputRouting.isCanceled(event)) {
             inProgressStrokesView.cancelStroke(id, event)
             brushesInProgress.remove(id)
@@ -656,6 +800,7 @@ class NoteCanvasView(context: Context) : FrameLayout(context) {
     }
 
     private fun onCancel(event: MotionEvent) {
+        finishTextFrame(null, commit = false)
         finishErase(commit = false)
         finishSelectionGesture(null, commit = false)
         drawingStrokeId?.let {
@@ -664,6 +809,17 @@ class NoteCanvasView(context: Context) : FrameLayout(context) {
         }
         clearDrawingPointer()
     }
+
+    /** Document point of a pen tap on a text box that just ended, or null if it was no such tap. */
+    private fun tappedTextBox(event: MotionEvent): Pair<Float, Float>? {
+        val first = capturedPoints.firstOrNull() ?: return null
+        if (event.eventTime - strokeDownTime > TAP_MAX_MS) return null
+        val tolerance = TEXT_TAP_TOLERANCE_DP * resources.displayMetrics.density / viewport.scale
+        if (capturedPoints.any { abs(it.x - first.x) > tolerance || abs(it.y - first.y) > tolerance }) return null
+        return if (textBoxAt(first.x, first.y) != null) first.x to first.y else null
+    }
+
+    private fun textBoxAt(x: Float, y: Float): TextBox? = textBoxes.lastOrNull { it.bounds.contains(x, y) }
 
     private fun clearDrawingPointer() {
         drawingPointerId = NO_POINTER
@@ -692,11 +848,13 @@ class NoteCanvasView(context: Context) : FrameLayout(context) {
      * Adds just committed strokes to the display right away. The document state will deliver
      * the same list again; the cache keeps that cheap.
      */
-    private fun show(added: List<Stroke>, removed: Set<StrokeId> = emptySet()) {
+    private fun show(added: List<PageElement>, removed: Set<StrokeId> = emptySet()) {
         if (added.isEmpty() && removed.isEmpty()) return
         val known = strokes.mapTo(HashSet()) { it.id }
-        val merged = strokes.filter { it.id !in removed } + added.filter { it.id !in known }
+        val merged = strokes.filter { it.id !in removed } + added.filterIsInstance<Stroke>().filter { it.id !in known }
         strokes = merged.sortedBy { it.layer.zIndex } // stable: keeps creation order per layer
+        val knownBoxes = textBoxes.mapTo(HashSet()) { it.id }
+        textBoxes = textBoxes.filter { it.id !in removed } + added.filterIsInstance<TextBox>().filter { it.id !in knownBoxes }
         updateContentBottom()
         invalidate()
     }
@@ -728,6 +886,12 @@ class NoteCanvasView(context: Context) : FrameLayout(context) {
 
         /** Smaller drags of the selection are treated as taps. */
         const val MIN_MOVE_MM = 0.2f
+
+        /** A text tool gesture shorter than this (dp on screen) is a tap. */
+        const val TEXT_TAP_TOLERANCE_DP = 8f
+
+        /** A pen touch at most this long (and short in distance) is a tap, not a dot. */
+        const val TAP_MAX_MS = 300L
 
         /** How far the pen may wander while "holding still", in dp on screen. */
         const val HOLD_TOLERANCE_DP = 4f

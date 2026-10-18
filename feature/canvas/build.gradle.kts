@@ -36,6 +36,7 @@ dependencies {
     implementation(project(":ink:android"))
     implementation(project(":core:shapes"))
     implementation(project(":ui:background"))
+    api(project(":feature:text"))
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.input.motionprediction)
     implementation(libs.kotlinx.coroutines.android)

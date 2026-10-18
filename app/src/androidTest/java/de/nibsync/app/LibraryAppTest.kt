@@ -60,6 +60,7 @@ class LibraryAppTest {
 
     @Before
     fun launch() {
+        app.sync.paused = true // never sync test data with the account on the device
         savedLastDocument = settings.lastDocument
         savedPageBreaks = settings.showPageBreaks
         scenario = ActivityScenario.launch(Intent(app, MainActivity::class.java))
@@ -68,6 +69,7 @@ class LibraryAppTest {
 
     @After
     fun cleanUp() {
+        app.sync.paused = false
         if (::scenario.isInitialized) scenario.close()
         runBlocking {
             val lib = app.container.library

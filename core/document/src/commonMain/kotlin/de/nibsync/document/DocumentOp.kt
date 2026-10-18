@@ -4,6 +4,7 @@ import de.nibsync.model.BackgroundSpec
 import de.nibsync.model.DeviceId
 import de.nibsync.model.Stroke
 import de.nibsync.model.StrokeId
+import de.nibsync.model.TextBox
 
 /**
  * Lamport timestamp of an operation. Unique per op (a device never reuses a counter value) and
@@ -24,6 +25,9 @@ sealed interface DocumentOp {
 
     data class AddStrokes(override val stamp: OpStamp, val strokes: List<Stroke>) : DocumentOp
 
+    data class AddTextBoxes(override val stamp: OpStamp, val boxes: List<TextBox>) : DocumentOp
+
+    /** Removes elements of any kind (strokes, text boxes) by id. */
     data class RemoveStrokes(override val stamp: OpStamp, val ids: Set<StrokeId>) : DocumentOp
 
     /** Changes the paper pattern. Concurrent changes: the one with the highest stamp wins. */

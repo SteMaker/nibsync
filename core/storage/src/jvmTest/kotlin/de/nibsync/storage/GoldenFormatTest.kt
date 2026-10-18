@@ -30,6 +30,11 @@ class GoldenFormatTest {
         ),
     )
 
+    // Added in format version 1 later on (op type 4); older readers skip it.
+    private val textOps = listOf(
+        de.nibsync.document.DocumentOp.AddTextBoxes(de.nibsync.document.OpStamp(5, DEV_A), listOf(formattedTextBox("44444444-4444-4444-8444-444444444444"))),
+    )
+
     private val goldenDir = "src/jvmTest/resources/golden".toPath()
 
     private fun encodedLog(ops: List<de.nibsync.document.DocumentOp> = this.ops): okio.ByteString {
@@ -60,6 +65,14 @@ class GoldenFormatTest {
         FileSystem.SYSTEM.write(goldenDir / "ops-v1.oplog") { write(encodedLog()) }
         FileSystem.SYSTEM.write(goldenDir / "meta-v1.json") { writeUtf8(metaJson()) }
         FileSystem.SYSTEM.write(goldenDir / "ops-v1-background.oplog") { write(encodedLog(backgroundOps)) }
+        FileSystem.SYSTEM.write(goldenDir / "ops-v1-text.oplog") { write(encodedLog(textOps)) }
+    }
+
+    @Test
+    fun textOpIsStable() {
+        val golden = golden("ops-v1-text.oplog")
+        assertThat(OpLogCodec.read(Buffer().write(golden)).ops).isEqualTo(textOps)
+        assertThat(encodedLog(textOps).hex()).isEqualTo(golden.hex())
     }
 
     @Test
