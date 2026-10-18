@@ -15,6 +15,8 @@ android {
         versionCode = 1
         versionName = "0.1.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        // Nextcloud for the sync device test (the development container on this machine).
+        testInstrumentationRunnerArguments["nextcloudUrl"] = providers.environmentVariable("NIBSYNC_TEST_NEXTCLOUD_URL").getOrElse("http://192.168.4.100:8089")
     }
 
     buildTypes {
@@ -46,6 +48,7 @@ dependencies {
     implementation(project(":feature:canvas"))
     implementation(project(":core:shapes"))
     implementation(project(":feature:library"))
+    implementation(project(":sync:webdav"))
     implementation(libs.androidx.lifecycle.runtime.compose)
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.activity.compose)
@@ -55,6 +58,7 @@ dependencies {
     implementation(platform(libs.androidx.compose.bom))
     implementation(libs.androidx.compose.ui)
     implementation(libs.androidx.compose.material3)
+    implementation(libs.androidx.compose.material.icons)
 
     testImplementation(libs.junit)
     testImplementation(libs.truth)
@@ -69,4 +73,5 @@ dependencies {
     androidTestImplementation(libs.androidx.test.ext.junit.ktx)
     androidTestImplementation(libs.uiautomator)
     androidTestImplementation(libs.truth)
+    androidTestImplementation(libs.okio.fakefilesystem)
 }

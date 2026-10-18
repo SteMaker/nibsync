@@ -4,7 +4,9 @@ import android.content.Intent
 import android.view.InputDevice
 import android.view.MotionEvent
 import android.os.SystemClock
+import androidx.compose.ui.test.SemanticsNodeInteraction
 import androidx.compose.ui.test.assertIsEnabled
+import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.junit4.createEmptyComposeRule
 import androidx.compose.ui.test.longClick
@@ -12,6 +14,7 @@ import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.performTextReplacement
+import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.test.performTouchInput
 import androidx.test.core.app.ActivityScenario
 import androidx.test.core.app.ApplicationProvider
@@ -101,6 +104,12 @@ class LibraryAppTest {
         t.books.filter { it.title.startsWith(bookTitle) }.forEach { b -> createdDuringTest += t.descendantsOf(b.id).map { it.id } + b.id }
     }
 
+    /** A tree row, scrolled into view: the user's own books may push it off screen. */
+    private fun row(title: String): SemanticsNodeInteraction {
+        compose.onNodeWithTag(LibraryTags.TREE).performScrollToNode(hasTestTag(LibraryTags.row(title)))
+        return compose.onNodeWithTag(LibraryTags.row(title))
+    }
+
     private fun openDrawer() {
         compose.onNodeWithTag(NoteScreenTags.MENU).performClick()
         compose.waitForIdle()
@@ -154,7 +163,7 @@ class LibraryAppTest {
 
         // Create a second document next to the first and switch to it.
         openDrawer()
-        compose.onNodeWithTag(LibraryTags.row("Kapitel 1")).performClick() // select the chapter
+        row("Kapitel 1").performClick() // select the chapter
         compose.onNodeWithTag(LibraryTags.NEW_DOCUMENT).performClick()
         enterName("Seite 2")
         val second = tree().descendantsOf(tree().books.first { it.title == bookTitle }.id).first { it.title == "Seite 2" }.id
@@ -162,7 +171,7 @@ class LibraryAppTest {
 
         // Back to the first one through the tree.
         openDrawer()
-        compose.onNodeWithTag(LibraryTags.row("Seite A5")).performClick()
+        row("Seite A5").performClick()
         waitUntil("first again") { activity { it.documentId } == first.asDocumentId }
         waitUntil("its stroke is back") { activity { it.session }?.state?.value?.strokeCount == 1 }
     }
@@ -181,13 +190,13 @@ class LibraryAppTest {
     fun renameAndDeleteWithLongPress() {
         createDocumentThroughTheDrawer()
         openDrawer()
-        compose.onNodeWithTag(LibraryTags.row("Kapitel 1")).performTouchInput { longClick() }
+        row("Kapitel 1").performTouchInput { longClick() }
         compose.onNodeWithTag(LibraryTags.RENAME).performClick()
         enterName("Kapitel Eins")
         val book = tree().books.first { it.title == bookTitle }
         waitUntil("renamed") { tree().childrenOf(book.id).any { it.title == "Kapitel Eins" } }
 
-        compose.onNodeWithTag(LibraryTags.row(bookTitle)).performTouchInput { longClick() }
+        row(bookTitle).performTouchInput { longClick() }
         compose.onNodeWithTag(LibraryTags.DELETE).performClick()
         compose.onNodeWithTag(LibraryTags.CONFIRM).performClick()
         waitUntil("deleted") { tree().books.none { it.title == bookTitle } }

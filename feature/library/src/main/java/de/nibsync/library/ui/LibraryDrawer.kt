@@ -65,6 +65,7 @@ import kotlinx.coroutines.launch
 /** Test tags used by UI tests. */
 object LibraryTags {
     const val DRAWER = "library-drawer"
+    const val TREE = "library-tree"
     const val NEW_BOOK = "library-new-book"
     const val NEW_FOLDER = "library-new-folder"
     const val NEW_DOCUMENT = "library-new-document"
@@ -96,6 +97,8 @@ fun LibraryDrawer(
     currentDocument: NodeId?,
     onOpenDocument: (NodeId) -> Unit,
     modifier: Modifier = Modifier,
+    /** Extra content at the bottom, e.g. the sync settings. */
+    footer: @Composable () -> Unit = {},
 ) {
     val tree by viewModel.tree.collectAsStateWithLifecycle()
     val expanded by viewModel.expanded.collectAsStateWithLifecycle()
@@ -115,7 +118,7 @@ fun LibraryDrawer(
             }
         }
         HorizontalDivider()
-        LazyColumn(Modifier.weight(1f)) {
+        LazyColumn(Modifier.weight(1f).testTag(LibraryTags.TREE)) {
             items(viewModel.rows(tree, expanded), key = { it.node.id.value }) { row ->
                 val node = row.node
                 val highlighted = node.id == highlightedId
@@ -198,6 +201,7 @@ fun LibraryDrawer(
                 }
             }
         }
+        footer()
     }
 
     when (val d = dialog) {

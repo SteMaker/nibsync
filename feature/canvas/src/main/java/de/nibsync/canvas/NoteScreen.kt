@@ -92,6 +92,8 @@ fun NoteScreen(
     onMenu: (() -> Unit)? = null,
     showPageBreaks: Boolean = false,
     onTogglePageBreaks: ((Boolean) -> Unit)? = null,
+    /** Extra items at the end of the tool bar, e.g. a sync indicator. */
+    toolbarEnd: @Composable () -> Unit = {},
     onCanvasCreated: (NoteCanvasView) -> Unit = {},
 ) {
     val document by viewModel.document.collectAsStateWithLifecycle()
@@ -104,6 +106,7 @@ fun NoteScreen(
 
     Column(modifier.fillMaxSize()) {
         Toolbar(
+            toolbarEnd = toolbarEnd,
             onMenu = onMenu,
             showPageBreaks = showPageBreaks,
             onTogglePageBreaks = onTogglePageBreaks,
@@ -164,6 +167,7 @@ fun NoteScreen(
 
 @Composable
 private fun Toolbar(
+    toolbarEnd: @Composable () -> Unit,
     onMenu: (() -> Unit)?,
     showPageBreaks: Boolean,
     onTogglePageBreaks: ((Boolean) -> Unit)?,
@@ -276,6 +280,7 @@ private fun Toolbar(
                     Icon(Icons.Filled.TouchApp, contentDescription = fingerLabel)
                 }
             }
+            toolbarEnd()
         }
     }
 }

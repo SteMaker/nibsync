@@ -17,9 +17,12 @@ feature roadmap and where each feature lives.
 - Regenerate storage golden files only for an intentional format change:
   `NIBSYNC_UPDATE_GOLDEN=1 ./gradlew :core:storage:jvmTest` (keep old versions' files!)
 
+- Nextcloud test server: Docker container `nibsync-nextcloud` on port 8089 (see
+  `docs/architecture.md`, "Nextcloud sync"); start with `docker start nibsync-nextcloud`.
+
 ## Module rules
 
-- `core/*` (model, document, storage, shapes) are Kotlin Multiplatform (JVM target only for now). **No Android imports** there:
+- `core/*` (model, document, storage, shapes, library, sync) are Kotlin Multiplatform (JVM target only for now). **No Android imports** there:
   they must later back a Windows client.
 - `androidx.ink` types stay inside `ink/android` and `feature/canvas`; they never appear in
   public APIs of other modules.

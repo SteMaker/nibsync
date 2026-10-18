@@ -11,6 +11,12 @@ import okio.Path
 
 /** Storage of the library tree. */
 interface LibraryRepository {
+    /** Encoded form of a node, exactly as stored (for syncing the file). */
+    fun encode(node: LibraryNode): ByteArray
+
+    /** Parses a stored node; null if the data is not a valid node. */
+    fun decode(bytes: ByteArray): LibraryNode?
+
     suspend fun loadAll(): List<LibraryNode>
 
     /** Creates or replaces one node. */
@@ -33,6 +39,12 @@ class FileLibraryRepository(
         ignoreUnknownKeys = true
         encodeDefaults = true
     }
+
+    override fun encode(node: LibraryNode): ByteArray =
+        json.encodeToString(NodeRecord.serializer(), node.toRecord()).encodeToByteArray()
+
+    override fun decode(bytes: ByteArray): LibraryNode? =
+        runCatching { json.decodeFromString(NodeRecord.serializer(), bytes.decodeToString()).toDomain() }.getOrNull()
 
     override suspend fun loadAll(): List<LibraryNode> = withContext(io) {
         if (!fs.exists(root)) return@withContext emptyList()
@@ -68,6 +80,7 @@ private data class NodeRecord(
     @SerialName("title") val title: String,
     @SerialName("createdAt") val createdAtEpochMs: Long,
     @SerialName("deleted") val deleted: Boolean = false,
+    @SerialName("modifiedAt") val modifiedAtEpochMs: Long? = null,
 )
 
 private fun LibraryNode.toRecord() = NodeRecord(
@@ -77,9 +90,10 @@ private fun LibraryNode.toRecord() = NodeRecord(
     title = title,
     createdAtEpochMs = createdAtEpochMs,
     deleted = deleted,
+    modifiedAtEpochMs = modifiedAtEpochMs,
 )
 
 private fun NodeRecord.toDomain(): LibraryNode {
     val kind = NodeKind.entries.firstOrNull { it.name == kind } ?: throw SerializationException("Unknown kind $kind")
-    return LibraryNode(NodeId(id), kind, parent?.let(::NodeId), title, createdAtEpochMs, deleted)
+    return LibraryNode(NodeId(id), kind, parent?.let(::NodeId), title, createdAtEpochMs, deleted, modifiedAtEpochMs ?: createdAtEpochMs)
 }

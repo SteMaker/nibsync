@@ -5,4 +5,18 @@
     <string name="default_book_title">Notes</string>
     <string name="no_document">No document yet. Create a book and a document in the library.</string>
     <string name="open_library">Open library</string>
+    <string name="nextcloud">Nextcloud</string>
+    <string name="sync_not_configured">Not connected. Notes stay on this device.</string>
+    <string name="sync_connect">Connect to Nextcloud</string>
+    <string name="sync_now">Sync now</string>
+    <string name="sync_sign_out">Disconnect</string>
+    <string name="sync_running">Syncing…</string>
+    <string name="sync_done">Synced at %1$s</string>
+    <string name="sync_failed">Sync failed: %1$s</string>
+    <string name="sync_login_invalid">Login no longer valid. Disconnect and connect again.</string>
+    <string name="sync_server">Server address</string>
+    <string name="sync_folder">Folder in Nextcloud</string>
+    <string name="sync_waiting_for_login">Log in with the browser, then come back…</string>
+    <string name="sync_login_in_browser">Log in with browser</string>
+    <string name="sync_login_timeout">Login was not completed in time.</string>
 </resources>

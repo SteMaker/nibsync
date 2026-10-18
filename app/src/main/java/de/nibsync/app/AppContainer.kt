@@ -2,6 +2,11 @@ package de.nibsync.app
 
 import de.nibsync.canvas.StrokeClipboard
 import de.nibsync.document.DocumentSession
+import de.nibsync.document.OpJournal
+import kotlinx.coroutines.channels.BufferOverflow
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.SharedFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import de.nibsync.library.FileLibraryRepository
 import de.nibsync.library.Library
 import de.nibsync.model.DeviceId
@@ -23,8 +28,8 @@ import okio.Path
  * will later be mirrored to a Nextcloud share. Device-local files live outside of it.
  */
 class AppContainer(
-    private val fs: FileSystem,
-    localRoot: Path,
+    val fs: FileSystem,
+    val localRoot: Path,
     val appScope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Default),
 ) {
     val documentsRoot: Path = localRoot / "documents"
@@ -59,6 +64,11 @@ class AppContainer(
         documents.forEach { closeSession(it) }
     }
 
+    private val _localChanges = MutableSharedFlow<Unit>(extraBufferCapacity = 1, onBufferOverflow = BufferOverflow.DROP_OLDEST)
+
+    /** Emits after this device wrote a change to any document (for syncing soon). */
+    val localChanges: SharedFlow<Unit> = _localChanges.asSharedFlow()
+
     private val sessions = HashMap<DocumentId, DocumentSession>()
     private val sessionLock = Mutex()
 
@@ -71,7 +81,12 @@ class AppContainer(
         val session = DocumentSession(
             initial = repository.load(id),
             device = deviceId,
-            journal = repository.journal(id, deviceId),
+            journal = repository.journal(id, deviceId).let { journal ->
+                OpJournal { op ->
+                    journal.append(op)
+                    _localChanges.tryEmit(Unit)
+                }
+            },
             scope = appScope,
             clock = System::currentTimeMillis,
         )
@@ -82,6 +97,14 @@ class AppContainer(
     companion object {
         /** The single document of app versions before the library. */
         val LEGACY_DOCUMENT = DocumentId("default")
+    }
+
+    /** The open session of [id], if any, e.g. to show changes from other devices. */
+    suspend fun openSessionOrNull(id: DocumentId): DocumentSession? = sessionLock.withLock { sessions[id] }
+
+    /** Waits until all open documents have written their changes. */
+    suspend fun flushOpenSessions() {
+        sessionLock.withLock { sessions.values.toList() }.forEach { it.flush() }
     }
 
     /** Closes the session and forgets it; the next [openSession] reloads from storage. */

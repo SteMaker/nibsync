@@ -156,6 +156,51 @@ class LibraryTest {
     }
 
     @Test
+    fun remoteNodesAreMergedAndDeletedDocumentsRemoved() = runTest {
+        val lib = library()
+        lib.load("Book", "Doc")
+        val book = lib.tree.value.books.single()
+        val doc = lib.tree.value.documents.single()
+        val closed = mutableListOf<Set<DocumentId>>()
+        // From another device: a new chapter, the book renamed later, the document deleted.
+        val chapter = LibraryNode(NodeId("remote-ch"), NodeKind.FOLDER, book.id, "Von Tablet 2", 5000)
+        val changed = lib.mergeRemote(
+            listOf(chapter, book.copy(title = "Umbenannt", modifiedAtEpochMs = 9000), doc.copy(deleted = true, modifiedAtEpochMs = 9000)),
+        ) { closed += it }
+        assertEquals(3, changed.size)
+        assertEquals("Umbenannt", lib.tree.value[book.id]!!.title)
+        assertEquals(listOf("Von Tablet 2"), lib.tree.value.childrenOf(book.id).map { it.title })
+        assertEquals(listOf(setOf(doc.id.asDocumentId)), closed)
+        assertFalse(documents().exists(doc.id.asDocumentId))
+        // Merging the same again changes nothing.
+        assertEquals(emptyList(), lib.mergeRemote(listOf(chapter)))
+        // And it is stored: a reload sees it.
+        val again = library()
+        again.load("x", "y")
+        assertEquals("Umbenannt", again.tree.value[book.id]!!.title)
+    }
+
+    @Test
+    fun renameAndDeleteUpdateModificationTime() = runTest {
+        val lib = library()
+        lib.load("Book", "Doc")
+        val book = lib.tree.value.books.single()
+        lib.rename(book.id, "Neu")
+        val renamed = lib.allNodes().first { it.id == book.id }
+        assertTrue(renamed.modifiedAtEpochMs > book.modifiedAtEpochMs)
+        lib.delete(book.id)
+        assertTrue(lib.allNodes().first { it.id == book.id }.modifiedAtEpochMs > renamed.modifiedAtEpochMs)
+    }
+
+    @Test
+    fun encodeDecodeRoundTrip() = runTest {
+        val repo = nodes()
+        val node = LibraryNode(NodeId("x"), NodeKind.DOCUMENT, NodeId("p"), "Seite", 1, deleted = true, modifiedAtEpochMs = 7)
+        assertEquals(node, repo.decode(repo.encode(node)))
+        assertNull(repo.decode("garbage".encodeToByteArray()))
+    }
+
+    @Test
     fun damagedNodeFilesAreSkipped() = runTest {
         val lib = library()
         lib.load("Book", "Doc")
@@ -163,5 +208,37 @@ class LibraryTest {
         val again = library()
         again.load("x", "y")
         assertEquals(listOf("Book"), again.tree.value.titles)
+    }
+}
+
+class LibraryMergeTest {
+    private val base = LibraryNode(NodeId("n"), NodeKind.FOLDER, null, "Alt", createdAtEpochMs = 0, modifiedAtEpochMs = 10)
+
+    @Test
+    fun laterChangeWins() {
+        val renamedLater = base.copy(title = "Neu", modifiedAtEpochMs = 20)
+        assertEquals("Neu", base.mergedWith(renamedLater).title)
+        assertEquals("Neu", renamedLater.mergedWith(base).title)
+    }
+
+    @Test
+    fun deletedStaysDeletedEvenAgainstALaterRename() {
+        val deleted = base.copy(deleted = true, modifiedAtEpochMs = 15)
+        val renamed = base.copy(title = "Neu", modifiedAtEpochMs = 30)
+        assertTrue(deleted.mergedWith(renamed).deleted)
+        assertTrue(renamed.mergedWith(deleted).deleted)
+    }
+
+    @Test
+    fun tiesAreDecidedTheSameWayEverywhere() {
+        val a = base.copy(title = "A", modifiedAtEpochMs = 20)
+        val b = base.copy(title = "B", modifiedAtEpochMs = 20)
+        assertEquals(a.mergedWith(b), b.mergedWith(a))
+    }
+
+    @Test
+    fun mergeIsIdempotent() {
+        val other = base.copy(title = "X", modifiedAtEpochMs = 99)
+        assertEquals(base.mergedWith(other), base.mergedWith(other).mergedWith(other))
     }
 }

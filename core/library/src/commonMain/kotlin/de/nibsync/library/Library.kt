@@ -61,7 +61,7 @@ class Library(
 
     suspend fun rename(id: NodeId, title: String) = lock.withLock {
         val node = requireNotNull(_tree.value[id]) { "Unknown node $id" }
-        store(node.copy(title = title.trim().ifEmpty { node.title }))
+        store(node.copy(title = title.trim().ifEmpty { node.title }, modifiedAtEpochMs = clock()))
         publish()
     }
 
@@ -69,11 +69,45 @@ class Library(
     suspend fun delete(id: NodeId) = lock.withLock {
         val tree = _tree.value
         val node = tree[id] ?: return@withLock
+        val now = clock()
         for (n in tree.descendantsOf(id) + node) {
-            store(n.copy(deleted = true))
+            store(n.copy(deleted = true, modifiedAtEpochMs = now))
             if (!n.isFolder) documents.delete(n.id.asDocumentId)
         }
         publish()
+    }
+
+    /** Encoded node as stored, for transferring it unchanged. */
+    fun encode(node: LibraryNode): ByteArray = nodes.encode(node)
+
+    fun decode(bytes: ByteArray): LibraryNode? = nodes.decode(bytes)
+
+    /** Every stored node including tombstones, e.g. for uploading. */
+    suspend fun allNodes(): List<LibraryNode> = lock.withLock { all.values.toList() }
+
+    /**
+     * Merges nodes received from other devices (see [LibraryNode.mergedWith]). Documents that
+     * become deleted lose their stored content; [beforeDocumentsDeleted] runs first, e.g. to
+     * close their editing sessions. Returns the nodes that changed locally.
+     */
+    suspend fun mergeRemote(
+        remote: List<LibraryNode>,
+        beforeDocumentsDeleted: suspend (Set<DocumentId>) -> Unit = {},
+    ): List<LibraryNode> = lock.withLock {
+        val changed = ArrayList<LibraryNode>()
+        val newlyDeletedDocs = HashSet<DocumentId>()
+        for (incoming in remote) {
+            val local = all[incoming.id]
+            val merged = local?.mergedWith(incoming) ?: incoming
+            if (merged == local) continue
+            if (merged.deleted && local?.deleted != true && !merged.isFolder) newlyDeletedDocs += merged.id.asDocumentId
+            changed += merged
+        }
+        if (newlyDeletedDocs.isNotEmpty()) beforeDocumentsDeleted(newlyDeletedDocs)
+        for (n in changed) store(n)
+        for (doc in newlyDeletedDocs) documents.delete(doc)
+        if (changed.isNotEmpty()) publish()
+        changed
     }
 
     private suspend fun createDocumentLocked(parent: NodeId, title: String, format: PageFormat): LibraryNode {

@@ -4,4 +4,18 @@
     <string name="default_book_title">Notizen</string>
     <string name="no_document">Noch kein Dokument. Lege in der Bibliothek ein Buch und ein Dokument an.</string>
     <string name="open_library">Bibliothek öffnen</string>
+    <string name="nextcloud">Nextcloud</string>
+    <string name="sync_not_configured">Nicht verbunden. Notizen bleiben auf diesem Gerät.</string>
+    <string name="sync_connect">Mit Nextcloud verbinden</string>
+    <string name="sync_now">Jetzt synchronisieren</string>
+    <string name="sync_sign_out">Trennen</string>
+    <string name="sync_running">Synchronisiere…</string>
+    <string name="sync_done">Synchronisiert um %1$s</string>
+    <string name="sync_failed">Sync fehlgeschlagen: %1$s</string>
+    <string name="sync_login_invalid">Anmeldung ungültig. Bitte trennen und neu verbinden.</string>
+    <string name="sync_server">Server-Adresse</string>
+    <string name="sync_folder">Ordner in der Nextcloud</string>
+    <string name="sync_waiting_for_login">Im Browser anmelden, dann hierher zurückkehren…</string>
+    <string name="sync_login_in_browser">Im Browser anmelden</string>
+    <string name="sync_login_timeout">Die Anmeldung wurde nicht rechtzeitig abgeschlossen.</string>
 </resources>

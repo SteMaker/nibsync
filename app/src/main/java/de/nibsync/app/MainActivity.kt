@@ -35,6 +35,8 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import de.nibsync.app.sync.SyncPanel
+import de.nibsync.app.sync.SyncStatusIcon
 import de.nibsync.canvas.CanvasViewModel
 import de.nibsync.canvas.NoteCanvasView
 import de.nibsync.canvas.NoteScreen
@@ -53,6 +55,7 @@ import kotlinx.coroutines.launch
 class MainActivity : ComponentActivity() {
 
     private val container get() = (application as NibSyncApp).container
+    private val sync get() = (application as NibSyncApp).sync
     private val settings by lazy { AppSettings(this) }
 
     /** Document requested by the launching intent; such documents bypass the library. */
@@ -120,6 +123,7 @@ class MainActivity : ComponentActivity() {
                                 currentDocument = documentId?.let { NodeId(it.value) },
                                 onOpenDocument = { open(it.asDocumentId) },
                                 modifier = Modifier.safeDrawingPadding(),
+                                footer = { SyncPanel(sync) },
                             )
                         }
                     },
@@ -179,6 +183,7 @@ class MainActivity : ComponentActivity() {
                 onMenu = onMenu,
                 showPageBreaks = showPageBreaks,
                 onTogglePageBreaks = onTogglePageBreaks,
+                toolbarEnd = { SyncStatusIcon(sync) },
                 onCanvasCreated = { canvasView = it },
             )
         }
@@ -203,8 +208,14 @@ class MainActivity : ComponentActivity() {
         return super.dispatchKeyEvent(event)
     }
 
+    override fun onStart() {
+        super.onStart()
+        sync.start()
+    }
+
     override fun onStop() {
         super.onStop()
+        sync.stop()
         // Make sure everything written so far reaches the disk while the app is in background.
         val s = session ?: return
         container.appScope.launch { s.flush() }

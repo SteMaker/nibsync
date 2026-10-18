@@ -7,6 +7,8 @@ app/              Android app: wiring (AppContainer), MainActivity with the libr
 feature/library/  Library drawer (tree of books/chapters/documents), LibraryViewModel
 feature/canvas/   Endless page (NoteCanvasView), tool bar (Compose), CanvasViewModel
 ink/android/      Adapter domain <-> androidx.ink (brushes, stroke conversion, mesh cache)
+core/sync/        Sync engine (platform-neutral) against a RemoteStore
+sync/webdav/      RemoteStore for Nextcloud/WebDAV (OkHttp), Nextcloud login flow v2
 core/library/     Library tree: books, nested chapters, documents; one file per node
 core/shapes/      Shape recognition (lines, arrows, triangles, rectangles, ellipses), hold detection
 core/storage/     File format (meta.json + per-device op logs), repository, device id
@@ -106,13 +108,43 @@ copy and paste are tool bar actions. The clipboard (`StrokeClipboard`) keeps str
 to their centre and pastes into the middle of the visible page; it is meant to be shared
 app-wide so that pasting into other documents works once there are several (feature B).
 
+## Nextcloud sync
+
+The sync folder on the server (default `NibSync/`) mirrors `library/` and `documents/`.
+`SyncEngine`:
+
+1. Compares the folder's etag (Nextcloud propagates etags to parent folders) and local
+   pending changes; if neither changed, a sync is a single PROPFIND.
+2. Library: downloads changed `library/*.json`, merges (`LibraryNode.mergedWith`: latest change
+   wins, deleted stays deleted), uploads nodes whose content differs from the server's.
+3. Documents (only those in the library): uploads this device's op log (complete records
+   only) and meta; for changed document folders fetches only the new bytes of other devices'
+   logs (HTTP Range) and appends complete records to the local copies. Received ops are
+   applied live to open sessions. Deleted documents are removed on the server.
+
+Every device writes only its own files, so there are no write conflicts. The Android
+`SyncController` syncs on start, every 10 s and 2 s after local changes while the app is in
+the foreground, and once when it goes to the background. Login uses Nextcloud Login Flow v2
+(browser); the app password is kept in app-private storage. Cleartext HTTP is allowed in debug
+builds only (local test server).
+
+Development server: `docker run ... --name nibsync-nextcloud -p 8089:80 nextcloud:apache`
+(SQLite; user `nibsync` / `nibsync-test-pass`). The JVM integration test runs with
+`NIBSYNC_NEXTCLOUD_URL=http://localhost:8089 NIBSYNC_NEXTCLOUD_USER=nibsync
+NIBSYNC_NEXTCLOUD_PASSWORD=nibsync-test-pass ./gradlew :sync:webdav:jvmTest`; the device test
+`SyncAppTest` uses `http://192.168.4.100:8089` (override with `NIBSYNC_TEST_NEXTCLOUD_URL`) and
+is skipped when the server is unreachable.
+
+Known limits: whole own log is re-uploaded on change (fine for typical sizes; could be split
+into segments later); no background sync while the app is closed.
+
 ## Roadmap
 
 | Step | Feature | Where it plugs in |
 |------|---------|-------------------|
 | A ✅ | Pressure-sensitive handwriting, pen types, highlighter behind ink | done |
 | B ✅ | Books with nested chapters, documents with DIN A width, page breaks | `core/library`, `feature/library`; menu button top left |
-| C | Nextcloud sync, concurrent editing | new `sync/nextcloud` mirroring `documents/`; `DocumentSession.applyRemote` |
+| C ✅ | Nextcloud sync, concurrent editing | `core/sync`, `sync/webdav`, app `sync/` (controller, UI) |
 | D | Windows | `jvm`/desktop target for `core/*`, Compose Desktop UI, own renderer |
 | E ✅ | Shape recognition | hold the pen still ~0.5 s at the end of a stroke; `core/shapes` |
 | F ✅ | Pixel and object eraser | `core/document/erase`; two eraser buttons in the tool bar |

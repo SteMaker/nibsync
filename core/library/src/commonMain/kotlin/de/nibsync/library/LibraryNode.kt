@@ -39,6 +39,8 @@ data class LibraryNode(
     val title: String,
     val createdAtEpochMs: Long,
     val deleted: Boolean = false,
+    /** Time of the last change (rename, delete); decides between versions from different devices. */
+    val modifiedAtEpochMs: Long = createdAtEpochMs,
 ) {
     init {
         require(kind == NodeKind.FOLDER || parent != null) { "Documents must be inside a folder" }
@@ -46,4 +48,18 @@ data class LibraryNode(
     }
 
     val isFolder: Boolean get() = kind == NodeKind.FOLDER
+
+    /**
+     * Combines two versions of the same node (e.g. this device's and one from the server):
+     * deleted stays deleted, otherwise the later change wins (ties: the larger title, so every
+     * device picks the same).
+     */
+    fun mergedWith(other: LibraryNode): LibraryNode {
+        require(other.id == id) { "Different nodes" }
+        val newer = when {
+            other.modifiedAtEpochMs != modifiedAtEpochMs -> if (other.modifiedAtEpochMs > modifiedAtEpochMs) other else this
+            else -> if (other.title > title) other else this
+        }
+        return if (deleted || other.deleted) newer.copy(deleted = true) else newer
+    }
 }
