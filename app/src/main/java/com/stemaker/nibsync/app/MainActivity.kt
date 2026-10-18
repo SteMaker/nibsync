@@ -105,7 +105,7 @@ class MainActivity : ComponentActivity() {
 
     /** Logs in with OneDrive (browser) or Google Drive (Google's sign-in on the device). */
     private suspend fun cloudLogin(service: SyncService): SyncConfig = when (service) {
-        SyncService.ONEDRIVE -> oneDriveLogin(this, sync.clients.value)
+        SyncService.ONEDRIVE -> oneDriveLogin(this, sync.clients)
         SyncService.GOOGLE_DRIVE -> try {
             var result = googleAuthorize(this)
             if (result.hasResolution()) {
@@ -177,20 +177,9 @@ class MainActivity : ComponentActivity() {
                     )
                 }
                 if (showSettings) {
-                    val app = application as NibSyncApp
-                    var userClients by remember { mutableStateOf(app.cloudClientsStore.load()) }
-                    // Observed, so the list of services updates when new client ids are applied.
-                    val clients by sync.clients.collectAsStateWithLifecycle()
                     SettingsScreen(
                         sync = sync,
-                        connect = { service -> if (clients.let { sync.available(service) }) ({ connecting = service }) else null },
-                        userClients = userClients,
-                        builtInClients = app.builtInClients,
-                        onUserClients = { entered ->
-                            app.cloudClientsStore.save(entered)
-                            userClients = entered
-                            sync.updateClients(app.builtInClients.overriddenBy(entered))
-                        },
+                        connect = { service -> if (sync.available(service)) ({ connecting = service }) else null },
                         showPageBreaks = showPageBreaks,
                         onShowPageBreaks = {
                             showPageBreaks = it

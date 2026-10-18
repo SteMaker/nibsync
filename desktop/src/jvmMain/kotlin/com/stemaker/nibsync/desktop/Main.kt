@@ -19,13 +19,11 @@ fun main(args: Array<String>) {
     val settings = Settings(container.fs, dataDir / "settings.properties")
     val strings = Strings()
     val keys = KeyRouter()
-    val builtInClients = desktopCloudClients()
-    val clientsStore = DesktopClientsStore(java.nio.file.Path.of(dataDir.toString(), "cloud-clients.properties"))
     val sync = SyncController(
         container,
         DesktopSyncStore(java.nio.file.Path.of(dataDir.toString(), "sync-account.properties")),
         container.appScope,
-        clients = builtInClients.overriddenBy(clientsStore.load()),
+        clients = desktopCloudClients(),
     )
     application {
         Window(
@@ -41,7 +39,7 @@ fun main(args: Array<String>) {
             state = rememberWindowState(width = 1400.dp, height = 900.dp),
             onPreviewKeyEvent = keys::onKey,
         ) {
-            App(container, settings, strings, keys, sync, clientsStore = clientsStore, builtInClients = builtInClients)
+            App(container, settings, strings, keys, sync)
         }
     }
 }

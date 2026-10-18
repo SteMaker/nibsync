@@ -15,7 +15,6 @@ import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.performTextReplacement
 import androidx.compose.ui.test.performScrollTo
-import androidx.compose.ui.test.performTextClearance
 import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.test.performTouchInput
 import androidx.test.core.app.ActivityScenario
@@ -279,25 +278,5 @@ class LibraryAppTest {
         compose.onNodeWithTag(SettingsTags.DRAW_WITH_FINGER).assertExists()
         compose.onNodeWithTag(SettingsTags.CLOSE).performClick()
         compose.onNodeWithTag(SettingsTags.SCREEN).assertDoesNotExist()
-    }
-
-    @Test
-    fun enteredOneDriveClientIdIsAppliedAndKept() {
-        val store = app.cloudClientsStore
-        val previous = store.load()
-        try {
-            openDrawer()
-            compose.onNodeWithTag(LibraryTags.SETTINGS).performClick()
-            compose.onNodeWithTag(SettingsTags.ONEDRIVE_ID).performScrollTo().performTextClearance()
-            compose.onNodeWithTag(SettingsTags.ONEDRIVE_ID).performTextInput("test-entra-client")
-            compose.onNodeWithTag(SettingsTags.SAVE_CLIENTS).performScrollTo().performClick()
-            waitUntil("applied") { app.sync.clients.value.oneDriveClientId == "test-entra-client" }
-            assertThat(app.sync.available(com.stemaker.nibsync.sync.client.SyncService.ONEDRIVE)).isTrue()
-            assertThat(store.load().oneDriveClientId).isEqualTo("test-entra-client")
-            compose.onNodeWithTag(SettingsTags.CLOSE).performClick()
-        } finally {
-            store.save(previous)
-            app.sync.updateClients(app.builtInClients.overriddenBy(previous))
-        }
     }
 }

@@ -93,15 +93,4 @@ class CloudLoginTest {
         assertThat(CloudClients(oneDriveClientId = "id").oneDrive).isNotNull()
         assertThat(CloudClients(googleDesktopClientId = " ").googleDesktop).isNull()
     }
-
-    @Test
-    fun clientsEnteredByTheUserOverrideTheBuiltInOnes() {
-        val built = CloudClients(oneDriveClientId = "built-ms", googleDesktopClientId = "built-g", googleDesktopSecret = "built-s")
-        val user = CloudClients(oneDriveClientId = " user-ms ", googleDesktopClientId = "")
-        val merged = built.overriddenBy(user)
-        assertThat(merged.oneDriveClientId).isEqualTo("user-ms")
-        assertThat(merged.googleDesktopClientId).isEqualTo("built-g")
-        assertThat(merged.googleDesktopSecret).isEqualTo("built-s")
-        assertThat(CloudClients.fromMap(user.toMap())).isEqualTo(user)
-    }
 }

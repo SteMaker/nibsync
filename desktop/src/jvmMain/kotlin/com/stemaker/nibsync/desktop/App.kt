@@ -26,6 +26,7 @@ import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -61,11 +62,8 @@ fun App(
     openBrowser: (String) -> Boolean = ::openInBrowser,
     /** Logs in with OneDrive or Google Drive (browser); tests replace it. */
     cloudLogin: suspend (com.stemaker.nibsync.sync.client.SyncService) -> com.stemaker.nibsync.sync.client.SyncConfig = { service ->
-        DesktopCloudLogin.run(service, sync!!.clients.value, openBrowser, strings)
+        DesktopCloudLogin.run(service, sync!!.clients, openBrowser, strings)
     },
-    /** Where the OAuth clients the user enters are kept; null hides that settings section. */
-    clientsStore: DesktopClientsStore? = null,
-    builtInClients: com.stemaker.nibsync.sync.client.CloudClients = com.stemaker.nibsync.sync.client.CloudClients(),
 ) {
     MaterialTheme(colorScheme = lightColorScheme(primary = Color(0xff1a3fa8))) {
         // Shortcuts also from here, so they work in tests without a window (the window passes
@@ -81,20 +79,12 @@ fun App(
             val tree by container.library.tree.collectAsState()
             var showSettings by remember { mutableStateOf(false) }
             var connecting by remember { mutableStateOf<com.stemaker.nibsync.sync.client.SyncService?>(null) }
+            // Dialogs get the keys (pasting into a field must not paste into the document).
+            SideEffect { keys.blocked = (showSettings || connecting != null) && sync != null }
             if (showSettings && sync != null) {
-                var userClients by remember { mutableStateOf(clientsStore?.load()) }
-                // Observed, so the list of services updates when new client ids are applied.
-                val clients by sync.clients.collectAsState()
                 SettingsDialog(
                     sync, strings, openBrowser,
-                    connect = { service -> if (clients.let { sync.available(service) }) ({ connecting = service }) else null },
-                    userClients = userClients,
-                    builtInClients = builtInClients,
-                    onUserClients = { entered ->
-                        clientsStore?.save(entered)
-                        userClients = entered
-                        sync.updateClients(builtInClients.overriddenBy(entered))
-                    },
+                    connect = { service -> if (sync.available(service)) ({ connecting = service }) else null },
                     onClose = { showSettings = false },
                 )
             }
