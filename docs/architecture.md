@@ -8,6 +8,7 @@ feature/library/  Library drawer (tree of books/chapters/documents), LibraryView
 feature/canvas/   Endless page (NoteCanvasView), tool bar (Compose), CanvasViewModel
 feature/text/     Text boxes: embedded fonts, page renderer, rich text editor + format bar
 feature/media/    Pictures and file links: type detection, sizing, rendering (AndroidSVG)
+desktop/          PC app (Linux, Windows, later macOS): Compose Multiplatform for Desktop
 ui/background/    Paper pattern picker and preview, used by canvas and library drawer
 ink/android/      Adapter domain <-> androidx.ink (brushes, stroke conversion, mesh cache)
 core/sync/        Sync engine (platform-neutral) against a RemoteStore
@@ -196,6 +197,17 @@ is skipped when the server is unreachable.
 Known limits: whole own log is re-uploaded on change (fine for typical sizes; could be split
 into segments later); no background sync while the app is closed.
 
+## PC app (desktop/)
+
+Compose Multiplatform for Desktop (Apache 2.0) on the JVM, using the core modules unchanged,
+so the PC reads and writes exactly the Android file format. Data folder: `DataDir`
+(`~/.local/share/nibsync` on Linux, `%APPDATA%\NibSync` on Windows); `--data-dir` overrides
+it. Ink is Android-only, so `StrokePainter` redraws strokes from their points (ballpoint and
+highlighter constant width, fountain pen with BrushMapper's pressure curve and end taper).
+Text boxes use the same embedded fonts (loaded from `feature/text/src/main/res/font`) and the
+same paragraph layout as `RichTextLayout`. Plan: D1 viewing ✅, D2 text boxes (click to
+create), D3 Nextcloud sync, D4 drawing/erasing/lasso/pictures, D5 packages.
+
 ## Roadmap
 
 | Step | Feature | Where it plugs in |
@@ -203,7 +215,7 @@ into segments later); no background sync while the app is closed.
 | A ✅ | Pressure-sensitive handwriting, pen types, highlighter behind ink | done |
 | B ✅ | Books with nested chapters, documents with DIN A width, page breaks | `core/library`, `feature/library`; menu button top left |
 | C ✅ | Nextcloud sync, concurrent editing | `core/sync`, `sync/webdav`, app `sync/` (controller, UI) |
-| D | Windows | `jvm`/desktop target for `core/*`, Compose Desktop UI, own renderer |
+| D (D1 ✅) | PC app for Linux/Windows | `desktop/`, Compose Multiplatform for Desktop; see "PC app" |
 | E ✅ | Shape recognition | hold the pen still ~0.5 s at the end of a stroke; `core/shapes` |
 | F ✅ | Pixel and object eraser | `core/document/erase`; two eraser buttons in the tool bar |
 | G ✅ | Lasso: delete, move, copy/paste | `core/document/select`; lasso tool + actions in the tool bar |

@@ -14,6 +14,8 @@ feature roadmap and where each feature lives.
   (`gradle.properties` keeps the app installed afterwards, so notes on the device survive)
 - `./gradlew installDebug` – install on the tablet
 - `scripts/verify.sh` – everything; `--no-device` skips instrumented tests
+- `./gradlew :desktop:run` – start the PC app (`--args="--data-dir <dir>"` for another data
+  folder); its tests run with `./gradlew test` (headless)
 - Regenerate storage golden files only for an intentional format change:
   `NIBSYNC_UPDATE_GOLDEN=1 ./gradlew :core:storage:jvmTest` (keep old versions' files!)
 
