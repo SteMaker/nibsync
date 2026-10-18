@@ -34,4 +34,6 @@
     <string name="sync_choose_service">Dienst für die Synchronisierung wählen:</string>
     <string name="sync_service_unavailable">In dieser Version noch nicht eingerichtet</string>
     <string name="sync_connect_nextcloud">Mit Nextcloud verbinden</string>
+    <string name="sync_connect_to">Mit %1$s verbinden</string>
+    <string name="sync_login_again">Erneut versuchen</string>
 </resources>

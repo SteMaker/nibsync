@@ -35,4 +35,6 @@
     <string name="sync_choose_service">Choose a service to sync with:</string>
     <string name="sync_service_unavailable">Not set up in this version yet</string>
     <string name="sync_connect_nextcloud">Connect to Nextcloud</string>
+    <string name="sync_connect_to">Connect to %1$s</string>
+    <string name="sync_login_again">Try again</string>
 </resources>

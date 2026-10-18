@@ -226,6 +226,47 @@ private fun ConnectDialog(strings: Strings, openBrowser: (String) -> Boolean, on
     )
 }
 
+/**
+ * Waits for the browser login of OneDrive or Google Drive ([login]) and reports the result;
+ * the dialog can be cancelled meanwhile.
+ */
+@Composable
+fun CloudConnectDialog(service: SyncService, strings: Strings, login: suspend () -> SyncConfig, onDismiss: () -> Unit, onConnected: (SyncConfig) -> Unit) {
+    var error by remember { mutableStateOf<String?>(null) }
+    var attempt by remember { mutableStateOf(0) }
+    LaunchedEffect(attempt) {
+        error = null
+        try {
+            onConnected(login())
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            error = e.message ?: e.javaClass.simpleName
+        }
+    }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(strings.syncConnectTo(serviceName(service, strings))) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                if (error == null) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
+                        Spacer(Modifier.width(12.dp))
+                        Text(strings.syncWaiting)
+                    }
+                } else {
+                    SelectionContainer { Text(error!!, color = MaterialTheme.colorScheme.error) }
+                }
+            }
+        },
+        confirmButton = {
+            if (error != null) TextButton(onClick = { attempt++ }) { Text(strings.syncLoginInBrowser) }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text(strings.cancel) } },
+    )
+}
+
 private fun time(epochMs: Long): String = DateFormat.getTimeInstance(DateFormat.SHORT).format(Date(epochMs))
 
 /** Opens [url] in the default browser; false if that is not possible (then show it). */

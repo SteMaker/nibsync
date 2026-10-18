@@ -59,8 +59,10 @@ fun App(
     keys: KeyRouter = KeyRouter(),
     sync: SyncController? = null,
     openBrowser: (String) -> Boolean = ::openInBrowser,
-    /** Starts the OneDrive / Google Drive login; null for a service not set up in this build. */
-    cloudConnect: (de.nibsync.sync.client.SyncService) -> (() -> Unit)? = { null },
+    /** Logs in with OneDrive or Google Drive (browser); tests replace it. */
+    cloudLogin: suspend (de.nibsync.sync.client.SyncService) -> de.nibsync.sync.client.SyncConfig = { service ->
+        DesktopCloudLogin.run(service, desktopCloudClients(), openBrowser, strings)
+    },
 ) {
     MaterialTheme(colorScheme = lightColorScheme(primary = Color(0xff1a3fa8))) {
         // Shortcuts also from here, so they work in tests without a window (the window passes
@@ -75,8 +77,25 @@ fun App(
             }
             val tree by container.library.tree.collectAsState()
             var showSettings by remember { mutableStateOf(false) }
+            var connecting by remember { mutableStateOf<de.nibsync.sync.client.SyncService?>(null) }
             if (showSettings && sync != null) {
-                SettingsDialog(sync, strings, openBrowser, connect = cloudConnect, onClose = { showSettings = false })
+                SettingsDialog(
+                    sync, strings, openBrowser,
+                    connect = { service -> if (sync.available(service)) ({ connecting = service }) else null },
+                    onClose = { showSettings = false },
+                )
+            }
+            val service = connecting
+            if (service != null && sync != null) {
+                CloudConnectDialog(
+                    service, strings,
+                    login = { cloudLogin(service) },
+                    onDismiss = { connecting = null },
+                    onConnected = {
+                        connecting = null
+                        sync.configure(it)
+                    },
+                )
             }
             // One clipboard for the window, so elements can be copied between documents.
             val clipboard = remember { DesktopClipboard() }

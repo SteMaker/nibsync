@@ -117,10 +117,23 @@ class SyncController(
     private val host: SyncHost,
     private val store: SyncConfigStore,
     private val scope: CoroutineScope,
-    /** The remote store for a configuration; the apps add OneDrive and Google Drive. */
-    private val remoteFor: (SyncConfig) -> RemoteStore = ::nextcloudStore,
+    /** The OAuth clients this build has, for OneDrive and Google Drive. */
+    private val clients: CloudClients = CloudClients(),
+    /** On Android: access tokens for Google Drive from Google's sign-in. */
+    private val googleTokens: de.nibsync.sync.cloud.AccessTokens? = null,
+    /** The remote store for a configuration (tests replace it). */
+    remoteFor: ((SyncConfig) -> RemoteStore)? = null,
     private val clock: () -> Long = System::currentTimeMillis,
 ) {
+    private val remoteFor: (SyncConfig) -> RemoteStore =
+        remoteFor ?: { CloudStores.storeFor(it, clients, googleTokens, ::rememberLogin) }
+
+    /** Which services can be connected in this build. */
+    fun available(service: SyncService): Boolean = when (service) {
+        SyncService.NEXTCLOUD -> true
+        SyncService.ONEDRIVE -> clients.oneDrive != null
+        SyncService.GOOGLE_DRIVE -> clients.googleOnDevice || clients.googleDesktop != null
+    }
     private val _status = MutableStateFlow<SyncStatus>(SyncStatus.NotConfigured)
     val status: StateFlow<SyncStatus> = _status.asStateFlow()
 
@@ -143,6 +156,13 @@ class SyncController(
         scope.launch {
             host.localChanges.debounce(LOCAL_CHANGE_DELAY_MS).collect { if (loop != null) syncNow() }
         }
+    }
+
+    /** Stores a renewed login (new refresh token) without restarting the sync. */
+    private fun rememberLogin(config: SyncConfig) {
+        if (_config.value?.stateKey != config.stateKey) return
+        store.save(config)
+        _config.value = config
     }
 
     fun configure(config: SyncConfig?) {
@@ -219,11 +239,6 @@ class SyncController(
     companion object {
         const val INTERVAL_MS = 10_000L
         const val LOCAL_CHANGE_DELAY_MS = 2_000L
-
-        fun nextcloudStore(config: SyncConfig): RemoteStore = when (config) {
-            is NextcloudConfig -> WebDavRemoteStore(config.account.serverUrl, config.account.loginName, config.account.appPassword, config.folder)
-            else -> error("No store for ${config.service}")
-        }
 
         /** Separate state per remote place: switching starts a fresh comparison. */
         fun stateFile(dir: Path, config: SyncConfig): Path {

@@ -8,6 +8,14 @@ plugins {
     alias(libs.plugins.compose.multiplatform)
 }
 
+// OAuth clients for OneDrive / Google Drive from the untracked cloud.properties (see
+// cloud.properties.example), packed into the app as a resource.
+val cloudClients = tasks.register<Copy>("cloudClients") {
+    from(rootProject.file("cloud.properties").takeIf { it.exists() } ?: rootProject.file("cloud.properties.example"))
+    rename { "nibsync-cloud.properties" }
+    into(layout.buildDirectory.dir("generated/cloud"))
+}
+
 kotlin {
     jvm {
         compilerOptions {
@@ -17,6 +25,7 @@ kotlin {
 
     sourceSets {
         jvmMain {
+            resources.srcDir(cloudClients)
             dependencies {
                 implementation(project(":shared:text"))
                 implementation(project(":sync:client"))
@@ -36,6 +45,7 @@ kotlin {
             implementation(libs.okio.fakefilesystem)
             implementation(libs.kotlinx.coroutines.test)
             implementation(compose.desktop.uiTestJUnit4)
+            implementation(libs.okhttp.mockwebserver)
         }
     }
 }

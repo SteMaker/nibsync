@@ -4,6 +4,12 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
+# The Gradle and Kotlin daemons keep several GB after the run; the dev PC needs that memory
+# back (it once froze from RAM exhaustion). Set NIBSYNC_KEEP_DAEMONS=1 to keep them warm.
+if [[ "${NIBSYNC_KEEP_DAEMONS:-}" != "1" ]]; then
+    trap './gradlew --stop >/dev/null 2>&1 || true' EXIT
+fi
+
 echo "== Unit tests (JVM + Robolectric) and lint"
 ./gradlew --console=plain test lintDebug
 

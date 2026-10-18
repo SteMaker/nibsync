@@ -44,7 +44,15 @@ import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import de.nibsync.app.media.MediaActions
+import de.nibsync.app.sync.CloudConnectDialog
 import de.nibsync.app.sync.SyncStatusLine
+import de.nibsync.app.sync.googleAuthorize
+import de.nibsync.app.sync.googleConfig
+import de.nibsync.app.sync.oneDriveLogin
+import de.nibsync.sync.client.SyncConfig
+import de.nibsync.sync.client.SyncService
+import androidx.activity.result.IntentSenderRequest
+import com.google.android.gms.auth.api.identity.Identity
 import de.nibsync.app.sync.SyncStatusIcon
 import de.nibsync.canvas.CanvasViewModel
 import de.nibsync.canvas.NoteCanvasView
@@ -87,9 +95,25 @@ class MainActivity : ComponentActivity() {
 
     private val media by lazy { MediaActions(this, container) }
 
-    /** Starts the OneDrive / Google Drive login; no service is set up yet in this build. */
-    private val cloudConnect = object {
-        fun starter(service: de.nibsync.sync.client.SyncService): (() -> Unit)? = null
+    /** Google's consent screen; its answer completes [googleConsentAnswer]. */
+    private var googleConsentAnswer: kotlinx.coroutines.CompletableDeferred<Intent?>? = null
+    private val googleConsent = registerForActivityResult(ActivityResultContracts.StartIntentSenderForResult()) { result ->
+        googleConsentAnswer?.complete(result.data)
+    }
+
+    /** Logs in with OneDrive (browser) or Google Drive (Google's sign-in on the device). */
+    private suspend fun cloudLogin(service: SyncService): SyncConfig = when (service) {
+        SyncService.ONEDRIVE -> oneDriveLogin(this, (application as NibSyncApp).cloudClients)
+        SyncService.GOOGLE_DRIVE -> {
+            var result = googleAuthorize(this)
+            if (result.hasResolution()) {
+                val answer = kotlinx.coroutines.CompletableDeferred<Intent?>().also { googleConsentAnswer = it }
+                googleConsent.launch(IntentSenderRequest.Builder(result.pendingIntent!!.intentSender).build())
+                result = Identity.getAuthorizationClient(this).getAuthorizationResultFromIntent(answer.await())
+            }
+            googleConfig(result.accessToken ?: error("No access"))
+        }
+        SyncService.NEXTCLOUD -> error("Nextcloud has its own dialog")
     }
 
     /** A picture or PDF shared from another app, inserted once the document is open. */
@@ -135,10 +159,22 @@ class MainActivity : ComponentActivity() {
                 var showPageBreaks by remember { mutableStateOf(settings.showPageBreaks) }
                 var drawWithFinger by remember { mutableStateOf(settings.drawWithFinger) }
                 var showSettings by remember { mutableStateOf(false) }
+                var connecting by remember { mutableStateOf<SyncService?>(null) }
+                connecting?.let { service ->
+                    CloudConnectDialog(
+                        service,
+                        login = { cloudLogin(service) },
+                        onDismiss = { connecting = null },
+                        onConnected = {
+                            connecting = null
+                            sync.configure(it)
+                        },
+                    )
+                }
                 if (showSettings) {
                     SettingsScreen(
                         sync = sync,
-                        connect = cloudConnect::starter,
+                        connect = { service -> if (sync.available(service)) ({ connecting = service }) else null },
                         showPageBreaks = showPageBreaks,
                         onShowPageBreaks = {
                             showPageBreaks = it

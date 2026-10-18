@@ -1,6 +1,14 @@
+import java.util.Properties
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.compose)
+}
+
+// OAuth clients for OneDrive / Google Drive from the untracked cloud.properties (see
+// cloud.properties.example); without it those services are simply not offered.
+val cloudProperties = Properties().apply {
+    rootProject.file("cloud.properties").takeIf { it.exists() }?.inputStream()?.use { load(it) }
 }
 
 android {
@@ -10,6 +18,8 @@ android {
 
     defaultConfig {
         applicationId = "de.nibsync.app"
+        buildConfigField("String", "ONEDRIVE_CLIENT_ID", "\"${cloudProperties.getProperty("onedrive.clientId", "")}\"")
+        buildConfigField("boolean", "GOOGLE_ON_DEVICE", cloudProperties.getProperty("google.android", "false"))
         minSdk = libs.versions.minSdk.get().toInt()
         targetSdk = libs.versions.targetSdk.get().toInt()
         versionCode = 1
@@ -28,6 +38,7 @@ android {
 
     buildFeatures {
         compose = true
+        buildConfig = true
     }
 
     compileOptions {
@@ -51,6 +62,8 @@ dependencies {
     implementation(project(":feature:library"))
     implementation(project(":sync:webdav"))
     implementation(project(":sync:client"))
+    implementation(libs.play.services.auth)
+    implementation(libs.kotlinx.serialization.json)
     implementation(libs.androidx.lifecycle.runtime.compose)
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.activity.compose)

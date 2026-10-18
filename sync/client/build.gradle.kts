@@ -15,6 +15,7 @@ kotlin {
     sourceSets {
         jvmMain.dependencies {
             api(project(":sync:webdav"))
+            api(project(":sync:cloud"))
             api(project(":core:library"))
             implementation(libs.kotlinx.coroutines.core)
         }
@@ -23,6 +24,7 @@ kotlin {
             implementation(libs.truth)
             implementation(libs.okio.fakefilesystem)
             implementation(libs.kotlinx.coroutines.test)
+            implementation(libs.okhttp.mockwebserver)
         }
     }
 }

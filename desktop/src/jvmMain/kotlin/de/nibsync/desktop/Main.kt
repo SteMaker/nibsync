@@ -19,7 +19,12 @@ fun main(args: Array<String>) {
     val settings = Settings(container.fs, dataDir / "settings.properties")
     val strings = Strings()
     val keys = KeyRouter()
-    val sync = SyncController(container, DesktopSyncStore(java.nio.file.Path.of(dataDir.toString(), "sync-account.properties")), container.appScope)
+    val sync = SyncController(
+        container,
+        DesktopSyncStore(java.nio.file.Path.of(dataDir.toString(), "sync-account.properties")),
+        container.appScope,
+        clients = desktopCloudClients(),
+    )
     application {
         Window(
             onCloseRequest = {

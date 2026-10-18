@@ -29,6 +29,21 @@
             </intent-filter>
         </activity>
 
+        <!-- Receives the OneDrive login answer (redirect URI de.nibsync.app://oauth). -->
+        <activity
+            android:name=".sync.OAuthRedirectActivity"
+            android:exported="true"
+            android:launchMode="singleTask"
+            android:noHistory="true"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar">
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="de.nibsync.app" android:host="oauth" />
+            </intent-filter>
+        </activity>
+
         <provider
             android:name="androidx.core.content.FileProvider"
             android:authorities="${applicationId}.files"
