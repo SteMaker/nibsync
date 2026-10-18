@@ -18,4 +18,10 @@
     <string name="sync_waiting_for_login">Im Browser anmelden, dann hierher zurückkehren…</string>
     <string name="sync_login_in_browser">Im Browser anmelden</string>
     <string name="sync_login_timeout">Die Anmeldung wurde nicht rechtzeitig abgeschlossen.</string>
+    <string name="media_unsupported">Nur PNG-, JPEG-, SVG- und PDF-Dateien können eingefügt werden.</string>
+    <string name="media_too_big">Die Datei ist zu groß (höchstens 50 MB).</string>
+    <string name="media_unreadable">Die Datei konnte nicht gelesen werden.</string>
+    <string name="media_clipboard_empty">In der Zwischenablage ist kein Bild und keine PDF.</string>
+    <string name="media_no_viewer">Keine App zum Öffnen dieser Datei gefunden.</string>
+    <string name="media_not_synced">Die Datei ist über den Sync noch nicht angekommen.</string>
 </resources>

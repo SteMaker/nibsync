@@ -7,6 +7,7 @@ app/              Android app: wiring (AppContainer), MainActivity with the libr
 feature/library/  Library drawer (tree of books/chapters/documents), LibraryViewModel
 feature/canvas/   Endless page (NoteCanvasView), tool bar (Compose), CanvasViewModel
 feature/text/     Text boxes: embedded fonts, page renderer, rich text editor + format bar
+feature/media/    Pictures and file links: type detection, sizing, rendering (AndroidSVG)
 ui/background/    Paper pattern picker and preview, used by canvas and library drawer
 ink/android/      Adapter domain <-> androidx.ink (brushes, stroke conversion, mesh cache)
 core/sync/        Sync engine (platform-neutral) against a RemoteStore
@@ -32,9 +33,10 @@ input (x, y, t, pressure, tilt, orientation in millimetres) plus a platform-neut
 
 ## Data model and sync readiness
 
-- A document is a set of ops (`AddStrokes`, `AddTextBoxes`, `RemoveStrokes`,
-  `SetBackground`) with Lamport stamps. Strokes and text boxes are `PageElement`s sharing
-  one id space (`StrokeId`, a historical name), so removal and tombstones cover both.
+- A document is a set of ops (`AddStrokes`, `AddTextBoxes`, `AddFiles`, `RemoveStrokes`,
+  `SetBackground`) with Lamport stamps. Strokes, text boxes, pictures and file links are
+  `PageElement`s sharing one id space (`StrokeId`, a historical name), so removal and
+  tombstones cover all of them.
 - `DocumentState` is a two-phase-set CRDT: idempotent, order-independent, removals win.
   Stroke z-order = (layer, stamp of the adding op), identical on every device.
 - Every device appends only to its own `ops/<deviceId>.oplog`, so file-level sync over
@@ -47,6 +49,7 @@ Storage layout (`filesDir/` on Android; `documents/` and `library/` are what get
 ```
 documents/<documentId>/meta.json
 documents/<documentId>/ops/<deviceId>.oplog   "NSOL" v1 header + length-prefixed CBOR records
+documents/<documentId>/assets/<sha256>        inserted pictures and PDFs, immutable
 library/<nodeId>.json                         one file per book / chapter / document entry
 device-id                                     local only
 ```
@@ -65,7 +68,8 @@ versions (`default`) was adopted into a first book on upgrade.
 
 ## Layers
 
-`BACKGROUND` (pattern) -> `MARKER` (highlighter) -> `TEXT` (text boxes) -> `INK`. Highlighter strokes are placed on
+`BACKGROUND` (pattern) -> `IMAGE` (pictures) -> `MARKER` (highlighter) -> `TEXT` (text boxes,
+file links) -> `INK`. Highlighter strokes are placed on
 `MARKER` and therefore always appear behind the ink. While being drawn, the in-progress
 highlighter is shown on top (Ink overlay limitation) and drops behind once finished.
 
@@ -101,6 +105,23 @@ versions side by side, nothing is lost.
   width. The tool bar switches to formatting while a box is open; the text is saved 1.5 s
   after typing stops, on "Done", on tool change and when the app goes to the background.
   An emptied box is removed. Erasers ignore text; the lasso selects, moves and copies it.
+
+## Pictures and PDFs
+
+Inserted files are stored per document as `assets/<sha256>` (content-addressed, never
+changed) and referenced by `ImageElement` (PNG, JPEG, SVG; drawn scaled to its box) or
+`FileLink` (PDF; a labelled chip that opens the file in a viewer app). Sources: the insert
+menu (file picker, clipboard), Ctrl+V, and "Share" from other apps into the open document.
+Pictures start at their 150 dpi print size, at most 80 % of the page width, centred in view.
+
+- Rendering (`MediaRenderer`): pixel pictures are decoded in the background at the
+  resolution the zoom needs (EXIF rotation applied), SVGs become vector `Picture`s; a
+  placeholder shows until a file is there (e.g. still syncing).
+- Taps: a tap (pen, finger, lasso) on a picture selects it in a temporary lasso mode with a
+  corner handle for scaling (aspect kept); a tap on a link opens it; a tap on empty paper
+  returns to the previous tool. Erasers ignore pictures and links.
+- Sync: assets are uploaded before the log that refers to them and downloaded when a
+  document folder changed; pasting into another document copies the files along.
 
 ## Input
 
@@ -187,5 +208,6 @@ into segments later); no background sync while the app is closed.
 | F ✅ | Pixel and object eraser | `core/document/erase`; two eraser buttons in the tool bar |
 | G ✅ | Lasso: delete, move, copy/paste | `core/document/select`; lasso tool + actions in the tool bar |
 | H ✅ | Undo/redo | tool bar buttons, Ctrl+Z / Ctrl+Y / Ctrl+Shift+Z; history per open document and app run |
+| M ✅ | Pictures (PNG, JPEG, SVG) with scaling, PDFs as links | `FileElement`, assets, `feature/media`, insert menu |
 | T ✅ | Text boxes with formatting (bold, italic, font, size, lists) | `TextBox`, `feature/text`, text tool in `NoteScreen` |
 | I ✅ | Lined/grid/dotted backgrounds | `BackgroundPattern`, `DocumentOp.SetBackground`, `ui/background`, `NoteCanvasView.drawPattern` |

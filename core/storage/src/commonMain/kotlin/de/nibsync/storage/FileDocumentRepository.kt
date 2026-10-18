@@ -13,6 +13,7 @@ import kotlinx.coroutines.withContext
 import kotlinx.serialization.SerializationException
 import kotlinx.serialization.json.Json
 import okio.FileSystem
+import okio.ByteString.Companion.toByteString
 import okio.Path
 import okio.buffer
 import okio.use
@@ -23,6 +24,7 @@ import okio.use
  * ```
  * <root>/<documentId>/meta.json
  * <root>/<documentId>/ops/<deviceId>.oplog   (one append-only log per device)
+ * <root>/<documentId>/assets/<sha256>         (pictures, PDFs; immutable)
  * ```
  */
 class FileDocumentRepository(
@@ -94,6 +96,22 @@ class FileDocumentRepository(
 
     override suspend fun delete(id: DocumentId) = withContext(io) { fs.deleteRecursively(docDir(id)) }
 
+    override suspend fun putAsset(id: DocumentId, bytes: ByteArray): String = withContext(io) {
+        val sha = bytes.toByteString().sha256().hex()
+        val file = assetPath(id, sha)
+        if (!fs.exists(file)) {
+            fs.createDirectories(file.parent!!)
+            val tmp = file.parent!! / "${file.name}.tmp"
+            fs.write(tmp) { write(bytes) }
+            fs.atomicMove(tmp, file)
+        }
+        sha
+    }
+
+    override suspend fun hasAsset(id: DocumentId, sha256: String): Boolean = withContext(io) { fs.exists(assetPath(id, sha256)) }
+
+    override fun assetPath(id: DocumentId, sha256: String): Path = docDir(id) / ASSETS_DIR / sha256
+
     private fun readMeta(file: Path): DocumentMeta {
         val text = fs.read(file) { readUtf8() }
         val record = try {
@@ -142,5 +160,6 @@ class FileDocumentRepository(
         const val META_FILE = "meta.json"
         const val OPS_DIR = "ops"
         const val LOG_SUFFIX = ".oplog"
+        const val ASSETS_DIR = "assets"
     }
 }

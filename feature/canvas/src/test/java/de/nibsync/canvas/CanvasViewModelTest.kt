@@ -408,4 +408,84 @@ class CanvasViewModelTest {
         assertThat(vm.textEditing.value).isNull()
         assertThat(vm.document.value.textBoxes).hasSize(1)
     }
+
+    // ---- pictures and file links ------------------------------------------------------------
+
+    private val picture = de.nibsync.model.Asset("c".repeat(64), de.nibsync.model.Asset.PNG)
+    private val pdf = de.nibsync.model.Asset("d".repeat(64), de.nibsync.model.Asset.PDF)
+
+    @Test
+    fun insertedPictureIsSelectedAndATapElsewhereGoesBack() = runTest {
+        val vm = viewModel()
+        vm.selectPen(BrushFamily.HIGHLIGHTER)
+        val added = vm.insert(listOf(de.nibsync.model.ImageDraft(20f, 20f, 100f, 50f, picture))).single()
+        assertThat(vm.tools.value.tool).isEqualTo(Tool.LASSO)
+        assertThat(vm.selection.value).containsExactly(added.id)
+        vm.tapAt(150f, 200f)
+        assertThat(vm.selection.value).isEmpty()
+        assertThat(vm.tools.value.tool).isEqualTo(Tool.PEN)
+        assertThat(vm.tools.value.activePen).isEqualTo(BrushFamily.HIGHLIGHTER)
+        // A tap on the picture selects it again.
+        vm.tapAt(30f, 30f)
+        assertThat(vm.tools.value.tool).isEqualTo(Tool.LASSO)
+        assertThat(vm.selection.value).containsExactly(added.id)
+    }
+
+    @Test
+    fun manualLassoStaysOnATapOnEmptyPaper() = runTest {
+        val vm = viewModel()
+        vm.selectLasso()
+        vm.tapAt(150f, 200f)
+        assertThat(vm.tools.value.tool).isEqualTo(Tool.LASSO)
+    }
+
+    @Test
+    fun tapOnALinkOpensItWithoutChangingTheTool() = runTest {
+        val vm = viewModel()
+        val opened = mutableListOf<de.nibsync.model.FileLink>()
+        vm.openFile = { opened += it }
+        val link = vm.insert(listOf(de.nibsync.model.FileLinkDraft(10f, 10f, 60f, 12f, pdf, "Skript.pdf"))).single()
+        vm.tapAt(150f, 200f)
+        vm.tapAt(20f, 15f)
+        assertThat(opened.map { it.id }).containsExactly(link.id)
+        assertThat(vm.tools.value.tool).isEqualTo(Tool.PEN)
+    }
+
+    @Test
+    fun selectedPictureScalesFromItsCorner() = runTest {
+        val vm = viewModel()
+        vm.insert(listOf(de.nibsync.model.ImageDraft(20f, 20f, 100f, 50f, picture)))
+        val edit = vm.resizeSelection(0.5f)!!
+        val scaled = vm.document.value.files.single()
+        assertThat(scaled.x).isEqualTo(20f)
+        assertThat(scaled.widthMm).isEqualTo(50f)
+        assertThat(scaled.heightMm).isEqualTo(25f)
+        assertThat(vm.selection.value).containsExactly(edit.added.single().id)
+        assertThat(vm.undo()).isTrue()
+        assertThat(vm.document.value.files.single().widthMm).isEqualTo(100f)
+        // Several elements, or strokes, are not scaled.
+        vm.commitStroke(lineAt(10f))
+        vm.selectLasso()
+        vm.selectByLasso(box(0f, 0f, 200f, 200f))
+        assertThat(vm.resizeSelection(2f)).isNull()
+    }
+
+    @Test
+    fun pastingPicturesIntoAnotherDocumentCopiesTheirFiles() = runTest {
+        val clip = StrokeClipboard()
+        fun vmFor(doc: String) = CanvasViewModel(
+            DocumentSession(DocumentState.empty(DocumentMeta(DocumentId(doc), "t", createdAtEpochMs = 0)), DeviceId("dev"), { }, backgroundScope, clock = { 0L }),
+            ShapeRecognizer.None,
+            clip,
+        )
+        val first = vmFor("first")
+        val second = vmFor("second")
+        val copied = mutableListOf<Triple<DocumentId, DocumentId, Set<de.nibsync.model.Asset>>>()
+        second.copyAssets = { from, to, assets -> copied += Triple(from, to, assets) }
+        first.insert(listOf(de.nibsync.model.ImageDraft(20f, 20f, 100f, 50f, picture)))
+        first.copySelection()
+        second.paste(100f, 100f)
+        assertThat(copied).containsExactly(Triple(DocumentId("first"), DocumentId("second"), setOf(picture)))
+        assertThat(second.document.value.files.single().asset).isEqualTo(picture)
+    }
 }

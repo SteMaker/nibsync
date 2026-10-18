@@ -19,6 +19,7 @@ class OpLogCodecTest {
             de.nibsync.model.BackgroundSpec(de.nibsync.model.BackgroundKind.DOTTED, 5f),
         ),
         de.nibsync.document.DocumentOp.AddTextBoxes(de.nibsync.document.OpStamp(5, DEV_A), listOf(formattedTextBox("t1"))),
+        de.nibsync.document.DocumentOp.AddFiles(de.nibsync.document.OpStamp(6, DEV_A), listOf(sampleImage("i1"), sampleLink("l1"))),
     )
 
     private fun encode(list: List<de.nibsync.document.DocumentOp>): Buffer {

@@ -19,4 +19,10 @@
     <string name="sync_waiting_for_login">Log in with the browser, then come back…</string>
     <string name="sync_login_in_browser">Log in with browser</string>
     <string name="sync_login_timeout">Login was not completed in time.</string>
+    <string name="media_unsupported">Only PNG, JPEG, SVG and PDF files can be inserted.</string>
+    <string name="media_too_big">The file is too large (at most 50 MB).</string>
+    <string name="media_unreadable">The file could not be read.</string>
+    <string name="media_clipboard_empty">There is no picture or PDF in the clipboard.</string>
+    <string name="media_no_viewer">No app found to open this file.</string>
+    <string name="media_not_synced">The file has not arrived from the sync yet.</string>
 </resources>

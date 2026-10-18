@@ -76,6 +76,37 @@ class SyncEngineTest {
     }
 
     @Test
+    fun picturesTravelWithTheirFiles() = runTest {
+        val a = device("a")
+        val doc = a.firstDoc()
+        a.engine.sync()
+        val bytes = ByteArray(5000) { (it % 251).toByte() }
+        val sha = a.documents.putAsset(doc, bytes)
+        val s = a.session(doc)
+        s.replaceElements(emptySet(), listOf(de.nibsync.model.ImageDraft(10f, 10f, 50f, 30f, de.nibsync.model.Asset(sha, de.nibsync.model.Asset.PNG))))
+        s.flush()
+        val up = a.engine.sync()
+        assertTrue("documents/${doc.value}/assets/$sha" in remote.files)
+        assertTrue(up.uploads >= 2)
+        // Nothing new: the asset is not uploaded again (the first run notices its own upload).
+        val writes = remote.writes
+        a.engine.sync()
+        assertTrue(a.engine.sync().upToDate)
+        assertEquals(writes, remote.writes)
+
+        val b = device("b")
+        val report = b.engine.sync()
+        assertTrue(doc in report.receivedAssets)
+        assertTrue(b.documents.hasAsset(doc, sha))
+        assertEquals(bytes.toList(), fs.read(b.documents.assetPath(doc, sha)) { readByteArray() }.toList())
+        assertEquals(sha, b.documents.load(doc).files.single().asset.sha256)
+        // b does not send it back.
+        val writesBefore = remote.writes
+        b.engine.sync()
+        assertEquals(writesBefore, remote.writes)
+    }
+
+    @Test
     fun secondDeviceGetsEverything() = runTest {
         val a = device("a")
         val doc = a.firstDoc()

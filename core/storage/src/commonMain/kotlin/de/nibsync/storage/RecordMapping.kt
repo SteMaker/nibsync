@@ -2,6 +2,7 @@ package de.nibsync.storage
 
 import de.nibsync.document.DocumentOp
 import de.nibsync.document.OpStamp
+import de.nibsync.model.Asset
 import de.nibsync.model.BackgroundKind
 import de.nibsync.model.BackgroundSpec
 import de.nibsync.model.BrushFamily
@@ -9,6 +10,9 @@ import de.nibsync.model.BrushSpec
 import de.nibsync.model.DeviceId
 import de.nibsync.model.DocumentId
 import de.nibsync.model.DocumentMeta
+import de.nibsync.model.FileElement
+import de.nibsync.model.FileLink
+import de.nibsync.model.ImageElement
 import de.nibsync.model.InputTool
 import de.nibsync.model.ListKind
 import de.nibsync.model.MarkStyle
@@ -68,6 +72,12 @@ internal fun DocumentOp.toRecord(): OpRecord = when (this) {
         type = OpRecord.TYPE_ADD_TEXT,
         textBoxes = boxes.map { it.toRecord() },
     )
+    is DocumentOp.AddFiles -> OpRecord(
+        counter = stamp.counter,
+        device = stamp.device.value,
+        type = OpRecord.TYPE_ADD_FILES,
+        files = elements.map { it.toRecord() },
+    )
     is DocumentOp.SetBackground -> OpRecord(
         counter = stamp.counter,
         device = stamp.device.value,
@@ -89,6 +99,7 @@ internal fun OpRecord.toDomain(): DocumentOp? {
         OpRecord.TYPE_REMOVE -> DocumentOp.RemoveStrokes(stamp, removed.map(::StrokeId).toSet())
         OpRecord.TYPE_BACKGROUND -> background?.let { DocumentOp.SetBackground(stamp, it.toDomain()) }
         OpRecord.TYPE_ADD_TEXT -> DocumentOp.AddTextBoxes(stamp, textBoxes.map { it.toDomain() })
+        OpRecord.TYPE_ADD_FILES -> DocumentOp.AddFiles(stamp, files.mapNotNull { it.toDomain() })
         else -> null
     }
 }
@@ -177,6 +188,29 @@ private const val MARK_BOLD = "b"
 private const val MARK_ITALIC = "i"
 private const val MARK_SIZE = "z"
 private const val MARK_FONT = "f"
+
+internal fun FileElement.toRecord(): FileElementRecord {
+    val p = Quantization::positionToSteps
+    return when (this) {
+        is ImageElement -> FileElementRecord(KIND_IMAGE, id.value, p(x), p(y), p(widthMm), p(heightMm), createdAtEpochMs, author.value, asset.sha256, asset.mimeType)
+        is FileLink -> FileElementRecord(KIND_LINK, id.value, p(x), p(y), p(widthMm), p(heightMm), createdAtEpochMs, author.value, asset.sha256, asset.mimeType, fileName)
+    }
+}
+
+/** Unknown kinds (from a newer app version) and invalid records are skipped. */
+internal fun FileElementRecord.toDomain(): FileElement? {
+    val q = Quantization::stepsToPosition
+    if (width <= 0 || height <= 0) return null
+    val asset = runCatching { Asset(sha256, mimeType) }.getOrNull() ?: return null
+    return when (kind) {
+        KIND_IMAGE -> ImageElement(StrokeId(id), q(x), q(y), q(width), q(height), asset, createdAtEpochMs, DeviceId(author))
+        KIND_LINK -> FileLink(StrokeId(id), q(x), q(y), q(width), q(height), asset, name ?: "", createdAtEpochMs, DeviceId(author))
+        else -> null
+    }
+}
+
+private const val KIND_IMAGE = "image"
+private const val KIND_LINK = "link"
 
 internal fun encodePoints(points: List<StrokePoint>): PointsRecord {
     fun deltas(values: IntArray): IntArray {

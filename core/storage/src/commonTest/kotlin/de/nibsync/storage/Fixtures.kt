@@ -92,3 +92,13 @@ fun formattedTextBox(id: String) = de.nibsync.model.TextBox(
     createdAtEpochMs = 1_700_000_000_789,
     author = DEV_A,
 )
+
+const val SAMPLE_SHA = "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824"
+
+fun sampleImage(id: String) = de.nibsync.model.ImageElement(
+    StrokeId(id), 20.5f, 30.25f, 80f, 45.12f, de.nibsync.model.Asset(SAMPLE_SHA, de.nibsync.model.Asset.JPEG), 1_700_000_001_000, DEV_A,
+)
+
+fun sampleLink(id: String) = de.nibsync.model.FileLink(
+    StrokeId(id), 10f, 100f, 60f, 12f, de.nibsync.model.Asset(SAMPLE_SHA, de.nibsync.model.Asset.PDF), "Skript Kapitel 3.pdf", 1_700_000_001_500, DEV_B,
+)

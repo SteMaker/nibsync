@@ -3,7 +3,8 @@ package de.nibsync.model
 import de.nibsync.model.geometry.Rect
 
 /**
- * Something placed on a page: a handwritten [Stroke] or a [TextBox]. Elements are immutable;
+ * Something placed on a page: a handwritten [Stroke], a [TextBox], an [ImageElement] or a
+ * [FileLink]. Elements are immutable;
  * changing one means removing it and adding a new element with a fresh id.
  */
 sealed interface PageElement {
@@ -20,6 +21,8 @@ sealed interface PageElement {
 fun PageElement.withId(id: StrokeId): PageElement = when (this) {
     is Stroke -> copy(id = id)
     is TextBox -> copy(id = id)
+    is ImageElement -> copy(id = id)
+    is FileLink -> copy(id = id)
 }
 
 /** An element as the user made it, before it gets an id and a place in a document. */
@@ -32,4 +35,6 @@ sealed interface ElementDraft {
 fun PageElement.toDraft(): ElementDraft = when (this) {
     is Stroke -> StrokeDraft(brush, tool, points, layer)
     is TextBox -> TextBoxDraft(x, y, widthMm, heightMm, text)
+    is ImageElement -> ImageDraft(x, y, widthMm, heightMm, asset)
+    is FileLink -> FileLinkDraft(x, y, widthMm, heightMm, asset, fileName)
 }

@@ -24,6 +24,8 @@ data class SyncReport(
     /** Ops received from other devices, per document, for applying to open sessions. */
     val receivedOps: Map<DocumentId, List<DocumentOp>> = emptyMap(),
     val libraryChanged: Boolean = false,
+    /** Documents that received asset files (pictures, PDFs) from the server. */
+    val receivedAssets: Set<DocumentId> = emptySet(),
     val uploads: Int = 0,
     val downloads: Int = 0,
 )
@@ -35,10 +37,13 @@ data class SyncReport(
  * <sync folder>/library/<nodeId>.json
  * <sync folder>/documents/<id>/meta.json
  * <sync folder>/documents/<id>/ops/<deviceId>.oplog
+ * <sync folder>/documents/<id>/assets/<sha256>
  * ```
  *
  * Every device only ever writes its own op logs, and logs only grow, so strokes never
  * conflict: a device uploads its own logs and fetches just the new bytes of the others'.
+ * Assets are named by their content and never change, so they are copied both ways as they
+ * are; a device uploads its new assets before its log, so ops never arrive before their files.
  * Library entries are merged with [de.nibsync.library.LibraryNode.mergedWith] (latest change
  * wins, deleted stays deleted). Only documents that are part of the library are synced.
  *
@@ -70,7 +75,8 @@ class SyncEngine(
         val pendingNodes = nodes.filter { state.nodeHashes[it.id.value] != nodeHash[it.id.value] }
         val syncedDocs = nodes.filter { !it.isFolder && !it.deleted }.map { it.id.asDocumentId }
         val pendingLogs = syncedDocs.filter { localValidLength(it, ownLog) > (state.uploadedLog[it.value] ?: 0L) || it.value !in state.metaUploaded }
-        if (root.etag == state.rootEtag && pendingNodes.isEmpty() && pendingLogs.isEmpty()) {
+        val pendingAssets = syncedDocs.any { doc -> localAssets(doc).any { "${doc.value}/$it" !in state.uploadedAssets } }
+        if (root.etag == state.rootEtag && pendingNodes.isEmpty() && pendingLogs.isEmpty() && !pendingAssets) {
             return SyncReport(upToDate = true)
         }
 
@@ -111,7 +117,9 @@ class SyncEngine(
         val documentEtags = state.documentEtags.toMutableMap()
         val uploadedLog = state.uploadedLog.toMutableMap()
         val metaUploaded = state.metaUploaded.toMutableSet()
+        val uploadedAssets = state.uploadedAssets.toMutableSet()
         val receivedOps = HashMap<DocumentId, List<DocumentOp>>()
+        val receivedAssets = HashSet<DocumentId>()
 
         for (entry in documentsListing.entries) {
             if (entry.isDirectory && entry.name in deletedDocs) {
@@ -137,6 +145,19 @@ class SyncEngine(
                 }
                 metaUploaded += doc.value
             }
+            // New assets before the log that refers to them.
+            val newAssets = localAssets(doc).filter { "${doc.value}/$it" !in uploadedAssets }
+            if (newAssets.isNotEmpty()) {
+                val onServer = remote.list("$dir/$ASSETS")?.entries?.mapTo(HashSet()) { it.name }
+                if (onServer == null) remote.makeDirectory("$dir/$ASSETS")
+                for (name in newAssets) {
+                    if (onServer == null || name !in onServer) {
+                        remote.write("$dir/$ASSETS/$name", withContext(io) { fs.read(localDir / ASSETS / name) { readByteArray() } })
+                        uploads++
+                    }
+                    uploadedAssets += "${doc.value}/$name"
+                }
+            }
             val ownLength = localValidLength(doc, ownLog)
             if (ownLength > (uploadedLog[doc.value] ?: 0L)) {
                 val bytes = withContext(io) { fs.read(localDir / FileDocumentRepository.OPS_DIR / ownLog) { readByteArray(ownLength) } }
@@ -154,6 +175,18 @@ class SyncEngine(
                     fs.createDirectories(localDir / FileDocumentRepository.OPS_DIR)
                     writeAtomically(localDir / FileDocumentRepository.META_FILE, meta)
                 }
+            }
+            val have = localAssets(doc)
+            for (asset in remote.list("$dir/$ASSETS")?.entries.orEmpty()) {
+                if (asset.isDirectory || asset.name in have || !isAssetName(asset.name)) continue
+                val bytes = remote.read("$dir/$ASSETS/${asset.name}")
+                downloads++
+                withContext(io) {
+                    fs.createDirectories(localDir / ASSETS)
+                    writeAtomically(localDir / ASSETS / asset.name, bytes)
+                }
+                uploadedAssets += "${doc.value}/${asset.name}"
+                receivedAssets += doc
             }
             val ops = remote.list("$dir/$OPS")?.entries.orEmpty()
             val newOps = ArrayList<DocumentOp>()
@@ -174,9 +207,17 @@ class SyncEngine(
             documentEtags = documentEtags,
             uploadedLog = uploadedLog,
             metaUploaded = metaUploaded,
+            uploadedAssets = uploadedAssets,
         )
         withContext(io) { SyncState.save(fs, stateFile, state) }
-        SyncReport(upToDate = false, receivedOps = receivedOps, libraryChanged = libraryChanged, uploads = uploads, downloads = downloads)
+        SyncReport(
+            upToDate = false,
+            receivedOps = receivedOps,
+            libraryChanged = libraryChanged,
+            receivedAssets = receivedAssets,
+            uploads = uploads,
+            downloads = downloads,
+        )
     }
 
     private suspend fun ensureFolders() {
@@ -186,6 +227,14 @@ class SyncEngine(
         remote.makeDirectory(DOCUMENTS)
         foldersReady = true
     }
+
+    /** Names (SHA-256) of the complete asset files of a local document. */
+    private suspend fun localAssets(doc: DocumentId): Set<String> = withContext(io) {
+        val dir = documentsRoot / doc.value / ASSETS
+        if (!fs.exists(dir)) emptySet() else fs.list(dir).map { it.name }.filterTo(HashSet(), ::isAssetName)
+    }
+
+    private fun isAssetName(name: String) = name.length == 64 && name.all { it in '0'..'9' || it in 'a'..'f' }
 
     /** Length of the complete records of a local log (0 if missing). */
     private suspend fun localValidLength(doc: DocumentId, logName: String): Long = withContext(io) {
@@ -218,5 +267,6 @@ class SyncEngine(
         const val LIBRARY = "library"
         const val DOCUMENTS = "documents"
         const val OPS = FileDocumentRepository.OPS_DIR
+        const val ASSETS = FileDocumentRepository.ASSETS_DIR
     }
 }

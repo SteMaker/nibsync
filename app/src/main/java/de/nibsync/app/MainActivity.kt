@@ -1,10 +1,13 @@
 package de.nibsync.app
 
 import android.annotation.SuppressLint
+import android.content.Intent
+import android.net.Uri
 import android.os.Bundle
 import android.view.KeyEvent
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -34,8 +37,13 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import androidx.core.content.IntentCompat
+import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.repeatOnLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import de.nibsync.app.media.MediaActions
 import de.nibsync.app.sync.SyncPanel
 import de.nibsync.app.sync.SyncStatusIcon
 import de.nibsync.canvas.CanvasViewModel
@@ -77,9 +85,39 @@ class MainActivity : ComponentActivity() {
     var canvasViewModel: CanvasViewModel? = null
         private set
 
+    private val media by lazy { MediaActions(this, container) }
+
+    /** A picture or PDF shared from another app, inserted once the document is open. */
+    private var pendingShare: Uri? by mutableStateOf(null)
+
+    private val pickFile = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        val doc = documentId
+        val vm = canvasViewModel
+        if (uri != null && doc != null && vm != null) lifecycleScope.launch { media.insert(vm, doc, uri, canvasView?.viewport) }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        takeShared(intent)
+    }
+
+    private fun takeShared(intent: Intent?) {
+        if (intent?.action != Intent.ACTION_SEND) return
+        pendingShare = IntentCompat.getParcelableExtra(intent, Intent.EXTRA_STREAM, Uri::class.java)
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
+        if (savedInstanceState == null) takeShared(intent)
+        lifecycleScope.launch {
+            repeatOnLifecycle(Lifecycle.State.STARTED) {
+                // Files that arrived with the sync: draw pictures that were missing so far.
+                container.assetsArrived.collect { docs ->
+                    if (documentId in docs) canvasView?.let { it.mediaRenderer.retryMissing(); it.invalidate() }
+                }
+            }
+        }
         val bookTitle = getString(R.string.default_book_title)
         val documentTitle = getString(R.string.default_document_title)
         setContent {
@@ -184,9 +222,19 @@ class MainActivity : ComponentActivity() {
             val vm = viewModel(key = docId.value) { CanvasViewModel(current, GeometricShapeRecognizer(), container.clipboard) }
             DisposableEffect(vm) {
                 canvasViewModel = vm
+                vm.openFile = { media.openLink(docId, it) }
+                vm.copyAssets = media::copyAssets
                 // Leaving the document (or the screen) ends text editing, so the text is stored.
                 onDispose { vm.finishText() }
             }
+            val shared = pendingShare
+            LaunchedEffect(shared, vm) {
+                if (shared != null) {
+                    pendingShare = null
+                    media.insert(vm, docId, shared, canvasView?.viewport)
+                }
+            }
+            val scope = rememberCoroutineScope()
             NoteScreen(
                 vm,
                 Modifier.safeDrawingPadding(),
@@ -194,6 +242,9 @@ class MainActivity : ComponentActivity() {
                 showPageBreaks = showPageBreaks,
                 onTogglePageBreaks = onTogglePageBreaks,
                 toolbarEnd = { SyncStatusIcon(sync) },
+                assetFile = { media.assetFile(docId, it) },
+                onInsertFile = { pickFile.launch(media.mimeTypes) },
+                onInsertFromClipboard = { scope.launch { media.insertFromClipboard(vm, docId, canvasView?.viewport) } },
                 onCanvasCreated = { canvasView = it },
             )
         }
@@ -211,6 +262,21 @@ class MainActivity : ComponentActivity() {
         val s = session
         // While a text box is edited, the editor handles its own undo and redo.
         if (canvasViewModel?.textEditing?.value != null) return super.dispatchKeyEvent(event)
+        // Ctrl+V: a picture or PDF from the system clipboard, else copied strokes.
+        if (event.isCtrlPressed && event.keyCode == KeyEvent.KEYCODE_V) {
+            val vm = canvasViewModel
+            val doc = documentId
+            if (event.action == KeyEvent.ACTION_DOWN && vm != null && doc != null) {
+                val viewport = canvasView?.viewport
+                if (media.clipboardUri() != null) {
+                    lifecycleScope.launch { media.insertFromClipboard(vm, doc, viewport) }
+                } else if (viewport != null && viewport.hasSize) {
+                    val r = viewport.visibleDocumentRect
+                    vm.paste((r.left + r.right) / 2, (r.top + r.bottom) / 2)
+                }
+            }
+            return true
+        }
         if (s != null && event.isCtrlPressed && (event.keyCode == KeyEvent.KEYCODE_Z || event.keyCode == KeyEvent.KEYCODE_Y)) {
             if (event.action == KeyEvent.ACTION_DOWN) {
                 if (event.keyCode == KeyEvent.KEYCODE_Z && !event.isShiftPressed) s.undo() else s.redo()

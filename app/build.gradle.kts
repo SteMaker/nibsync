@@ -46,6 +46,7 @@ android {
 dependencies {
     implementation(project(":core:storage"))
     implementation(project(":feature:canvas"))
+    implementation(project(":feature:media"))
     implementation(project(":core:shapes"))
     implementation(project(":feature:library"))
     implementation(project(":sync:webdav"))
@@ -66,6 +67,7 @@ dependencies {
 
     androidTestImplementation(project(":ui:background"))
     androidTestImplementation(project(":feature:text"))
+    androidTestImplementation(project(":feature:media"))
     androidTestImplementation(platform(libs.androidx.compose.bom))
     androidTestImplementation(libs.androidx.compose.ui.test.junit4)
     debugImplementation(libs.androidx.compose.ui.test.manifest)

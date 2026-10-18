@@ -2,6 +2,7 @@ package de.nibsync.document
 
 import de.nibsync.model.BackgroundSpec
 import de.nibsync.model.DocumentMeta
+import de.nibsync.model.FileElement
 import de.nibsync.model.PageElement
 import de.nibsync.model.Stroke
 import de.nibsync.model.StrokeId
@@ -45,6 +46,9 @@ class DocumentState private constructor(
     /** Visible text boxes, back to front. */
     val textBoxes: List<TextBox> by lazy { elements.filterIsInstance<TextBox>() }
 
+    /** Visible pictures and file links, back to front. */
+    val files: List<FileElement> by lazy { elements.filterIsInstance<FileElement>() }
+
     val strokeCount: Int get() = strokes.size
 
     /** Largest y coordinate covered by any element, 0 for an empty document. */
@@ -69,6 +73,7 @@ class DocumentState private constructor(
         return when (op) {
             is DocumentOp.AddStrokes -> add(op.stamp, op.strokes, newClock)
             is DocumentOp.AddTextBoxes -> add(op.stamp, op.boxes, newClock)
+            is DocumentOp.AddFiles -> add(op.stamp, op.elements, newClock)
             is DocumentOp.RemoveStrokes ->
                 DocumentState(meta, entries - op.ids, tombstones + op.ids, applied + op.stamp, newClock, backgroundSetAt, background)
             is DocumentOp.SetBackground ->

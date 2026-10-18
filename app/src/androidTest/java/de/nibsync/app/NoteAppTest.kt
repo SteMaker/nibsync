@@ -244,7 +244,10 @@ class NoteAppTest {
 
     @Test
     fun fingerDrawsWhenEnabled() {
+        compose.onNodeWithTag(NoteScreenTags.MORE).performClick()
         compose.onNodeWithTag(NoteScreenTags.FINGER_TOGGLE).performClick()
+        compose.waitForIdle() // the menu is gone
+        waitUntil("finger drawing on") { canvas()?.drawWithFinger == true }
         drag(line(100f, 300f, 500f, 300f), toolType = MotionEvent.TOOL_TYPE_FINGER)
         waitForStrokes(1)
         assertThat(strokes().single().tool).isEqualTo(InputTool.TOUCH)
@@ -294,6 +297,7 @@ class NoteAppTest {
 
     @Test
     fun paperPatternIsChosenDrawnAndKept() {
+        compose.onNodeWithTag(NoteScreenTags.MORE).performClick()
         compose.onNodeWithTag(NoteScreenTags.BACKGROUND).performClick()
         compose.onNodeWithTag(BackgroundTags.kind(BackgroundKind.LINED)).performClick()
         compose.onNodeWithTag(BackgroundTags.spacing(10f)).performClick()
@@ -848,5 +852,93 @@ class NoteAppTest {
         assertThat(editor.width).isWithin(2f).of(box.widthMm * view.viewport.scale)
         // The stored height comes from the page layout; the editor is as tall.
         assertThat(editor.height).isWithin(3f).of(box.heightMm * view.viewport.scale)
+    }
+
+    // ---- pictures and file links -----------------------------------------------------------
+
+    private val redSvg = """<svg xmlns="http://www.w3.org/2000/svg" width="960" height="480"><rect width="960" height="480" fill="#ff0000"/></svg>"""
+
+    private fun viewModel(): de.nibsync.canvas.CanvasViewModel {
+        var vm: de.nibsync.canvas.CanvasViewModel? = null
+        scenario.onActivity { vm = it.canvasViewModel }
+        return checkNotNull(vm)
+    }
+
+    /** Stores [bytes] with the test document and inserts it like the file picker does. */
+    private fun insertFile(bytes: ByteArray, type: String, name: String): de.nibsync.model.PageElement {
+        val sha = runBlocking { app.container.repository.putAsset(documentId, bytes) }
+        val draft = checkNotNull(de.nibsync.media.MediaImport.draft(de.nibsync.media.PickedFile(bytes, type, name), sha, 210f, 105f, 50f))
+        var added: de.nibsync.model.PageElement? = null
+        scenario.onActivity { added = it.canvasViewModel!!.insert(listOf(draft)).single() }
+        compose.waitForIdle()
+        return checkNotNull(added)
+    }
+
+    private fun files() = session().state.value.files
+
+    private fun pixelAt(xMm: Float, yMm: Float): Int {
+        val view = checkNotNull(canvas())
+        val bitmap = Bitmap.createBitmap(view.width, view.height, Bitmap.Config.ARGB_8888)
+        scenario.onActivity { view.draw(Canvas(bitmap)) }
+        val t = view.viewport.documentToView
+        return bitmap.getPixel(t.mapX(xMm).toInt(), t.mapY(yMm).toInt())
+    }
+
+    @Test
+    fun pictureLiesUnderInkIsSelectedByATapAndScales() {
+        val picture = insertFile(redSvg.encodeToByteArray(), de.nibsync.model.Asset.SVG, "rot.svg")
+        // Inserted pictures come selected; a tap on empty paper goes back to the pen.
+        waitUntil("selected") { canvas()?.selection == setOf(picture.id) }
+        tap(2600f, 1400f)
+        waitUntil("back to the pen") { viewModel().tools.value.tool == de.nibsync.canvas.Tool.PEN }
+        val b = picture.bounds
+        waitUntil("picture drawn") { Color.red(pixelAt(b.left + 5f, b.top + 5f)) > 200 && Color.green(pixelAt(b.left + 5f, b.top + 5f)) < 80 }
+
+        // Ink across the picture stays visible on top of it.
+        compose.onNodeWithTag(NoteScreenTags.pen(BrushFamily.BALLPOINT)).performClick()
+        compose.onNodeWithTag(NoteScreenTags.size(2)).performClick()
+        val t = checkNotNull(canvas()).viewport.documentToView
+        val midY = t.mapY((b.top + b.bottom) / 2)
+        drag(line(t.mapX(b.left - 10f), midY, t.mapX(b.right + 10f), midY))
+        waitForStrokes(1)
+        waitUntil("overlay handed off") { !checkNotNull(canvas()).hasUnfinishedStrokes() }
+        assertThat(Color.red(pixelAt((b.left + b.right) / 2, (b.top + b.bottom) / 2))).isLessThan(80)
+
+        // A pen tap on the picture selects it instead of leaving a dot.
+        tap(t.mapX(b.left + 10f), t.mapY(b.top + 10f))
+        waitUntil("selected by tap") { canvas()?.selection == setOf(picture.id) }
+        assertThat(strokes()).hasSize(1)
+
+        // Dragging the corner handle halfway towards the top left corner halves the picture.
+        val v = checkNotNull(canvas()).viewport
+        val pad = 2f // selection frame padding
+        val hx = v.documentToView.mapX(b.right + pad)
+        val hy = v.documentToView.mapY(b.bottom + pad)
+        val tx = v.documentToView.mapX(b.left + (b.width + pad) / 2)
+        val ty = v.documentToView.mapY(b.top + (b.height + pad) / 2)
+        drag(line(hx, hy, tx, ty))
+        waitUntil("scaled") { files().single().widthMm < b.width * 0.6f }
+        assertThat(files().single().widthMm).isWithin(3f).of(b.width / 2)
+        assertThat(files().single().heightMm / files().single().widthMm).isWithin(0.01f).of(b.height / b.width)
+
+        // Tap beside it: back to the pen, nothing selected.
+        tap(2600f, 1400f)
+        waitUntil("back to the pen") { viewModel().tools.value.tool == de.nibsync.canvas.Tool.PEN && canvas()?.selection?.isEmpty() == true }
+    }
+
+    @Test
+    fun tapOnAPdfLinkOpensIt() {
+        val link = insertFile("%PDF-1.4\n%%EOF".encodeToByteArray(), de.nibsync.model.Asset.PDF, "Skript.pdf")
+        val opened = mutableListOf<de.nibsync.model.FileLink>()
+        scenario.onActivity { it.canvasViewModel!!.openFile = { l -> opened += l } }
+        tap(2600f, 1400f)
+        waitUntil("back to the pen") { viewModel().tools.value.tool == de.nibsync.canvas.Tool.PEN }
+        val t = checkNotNull(canvas()).viewport.documentToView
+        tap(t.mapX(link.bounds.left + 5f), t.mapY(link.bounds.top + 5f))
+        waitUntil("opened") { opened.isNotEmpty() }
+        assertThat(opened.single().fileName).isEqualTo("Skript.pdf")
+        assertThat(strokes()).isEmpty()
+        // The file is stored with the document.
+        assertThat(runBlocking { app.container.repository.hasAsset(documentId, opened.single().asset.sha256) }).isTrue()
     }
 }

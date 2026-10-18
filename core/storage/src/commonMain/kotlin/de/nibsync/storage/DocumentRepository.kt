@@ -5,6 +5,7 @@ import de.nibsync.document.OpJournal
 import de.nibsync.model.DeviceId
 import de.nibsync.model.DocumentId
 import de.nibsync.model.DocumentMeta
+import okio.Path
 
 /** Access to stored note documents. */
 interface DocumentRepository {
@@ -21,4 +22,15 @@ interface DocumentRepository {
     fun journal(id: DocumentId, device: DeviceId): OpJournal
 
     suspend fun delete(id: DocumentId)
+
+    /**
+     * Stores [bytes] as a file of document [id], named by its SHA-256 (nothing happens if it is
+     * there already). Returns the SHA-256 in lower-case hex.
+     */
+    suspend fun putAsset(id: DocumentId, bytes: ByteArray): String
+
+    suspend fun hasAsset(id: DocumentId, sha256: String): Boolean
+
+    /** Where the asset is (or would be) stored. */
+    fun assetPath(id: DocumentId, sha256: String): Path
 }

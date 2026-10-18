@@ -5,19 +5,18 @@ import de.nibsync.model.PageElement
 import de.nibsync.model.Stroke
 import de.nibsync.model.StrokeDraft
 import de.nibsync.model.StrokeId
-import de.nibsync.model.TextBox
 import de.nibsync.model.toDraft
 import de.nibsync.model.geometry.Rect
 
 /** Freehand selection of page elements. Platform-neutral so every client selects the same way. */
 object Lasso {
     /**
-     * A stroke is selected when at least this share of its points lies inside the lasso; a
-     * text box when this share of a grid of sample points over its area does.
+     * A stroke is selected when at least this share of its points lies inside the lasso; other
+     * (rectangular) elements when this share of a grid of sample points over their area does.
      */
     const val INSIDE_SHARE = 0.5f
 
-    /** Sample points per side of a text box. */
+    /** Sample points per side of a rectangular element. */
     private const val BOX_SAMPLES = 5
 
     /** Lassos with a smaller area (mm²) select nothing; they are taps. */
@@ -36,7 +35,7 @@ object Lasso {
 
     private fun insideShare(e: PageElement, polygon: FloatArray): Float = when (e) {
         is Stroke -> e.points.count { contains(polygon, it.x, it.y) }.toFloat() / e.points.size
-        is TextBox -> {
+        else -> {
             val b = e.bounds
             var inside = 0
             for (i in 0 until BOX_SAMPLES) for (j in 0 until BOX_SAMPLES) {

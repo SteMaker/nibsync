@@ -2,6 +2,7 @@ package de.nibsync.document
 
 import de.nibsync.model.BackgroundSpec
 import de.nibsync.model.DeviceId
+import de.nibsync.model.FileElement
 import de.nibsync.model.Stroke
 import de.nibsync.model.StrokeId
 import de.nibsync.model.TextBox
@@ -26,6 +27,9 @@ sealed interface DocumentOp {
     data class AddStrokes(override val stamp: OpStamp, val strokes: List<Stroke>) : DocumentOp
 
     data class AddTextBoxes(override val stamp: OpStamp, val boxes: List<TextBox>) : DocumentOp
+
+    /** Adds pictures and file links. Their files must be in the document's assets. */
+    data class AddFiles(override val stamp: OpStamp, val elements: List<FileElement>) : DocumentOp
 
     /** Removes elements of any kind (strokes, text boxes) by id. */
     data class RemoveStrokes(override val stamp: OpStamp, val ids: Set<StrokeId>) : DocumentOp

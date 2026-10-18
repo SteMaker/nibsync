@@ -24,6 +24,8 @@ data class SyncState(
     @SerialName("uploadedLog") val uploadedLog: Map<String, Long> = emptyMap(),
     /** Documents whose meta.json is on the server. */
     @SerialName("metaUploaded") val metaUploaded: Set<String> = emptySet(),
+    /** Assets known to be on the server, as "<documentId>/<sha256>". */
+    @SerialName("uploadedAssets") val uploadedAssets: Set<String> = emptySet(),
 ) {
     companion object {
         private val json = Json { ignoreUnknownKeys = true }

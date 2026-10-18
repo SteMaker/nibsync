@@ -69,6 +69,15 @@ class AppContainer(
     /** Emits after this device wrote a change to any document (for syncing soon). */
     val localChanges: SharedFlow<Unit> = _localChanges.asSharedFlow()
 
+    private val _assetsArrived = MutableSharedFlow<Set<DocumentId>>(extraBufferCapacity = 4, onBufferOverflow = BufferOverflow.DROP_OLDEST)
+
+    /** Documents whose files (pictures, PDFs) were just fetched by the sync. */
+    val assetsArrived: SharedFlow<Set<DocumentId>> = _assetsArrived.asSharedFlow()
+
+    fun notifyAssetsArrived(documents: Set<DocumentId>) {
+        _assetsArrived.tryEmit(documents)
+    }
+
     private val sessions = HashMap<DocumentId, DocumentSession>()
     private val sessionLock = Mutex()
 

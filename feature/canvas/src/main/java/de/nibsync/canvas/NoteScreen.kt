@@ -5,6 +5,9 @@ import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.filled.AddPhotoAlternate
+import androidx.compose.material.icons.filled.FolderOpen
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.OpenWith
 import androidx.compose.material.icons.filled.TextFields
 import androidx.compose.runtime.LaunchedEffect
@@ -51,6 +54,9 @@ import androidx.compose.material.icons.filled.Draw
 import androidx.compose.material.icons.filled.HistoryEdu
 import androidx.compose.material.icons.filled.TouchApp
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Checkbox
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledIconToggleButton
 import androidx.compose.material3.PlainTooltip
@@ -86,7 +92,9 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import de.nibsync.document.erase.EraserMode
 import de.nibsync.background.ui.BackgroundPicker
+import de.nibsync.model.Asset
 import de.nibsync.model.BackgroundSpec
+import java.io.File
 import de.nibsync.model.BrushFamily
 import de.nibsync.background.ui.R as BackgroundR
 
@@ -105,6 +113,10 @@ object NoteScreenTags {
     const val BACKGROUND_CONFIRM = "background-confirm"
     const val LASSO = "lasso"
     const val TEXT = "text-tool"
+    const val INSERT = "insert"
+    const val MORE = "more-options"
+    const val INSERT_FILE = "insert-file"
+    const val INSERT_CLIPBOARD = "insert-clipboard"
     const val MOVE_TEXT = "move-text"
     const val RESIZE_TEXT = "resize-text"
     const val DELETE_SELECTION = "delete-selection"
@@ -124,6 +136,12 @@ fun NoteScreen(
     onTogglePageBreaks: ((Boolean) -> Unit)? = null,
     /** Extra items at the end of the tool bar, e.g. a sync indicator. */
     toolbarEnd: @Composable () -> Unit = {},
+    /** Where a file (picture, PDF) of this document is stored. */
+    assetFile: (Asset) -> File? = { null },
+    /** Opens the file picker to insert pictures or PDFs; null hides the insert menu. */
+    onInsertFile: (() -> Unit)? = null,
+    /** Inserts a picture or PDF from the system clipboard, if there is one; null disables it. */
+    onInsertFromClipboard: (() -> Unit)? = null,
     onCanvasCreated: (NoteCanvasView) -> Unit = {},
 ) {
     val document by viewModel.document.collectAsStateWithLifecycle()
@@ -185,6 +203,8 @@ fun NoteScreen(
             },
             onFingerToggle = viewModel::setDrawWithFinger,
             onText = viewModel::selectText,
+            onInsertFile = onInsertFile,
+            onInsertFromClipboard = onInsertFromClipboard,
             textEditing = textEditing,
             onTextDelete = viewModel::deleteText,
         )
@@ -193,7 +213,10 @@ fun NoteScreen(
                 modifier = Modifier.fillMaxSize().testTag(NoteScreenTags.CANVAS),
                 factory = { context ->
                     NoteCanvasView(context).also {
-                        it.onTextRequested = { x, y, width -> viewModel.requestText(x, y, width, it.viewport.pageWidthMm) }
+                        it.onTextFrame = { x, y, width -> viewModel.requestText(x, y, width, it.viewport.pageWidthMm) }
+                        it.onPageTapped = viewModel::tapAt
+                        it.onSelectionResized = viewModel::resizeSelection
+                        it.mediaRenderer.assetFile = assetFile
                         it.onViewportChanged = { v -> viewport = v }
                         viewModel.measureText = it.textRenderer::heightMm
                         it.onStrokeDrafted = viewModel::commitStroke
@@ -218,6 +241,7 @@ fun NoteScreen(
                     view.eraserRadiusMm = tools.eraserRadiusMm
                     view.setStrokes(document.strokes)
                     view.setTextBoxes(document.textBoxes)
+                    view.setFiles(document.files)
                     view.editingTextBox = textEditing?.boxId
                 },
             )
@@ -324,6 +348,8 @@ private fun Toolbar(
     onPaste: () -> Unit,
     onFingerToggle: (Boolean) -> Unit,
     onText: () -> Unit,
+    onInsertFile: (() -> Unit)?,
+    onInsertFromClipboard: (() -> Unit)?,
     textEditing: TextEditing?,
     onTextDelete: () -> Unit,
 ) {
@@ -406,6 +432,7 @@ private fun Toolbar(
                         Icon(Icons.Filled.TextFields, contentDescription = textLabel)
                     }
                 }
+                if (onInsertFile != null) InsertMenu(onInsertFile, onInsertFromClipboard)
                 Divider()
                 ScrollingRow(Modifier.weight(1f)) {
                     when (tools.tool) {
@@ -416,34 +443,7 @@ private fun Toolbar(
                     }
                 }
                 Divider()
-                if (onTogglePageBreaks != null) {
-                    val breaksLabel = stringResource(R.string.page_breaks)
-                    WithTooltip(breaksLabel) {
-                        FilledIconToggleButton(
-                            checked = showPageBreaks,
-                            onCheckedChange = onTogglePageBreaks,
-                            modifier = Modifier.testTag(NoteScreenTags.PAGE_BREAKS),
-                        ) {
-                            Icon(Icons.Filled.InsertPageBreak, contentDescription = breaksLabel)
-                        }
-                    }
-                }
-                val backgroundLabel = stringResource(BackgroundR.string.background_paper)
-                WithTooltip(backgroundLabel) {
-                    IconButton(onClick = onBackground, modifier = Modifier.testTag(NoteScreenTags.BACKGROUND)) {
-                        Icon(Icons.Filled.GridOn, contentDescription = backgroundLabel)
-                    }
-                }
-                val fingerLabel = stringResource(R.string.draw_with_finger)
-                WithTooltip(fingerLabel) {
-                    FilledIconToggleButton(
-                        checked = tools.drawWithFinger,
-                        onCheckedChange = onFingerToggle,
-                        modifier = Modifier.testTag(NoteScreenTags.FINGER_TOGGLE),
-                    ) {
-                        Icon(Icons.Filled.TouchApp, contentDescription = fingerLabel)
-                    }
-                }
+                MoreMenu(showPageBreaks, onTogglePageBreaks, onBackground, tools.drawWithFinger, onFingerToggle)
             }
             toolbarEnd()
         }
@@ -524,6 +524,79 @@ private fun WithTooltip(text: String, content: @Composable () -> Unit) {
         state = rememberTooltipState(),
     ) {
         content()
+    }
+}
+
+/** Page settings that are not needed while writing: page breaks, paper, finger drawing. */
+@Composable
+private fun MoreMenu(
+    showPageBreaks: Boolean,
+    onTogglePageBreaks: ((Boolean) -> Unit)?,
+    onBackground: () -> Unit,
+    drawWithFinger: Boolean,
+    onFingerToggle: (Boolean) -> Unit,
+) {
+    var open by remember { mutableStateOf(false) }
+    val label = stringResource(R.string.more_options)
+    Box {
+        WithTooltip(label) {
+            IconButton(onClick = { open = true }, modifier = Modifier.testTag(NoteScreenTags.MORE)) {
+                Icon(Icons.Filled.MoreVert, contentDescription = label)
+            }
+        }
+        DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
+            if (onTogglePageBreaks != null) {
+                DropdownMenuItem(
+                    text = { Text(stringResource(R.string.page_breaks)) },
+                    leadingIcon = { Icon(Icons.Filled.InsertPageBreak, contentDescription = null) },
+                    trailingIcon = { Checkbox(checked = showPageBreaks, onCheckedChange = null) },
+                    onClick = { open = false; onTogglePageBreaks(!showPageBreaks) },
+                    modifier = Modifier.testTag(NoteScreenTags.PAGE_BREAKS),
+                )
+            }
+            DropdownMenuItem(
+                text = { Text(stringResource(BackgroundR.string.background_paper)) },
+                leadingIcon = { Icon(Icons.Filled.GridOn, contentDescription = null) },
+                onClick = { open = false; onBackground() },
+                modifier = Modifier.testTag(NoteScreenTags.BACKGROUND),
+            )
+            DropdownMenuItem(
+                text = { Text(stringResource(R.string.draw_with_finger)) },
+                leadingIcon = { Icon(Icons.Filled.TouchApp, contentDescription = null) },
+                trailingIcon = { Checkbox(checked = drawWithFinger, onCheckedChange = null) },
+                onClick = { open = false; onFingerToggle(!drawWithFinger) },
+                modifier = Modifier.testTag(NoteScreenTags.FINGER_TOGGLE),
+            )
+        }
+    }
+}
+
+/** "Insert" button: pick a picture or PDF file, or take one from the clipboard. */
+@Composable
+private fun InsertMenu(onInsertFile: () -> Unit, onInsertFromClipboard: (() -> Unit)?) {
+    var open by remember { mutableStateOf(false) }
+    val label = stringResource(R.string.insert)
+    Box {
+        WithTooltip(label) {
+            IconButton(onClick = { open = true }, modifier = Modifier.testTag(NoteScreenTags.INSERT)) {
+                Icon(Icons.Filled.AddPhotoAlternate, contentDescription = label)
+            }
+        }
+        DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
+            DropdownMenuItem(
+                text = { Text(stringResource(R.string.insert_file)) },
+                leadingIcon = { Icon(Icons.Filled.FolderOpen, contentDescription = null) },
+                onClick = { open = false; onInsertFile() },
+                modifier = Modifier.testTag(NoteScreenTags.INSERT_FILE),
+            )
+            DropdownMenuItem(
+                text = { Text(stringResource(R.string.insert_clipboard)) },
+                leadingIcon = { Icon(Icons.Filled.ContentPaste, contentDescription = null) },
+                enabled = onInsertFromClipboard != null,
+                onClick = { open = false; onInsertFromClipboard?.invoke() },
+                modifier = Modifier.testTag(NoteScreenTags.INSERT_CLIPBOARD),
+            )
+        }
     }
 }
 

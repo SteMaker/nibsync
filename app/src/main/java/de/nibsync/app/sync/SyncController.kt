@@ -103,6 +103,7 @@ class SyncController(
             _status.value = SyncStatus.Syncing
             _status.value = try {
                 val report = engine.sync()
+                if (report.receivedAssets.isNotEmpty()) container.notifyAssetsArrived(report.receivedAssets)
                 for ((doc, ops) in report.receivedOps) container.openSessionOrNull(doc)?.applyRemote(ops)
                 SyncStatus.Synced(System.currentTimeMillis())
             } catch (e: AuthenticationException) {

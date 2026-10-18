@@ -8,7 +8,16 @@ import de.nibsync.document.erase.EraserMode
 import de.nibsync.document.select.ClipContent
 import de.nibsync.document.select.Lasso
 import de.nibsync.document.select.translated
+import de.nibsync.model.Asset
 import de.nibsync.model.BackgroundSpec
+import de.nibsync.model.DocumentId
+import de.nibsync.model.ElementDraft
+import de.nibsync.model.FileElement
+import de.nibsync.model.FileLink
+import de.nibsync.model.FileLinkDraft
+import de.nibsync.model.ImageDraft
+import de.nibsync.model.ImageElement
+import de.nibsync.model.assets
 import de.nibsync.model.PageElement
 import de.nibsync.model.Quantization
 import de.nibsync.model.RichText
@@ -75,6 +84,7 @@ class CanvasViewModel(
 
     fun selectLasso() {
         finishText()
+        lassoByTap = false
         _tools.update { it.withLasso() }
     }
 
@@ -96,16 +106,57 @@ class CanvasViewModel(
 
     fun copySelection() {
         val doc = session.state.value
-        ClipContent.of(doc.elements.filter { it.id in _selection.value })?.let(clipboard::set)
+        ClipContent.of(doc.elements.filter { it.id in _selection.value })?.let { clipboard.set(it, doc.meta.id) }
     }
+
+    /**
+     * Copies files (pictures, PDFs) of pasted elements from the document they were copied in;
+     * set by the app, which knows where documents are stored.
+     */
+    var copyAssets: (from: DocumentId, to: DocumentId, assets: Set<Asset>) -> Unit = { _, _, _ -> }
 
     /** Pastes the clipboard centred at ([cx], [cy]) mm; the pasted strokes become the selection. */
     fun paste(cx: Float, cy: Float): CommittedEdit? {
         val clip = clipboard.content.value ?: return null
-        val added = session.replaceElements(emptySet(), clip.placedAt(cx, cy))
+        val drafts = clip.placedAt(cx, cy)
+        val here = session.state.value.meta.id
+        val source = clipboard.source
+        if (source != null && source != here && drafts.assets().isNotEmpty()) copyAssets(source, here, drafts.assets())
+        val added = session.replaceElements(emptySet(), drafts)
+        if (_tools.value.tool != Tool.LASSO) lassoByTap = false
         _tools.update { it.withLasso() }
         _selection.value = added.mapTo(LinkedHashSet()) { it.id }
         return CommittedEdit(added, emptySet())
+    }
+
+    /**
+     * Adds inserted pictures or file links (their files must already be stored with the
+     * document) and selects them, so they can be moved and scaled right away.
+     */
+    fun insert(drafts: List<ElementDraft>): List<PageElement> {
+        if (drafts.isEmpty()) return emptyList()
+        finishText()
+        val added = session.replaceElements(emptySet(), drafts)
+        selectTemporarily(added.mapTo(LinkedHashSet()) { it.id })
+        return added
+    }
+
+    /**
+     * Scales the selected picture or file link by [factor] from its top left corner, in one
+     * undo step. Only for a selection of exactly one such element.
+     */
+    fun resizeSelection(factor: Float): CommittedEdit? {
+        val element = session.state.value.elements.singleOrNull { it.id in _selection.value } as? FileElement ?: return null
+        if (_selection.value.size != 1 || factor <= 0f || factor == 1f) return null
+        val w = maxOf(MIN_FILE_SIZE_MM, element.widthMm * factor)
+        val h = element.heightMm * (w / element.widthMm)
+        val draft = when (element) {
+            is ImageElement -> ImageDraft(element.x, element.y, w, h, element.asset)
+            is FileLink -> FileLinkDraft(element.x, element.y, w, h, element.asset, element.fileName)
+        }
+        val added = session.replaceElements(listOf(element.id), listOf(draft))
+        _selection.value = added.mapTo(LinkedHashSet()) { it.id }
+        return CommittedEdit(added, setOf(element.id))
     }
 
     /** Moves the selected strokes by ([dx], [dy]) mm in one undo step; the moved copies stay selected. */
@@ -128,6 +179,7 @@ class CanvasViewModel(
 
     fun selectPen(pen: BrushFamily) {
         finishText()
+        lassoByTap = false
         _tools.update { it.withPen(pen) }
         clearSelection()
     }
@@ -161,6 +213,7 @@ class CanvasViewModel(
 
     fun selectEraser(mode: EraserMode) {
         finishText()
+        lassoByTap = false
         _tools.update { it.withEraser(mode) }
         clearSelection()
     }
@@ -191,47 +244,94 @@ class CanvasViewModel(
     private var savedText: TextBoxDraft? = null
     private var textEditingKey = 0L
 
-    /** The tool to go back to when text mode ends. */
-    private var toolBeforeText = Tool.PEN
+    // Text mode, and the lasso when it was entered by tapping a picture, are temporary: a tap
+    // on an empty spot of the page goes back to the tool used before.
+
+    /** The tool to go back to when a temporary mode ends. */
+    private var toolBeforeTemporary = Tool.PEN
+
+    /** True if the lasso tool was switched on by tapping a picture, not by the user. */
+    private var lassoByTap = false
+
+    /** Opens a file link in another app; set by the app. */
+    var openFile: (FileLink) -> Unit = {}
 
     fun selectText() {
         enterTextMode()
         clearSelection()
     }
 
-    private fun enterTextMode() {
+    private fun rememberToolBeforeTemporary() {
         val current = _tools.value.tool
-        if (current != Tool.TEXT) toolBeforeText = current
+        val temporary = current == Tool.TEXT || (current == Tool.LASSO && lassoByTap)
+        if (!temporary) toolBeforeTemporary = current
+    }
+
+    private fun enterTextMode() {
+        rememberToolBeforeTemporary()
+        lassoByTap = false
         _tools.update { it.withText() }
     }
 
-    private fun leaveTextMode() {
-        if (_tools.value.tool == Tool.TEXT) _tools.update { it.copy(tool = toolBeforeText) }
+    private fun selectTemporarily(ids: Set<StrokeId>) {
+        val manualLasso = _tools.value.tool == Tool.LASSO && !lassoByTap
+        if (!manualLasso) {
+            rememberToolBeforeTemporary()
+            lassoByTap = true
+            _tools.update { it.withLasso() }
+        }
+        _selection.value = ids
+    }
+
+    private fun leaveTemporaryMode() {
+        val tool = _tools.value.tool
+        if (tool == Tool.TEXT || (tool == Tool.LASSO && lassoByTap)) {
+            lassoByTap = false
+            _tools.update { it.copy(tool = toolBeforeTemporary) }
+        }
     }
 
     /** The topmost text box at ([x], [y]) mm, or null. */
     fun textBoxAt(x: Float, y: Float): TextBox? =
         session.state.value.textBoxes.lastOrNull { it.bounds.contains(x, y) }
 
+    /** The topmost text box, picture or file link at ([x], [y]) mm, or null. */
+    fun tappableAt(x: Float, y: Float): PageElement? =
+        session.state.value.elements.lastOrNull { it !is Stroke && it.bounds.contains(x, y) }
+
     /**
-     * The page was touched for text at ([x], [y]) mm. A tap ([widthMm] null) opens the text box
-     * there, switching to text mode, or, off any box, ends text mode and goes back to the
-     * previous tool. A frame dragged with the text tool ([widthMm] set) starts a new box.
+     * A tap on the page at ([x], [y]) mm (pen tap on an element, text tool, lasso or finger).
+     * A text box opens for editing, a file link opens in another app, a picture gets selected;
+     * an empty spot ends text mode or a picture selection and goes back to the previous tool.
+     */
+    fun tapAt(x: Float, y: Float) {
+        finishText()
+        when (val hit = tappableAt(x, y)) {
+            is TextBox -> {
+                enterTextMode()
+                clearSelection()
+                savedText = hit.toDraft() as TextBoxDraft
+                startText(hit.id, hit.x, hit.y, hit.widthMm, hit.text)
+            }
+            is FileLink -> openFile(hit)
+            is ImageElement -> selectTemporarily(setOf(hit.id))
+            else -> {
+                clearSelection()
+                leaveTemporaryMode()
+            }
+        }
+    }
+
+    /**
+     * The text tool touched the page: a frame ([widthMm] set) dragged from ([x], [y]) mm starts
+     * a new text box; a tap ([widthMm] null) is handled like [tapAt].
      */
     fun requestText(x: Float, y: Float, widthMm: Float?, pageWidthMm: Float) {
-        finishText()
         if (widthMm == null) {
-            val hit = textBoxAt(x, y)
-            if (hit == null) {
-                leaveTextMode()
-                return
-            }
-            enterTextMode()
-            clearSelection()
-            savedText = hit.toDraft() as TextBoxDraft
-            startText(hit.id, hit.x, hit.y, hit.widthMm, hit.text)
+            tapAt(x, y)
             return
         }
+        finishText()
         enterTextMode()
         val maxWidth = maxOf(TextBox.MIN_WIDTH_MM, pageWidthMm - TEXT_MARGIN_MM)
         val width = widthMm.coerceIn(TextBox.MIN_WIDTH_MM, maxWidth)
@@ -276,7 +376,7 @@ class CanvasViewModel(
         e.boxId?.let { session.removeStrokes(listOf(it)) }
         _textEditing.value = null
         savedText = null
-        leaveTextMode()
+        leaveTemporaryMode()
     }
 
     /** Moves the edited box while its handle is dragged; [saveText] stores the result. */
@@ -293,5 +393,8 @@ class CanvasViewModel(
 
         /** Space kept to the right page edge by new text boxes. */
         const val TEXT_MARGIN_MM = 5f
+
+        /** Pictures and links are not scaled below this width. */
+        const val MIN_FILE_SIZE_MM = 5f
     }
 }

@@ -20,4 +20,8 @@
     <string name="text_tool">Text box</string>
     <string name="move_text_box">Move text box</string>
     <string name="resize_text_box">Change width</string>
+    <string name="insert">Insert picture or PDF</string>
+    <string name="insert_file">Choose file…</string>
+    <string name="insert_clipboard">From clipboard</string>
+    <string name="more_options">More options</string>
 </resources>

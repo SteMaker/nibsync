@@ -33,9 +33,13 @@ import de.nibsync.model.BackgroundPattern
 import de.nibsync.model.BackgroundSpec
 import de.nibsync.model.BrushFamily
 import de.nibsync.model.BrushSpec
+import de.nibsync.model.FileElement
+import de.nibsync.model.FileLink
+import de.nibsync.model.ImageElement
 import de.nibsync.model.Layer
 import de.nibsync.model.PageElement
 import de.nibsync.model.TextBox
+import de.nibsync.media.MediaRenderer
 import de.nibsync.text.TextBoxRenderer
 import de.nibsync.model.InputTool
 import de.nibsync.model.PageFormat
@@ -46,6 +50,7 @@ import de.nibsync.model.StrokePoint
 import de.nibsync.model.geometry.Viewport
 import de.nibsync.shapes.HoldDetector
 import kotlin.math.abs
+import kotlin.math.hypot
 import kotlin.math.roundToInt
 import androidx.ink.strokes.Stroke as InkStroke
 
@@ -82,11 +87,24 @@ class NoteCanvasView(context: Context) : FrameLayout(context) {
     /** Starting a new lasso drops the current selection. */
     var onSelectionCleared: () -> Unit = {}
 
+    /** A frame of the given width was dragged with the text tool from (x, y) mm. */
+    var onTextFrame: (Float, Float, Float) -> Unit = { _, _, _ -> }
+
     /**
-     * The page was touched for text at (x, y) mm: a tap with the text tool or on a text box
-     * (width null), or a frame of the given width dragged with the text tool from (x, y).
+     * A tap at (x, y) mm: with the text tool, the lasso or a finger anywhere, and with the pen
+     * on a text box, picture or file link (instead of leaving a dot).
      */
-    var onTextRequested: (Float, Float, Float?) -> Unit = { _, _, _ -> }
+    var onPageTapped: (Float, Float) -> Unit = { _, _ -> }
+
+    /** The selected picture or link was scaled by the given factor; returns what was stored. */
+    var onSelectionResized: (Float) -> CommittedEdit? = { null }
+
+    /** Draws pictures and file links; the screen tells it where the document's files are. */
+    val mediaRenderer = MediaRenderer(onLoaded = { invalidate() })
+
+    /** Pictures and file links currently shown, back to front. */
+    var files: List<FileElement> = emptyList()
+        private set
 
     /** Lays out and draws text boxes; also used by the screen to measure them. */
     val textRenderer = TextBoxRenderer(context)
@@ -220,6 +238,12 @@ class NoteCanvasView(context: Context) : FrameLayout(context) {
     }
     private val lassoDrawPath = android.graphics.Path()
 
+    // Scaling the selected picture or link with its corner handle.
+    private var resizePointerId = NO_POINTER
+    private var resizeAnchorDist = 0f
+    private var resizeFactor = 1f
+    private val handlePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = 0xff1a3fa8.toInt() }
+
     // Text tool gesture: where it started (mm) and the frame dragged so far.
     private var textPointerId = NO_POINTER
     private var textPointerIsFinger = false
@@ -242,14 +266,11 @@ class NoteCanvasView(context: Context) : FrameLayout(context) {
             return true
         }
 
-        // A finger tap on a text box opens it, whatever the tool.
+        // Finger taps open text boxes and links, select pictures, or end those modes.
         override fun onSingleTapUp(e: MotionEvent): Boolean {
             if (!navigating) return false
             val toDoc = viewport.viewToDocument
-            val x = toDoc.mapX(e.x)
-            val y = toDoc.mapY(e.y)
-            if (textBoxAt(x, y) == null) return false
-            onTextRequested(x, y, null)
+            onPageTapped(toDoc.mapX(e.x), toDoc.mapY(e.y))
             return true
         }
 
@@ -286,6 +307,14 @@ class NoteCanvasView(context: Context) : FrameLayout(context) {
         inProgressStrokesView.eagerInit()
     }
 
+    /** Shows the given pictures and file links (back to front). Cheap if nothing changed. */
+    fun setFiles(elements: List<FileElement>) {
+        if (elements === files) return
+        files = elements
+        updateContentBottom()
+        invalidate()
+    }
+
     /** Shows the given text boxes (back to front). Cheap if nothing changed. */
     fun setTextBoxes(boxes: List<TextBox>) {
         if (boxes === textBoxes) return
@@ -305,7 +334,11 @@ class NoteCanvasView(context: Context) : FrameLayout(context) {
     }
 
     private fun updateContentBottom() {
-        val bottom = maxOf(strokes.maxOfOrNull { it.bounds.bottom } ?: 0f, textBoxes.maxOfOrNull { it.bounds.bottom } ?: 0f)
+        val bottom = maxOf(
+            strokes.maxOfOrNull { it.bounds.bottom } ?: 0f,
+            textBoxes.maxOfOrNull { it.bounds.bottom } ?: 0f,
+            files.maxOfOrNull { it.bounds.bottom } ?: 0f,
+        )
         if (bottom != viewport.contentBottomMm) setViewport(viewport.withContentBottom(bottom))
     }
 
@@ -343,10 +376,12 @@ class NoteCanvasView(context: Context) : FrameLayout(context) {
         val shown = eraseGesture?.visible ?: strokes
         val moving = movePointerId != NO_POINTER
         canvas.withMatrix(documentToView) {
-            // Marker strokes, then text, then ink (see Layer).
+            // Pictures, marker strokes, text and links, ink (see Layer).
+            drawFiles(this, Layer.IMAGE, visible, moving)
             var textDrawn = false
             for (stroke in shown) {
                 if (!textDrawn && stroke.layer.zIndex > Layer.TEXT.zIndex) {
+                    drawFiles(this, Layer.TEXT, visible, moving)
                     drawTextBoxes(this, visible, moving)
                     textDrawn = true
                 }
@@ -356,7 +391,10 @@ class NoteCanvasView(context: Context) : FrameLayout(context) {
                     renderer.draw(this, inkCache[stroke], documentToView)
                 }
             }
-            if (!textDrawn) drawTextBoxes(this, visible, moving)
+            if (!textDrawn) {
+                drawFiles(this, Layer.TEXT, visible, moving)
+                drawTextBoxes(this, visible, moving)
+            }
         }
         textFrame?.let { f ->
             canvas.drawRect(transform.mapX(f.left), transform.mapY(f.top), transform.mapX(f.right), transform.mapY(f.bottom), selectionPaint)
@@ -368,6 +406,9 @@ class NoteCanvasView(context: Context) : FrameLayout(context) {
                 transform.mapX(b.right + moveDx), transform.mapY(b.bottom + moveDy),
                 selectionPaint,
             )
+            if (resizable() != null && !moving) {
+                canvas.drawCircle(transform.mapX(b.right), transform.mapY(b.bottom), handleRadiusPx(), handlePaint)
+            }
         }
         lassoPath?.let { path ->
             lassoDrawPath.reset()
@@ -377,6 +418,25 @@ class NoteCanvasView(context: Context) : FrameLayout(context) {
                 if (i == 0) lassoDrawPath.moveTo(x, y) else lassoDrawPath.lineTo(x, y)
             }
             canvas.drawPath(lassoDrawPath, selectionPaint)
+        }
+    }
+
+    private fun drawFiles(canvas: Canvas, layer: Layer, visible: de.nibsync.model.geometry.Rect, moving: Boolean) {
+        for (f in files) {
+            if (f.layer != layer) continue
+            val selected = f.id in selection
+            when {
+                moving && selected -> canvas.withTranslation(moveDx, moveDy) { mediaRenderer.draw(this, f, viewport.scale) }
+                resizePointerId != NO_POINTER && selected -> {
+                    val save = canvas.save()
+                    canvas.translate(f.x, f.y)
+                    canvas.scale(resizeFactor, resizeFactor)
+                    canvas.translate(-f.x, -f.y)
+                    mediaRenderer.draw(canvas, f, viewport.scale * resizeFactor)
+                    canvas.restoreToCount(save)
+                }
+                f.bounds.intersects(visible) -> mediaRenderer.draw(canvas, f, viewport.scale)
+            }
         }
     }
 
@@ -486,7 +546,15 @@ class NoteCanvasView(context: Context) : FrameLayout(context) {
             return
         }
         val busy = drawingPointerId != NO_POINTER || erasingPointerId != NO_POINTER ||
-            lassoPointerId != NO_POINTER || movePointerId != NO_POINTER || textPointerId != NO_POINTER
+            lassoPointerId != NO_POINTER || movePointerId != NO_POINTER || textPointerId != NO_POINTER ||
+            resizePointerId != NO_POINTER
+        // Stylus or finger on the corner handle scales a selected picture or link.
+        if (!busy && event.actionMasked == MotionEvent.ACTION_DOWN && toolType != MotionEvent.TOOL_TYPE_ERASER &&
+            hitsResizeHandle(event.getX(index), event.getY(index))
+        ) {
+            startResize(event, index)
+            return
+        }
         // Stylus or finger on the selection drags it.
         if (!busy && event.actionMasked == MotionEvent.ACTION_DOWN && toolType != MotionEvent.TOOL_TYPE_ERASER &&
             hitsSelection(event.getX(index), event.getY(index))
@@ -593,8 +661,64 @@ class NoteCanvasView(context: Context) : FrameLayout(context) {
 
     private fun selectionBounds(): de.nibsync.model.geometry.Rect? {
         if (selection.isEmpty()) return null
-        val b = boundsOf(strokes.filter { it.id in selection } + textBoxes.filter { it.id in selection }) ?: return null
+        val selected = strokes.filter { it.id in selection } + textBoxes.filter { it.id in selection } +
+            files.filter { it.id in selection }.map { f ->
+                if (resizePointerId != NO_POINTER) scaledForPreview(f) else f
+            }
+        val b = boundsOf(selected) ?: return null
         return de.nibsync.model.geometry.Rect(b.left - SELECTION_PADDING_MM, b.top - SELECTION_PADDING_MM, b.right + SELECTION_PADDING_MM, b.bottom + SELECTION_PADDING_MM)
+    }
+
+    /** The selected picture or link, if it is the whole selection (then it can be scaled). */
+    private fun resizable(): FileElement? = files.singleOrNull { it.id in selection }?.takeIf { selection.size == 1 }
+
+    private fun scaledForPreview(f: FileElement): FileElement = when (f) {
+        is ImageElement -> f.copy(widthMm = f.widthMm * resizeFactor, heightMm = f.heightMm * resizeFactor)
+        is FileLink -> f.copy(widthMm = f.widthMm * resizeFactor, heightMm = f.heightMm * resizeFactor)
+    }
+
+    private fun handleRadiusPx() = HANDLE_RADIUS_DP * resources.displayMetrics.density
+
+    private fun hitsResizeHandle(x: Float, y: Float): Boolean {
+        if (resizable() == null) return false
+        val b = selectionBounds() ?: return false
+        val t = viewport.documentToView
+        val reach = handleRadiusPx() * 2
+        return abs(x - t.mapX(b.right)) <= reach && abs(y - t.mapY(b.bottom)) <= reach
+    }
+
+    private fun startResize(event: MotionEvent, pointerIndex: Int) {
+        val f = resizable() ?: return
+        val toDoc = viewport.viewToDocument
+        resizePointerId = event.getPointerId(pointerIndex)
+        resizeAnchorDist = hypot(toDoc.mapX(event.getX(pointerIndex)) - f.x, toDoc.mapY(event.getY(pointerIndex)) - f.y)
+        resizeFactor = 1f
+    }
+
+    private fun updateResize(event: MotionEvent, pointerIndex: Int) {
+        val f = resizable() ?: return
+        val toDoc = viewport.viewToDocument
+        val dist = hypot(toDoc.mapX(event.getX(pointerIndex)) - f.x, toDoc.mapY(event.getY(pointerIndex)) - f.y)
+        if (resizeAnchorDist > 0f) resizeFactor = maxOf(MIN_RESIZE_MM / f.widthMm, dist / resizeAnchorDist)
+        invalidate()
+    }
+
+    private fun finishResize(event: MotionEvent?, commit: Boolean) {
+        if (resizePointerId == NO_POINTER) return
+        if (commit && event != null) {
+            val index = event.findPointerIndex(resizePointerId)
+            if (index >= 0) updateResize(event, index)
+        }
+        val factor = resizeFactor
+        resizePointerId = NO_POINTER
+        resizeFactor = 1f
+        if (commit && abs(factor - 1f) > 0.01f) {
+            onSelectionResized(factor)?.let {
+                show(it.added, it.removed)
+                selection = it.added.mapTo(LinkedHashSet()) { e -> e.id }
+            }
+        }
+        invalidate()
     }
 
     private fun hitsSelection(x: Float, y: Float): Boolean {
@@ -637,7 +761,7 @@ class NoteCanvasView(context: Context) : FrameLayout(context) {
         textFrame = null
         invalidate()
         if (!commit) return
-        if (frame == null) onTextRequested(textStartX, textStartY, null) else onTextRequested(frame.left, frame.top, frame.width)
+        if (frame == null) onPageTapped(textStartX, textStartY) else onTextFrame(frame.left, frame.top, frame.width)
     }
 
     private fun startMove(event: MotionEvent, pointerIndex: Int) {
@@ -673,7 +797,12 @@ class NoteCanvasView(context: Context) : FrameLayout(context) {
         lassoPath?.let { path ->
             lassoPath = null
             lassoPointerId = NO_POINTER
-            if (commit) onLassoFinished(path.toFloatArray())
+            if (commit) {
+                // A lasso that hardly moved is a tap.
+                val tolerance = TEXT_TAP_TOLERANCE_DP * resources.displayMetrics.density / viewport.scale
+                val isTap = (path.indices step 2).all { abs(path[it] - path[0]) <= tolerance && abs(path[it + 1] - path[1]) <= tolerance }
+                if (isTap) onPageTapped(path[0], path[1]) else onLassoFinished(path.toFloatArray())
+            }
         }
         if (movePointerId != NO_POINTER) {
             if (commit && event != null) {
@@ -731,6 +860,11 @@ class NoteCanvasView(context: Context) : FrameLayout(context) {
     }
 
     private fun onMove(event: MotionEvent) {
+        if (resizePointerId != NO_POINTER) {
+            val index = event.findPointerIndex(resizePointerId)
+            if (index >= 0) updateResize(event, index)
+            return
+        }
         if (textPointerId != NO_POINTER) {
             val index = event.findPointerIndex(textPointerId)
             if (index >= 0) updateTextFrame(event, index)
@@ -764,6 +898,10 @@ class NoteCanvasView(context: Context) : FrameLayout(context) {
 
     private fun onPointerUp(event: MotionEvent) {
         val pointerId = event.getPointerId(event.actionIndex)
+        if (pointerId == resizePointerId) {
+            finishResize(event, commit = !InputRouting.isCanceled(event))
+            return
+        }
         if (pointerId == textPointerId) {
             finishTextFrame(event, commit = !InputRouting.isCanceled(event))
             return
@@ -781,13 +919,13 @@ class NoteCanvasView(context: Context) : FrameLayout(context) {
         }
         val id = drawingStrokeId ?: return
         if (event.getPointerId(event.actionIndex) != drawingPointerId) return
-        // A short tap of the pen on a text box opens the box instead of leaving a dot.
-        val tapped = tappedTextBox(event)
+        // A short tap of the pen on a text box, picture or link acts on it instead of leaving a dot.
+        val tapped = tappedElement(event)
         if (tapped != null) {
             inProgressStrokesView.cancelStroke(id, event)
             brushesInProgress.remove(id)
             clearDrawingPointer()
-            onTextRequested(tapped.first, tapped.second, null)
+            onPageTapped(tapped.first, tapped.second)
             return
         }
         if (InputRouting.isCanceled(event)) {
@@ -800,6 +938,7 @@ class NoteCanvasView(context: Context) : FrameLayout(context) {
     }
 
     private fun onCancel(event: MotionEvent) {
+        finishResize(null, commit = false)
         finishTextFrame(null, commit = false)
         finishErase(commit = false)
         finishSelectionGesture(null, commit = false)
@@ -810,16 +949,15 @@ class NoteCanvasView(context: Context) : FrameLayout(context) {
         clearDrawingPointer()
     }
 
-    /** Document point of a pen tap on a text box that just ended, or null if it was no such tap. */
-    private fun tappedTextBox(event: MotionEvent): Pair<Float, Float>? {
+    /** Document point of a pen tap on a text box, picture or link that just ended, or null. */
+    private fun tappedElement(event: MotionEvent): Pair<Float, Float>? {
         val first = capturedPoints.firstOrNull() ?: return null
         if (event.eventTime - strokeDownTime > TAP_MAX_MS) return null
         val tolerance = TEXT_TAP_TOLERANCE_DP * resources.displayMetrics.density / viewport.scale
         if (capturedPoints.any { abs(it.x - first.x) > tolerance || abs(it.y - first.y) > tolerance }) return null
-        return if (textBoxAt(first.x, first.y) != null) first.x to first.y else null
+        val onElement = textBoxes.any { it.bounds.contains(first.x, first.y) } || files.any { it.bounds.contains(first.x, first.y) }
+        return if (onElement) first.x to first.y else null
     }
-
-    private fun textBoxAt(x: Float, y: Float): TextBox? = textBoxes.lastOrNull { it.bounds.contains(x, y) }
 
     private fun clearDrawingPointer() {
         drawingPointerId = NO_POINTER
@@ -855,6 +993,8 @@ class NoteCanvasView(context: Context) : FrameLayout(context) {
         strokes = merged.sortedBy { it.layer.zIndex } // stable: keeps creation order per layer
         val knownBoxes = textBoxes.mapTo(HashSet()) { it.id }
         textBoxes = textBoxes.filter { it.id !in removed } + added.filterIsInstance<TextBox>().filter { it.id !in knownBoxes }
+        val knownFiles = files.mapTo(HashSet()) { it.id }
+        files = files.filter { it.id !in removed } + added.filterIsInstance<FileElement>().filter { it.id !in knownFiles }
         updateContentBottom()
         invalidate()
     }
@@ -889,6 +1029,12 @@ class NoteCanvasView(context: Context) : FrameLayout(context) {
 
         /** A text tool gesture shorter than this (dp on screen) is a tap. */
         const val TEXT_TAP_TOLERANCE_DP = 8f
+
+        /** Radius of the scale handle of a selected picture, dp. */
+        const val HANDLE_RADIUS_DP = 10f
+
+        /** Pictures are not scaled below this width while dragging the handle, mm. */
+        const val MIN_RESIZE_MM = 5f
 
         /** A pen touch at most this long (and short in distance) is a tap, not a dot. */
         const val TAP_MAX_MS = 300L

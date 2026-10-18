@@ -1,6 +1,7 @@
 package de.nibsync.canvas
 
 import de.nibsync.document.select.ClipContent
+import de.nibsync.model.DocumentId
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -13,7 +14,12 @@ class StrokeClipboard {
     private val _content = MutableStateFlow<ClipContent?>(null)
     val content: StateFlow<ClipContent?> = _content.asStateFlow()
 
-    fun set(content: ClipContent?) {
+    /** Document the content was copied from (its files are copied along when pasting elsewhere). */
+    var source: DocumentId? = null
+        private set
+
+    fun set(content: ClipContent?, source: DocumentId? = null) {
+        this.source = source
         _content.value = content
     }
 }

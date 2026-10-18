@@ -29,6 +29,22 @@ class FileDocumentRepositoryTest {
     private fun TestScope.repo() = FileDocumentRepository(fs, root, StandardTestDispatcher(testScheduler))
 
     @Test
+    fun assetsAreStoredByContent() = runTest {
+        val repo = repo()
+        repo.create(META)
+        val bytes = "hello".encodeToByteArray()
+        val sha = repo.putAsset(DOC, bytes)
+        assertEquals("2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824", sha)
+        assertTrue(repo.hasAsset(DOC, sha))
+        assertEquals("/data/documents/${DOC.value}/assets/$sha", repo.assetPath(DOC, sha).toString())
+        // Storing the same content again changes nothing.
+        assertEquals(sha, repo.putAsset(DOC, bytes))
+        assertEquals(listOf(sha), fs.list(root / DOC.value / "assets").map { it.name })
+        repo.delete(DOC)
+        assertTrue(!repo.hasAsset(DOC, sha))
+    }
+
+    @Test
     fun createListAndLoadMeta() = runTest {
         val repo = repo()
         assertEquals(emptyList(), repo.list())

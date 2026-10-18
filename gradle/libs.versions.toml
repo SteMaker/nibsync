@@ -21,6 +21,8 @@ coreKtx = "1.19.1"
 lifecycle = "2.11.0"
 composeBom = "2026.09.00"
 richeditor = "1.2.1"
+androidsvg = "1.4"
+exifinterface = "1.4.2"
 ink = "1.0.0"
 motionPrediction = "1.0.0"
 
@@ -48,6 +50,8 @@ androidx-activity-compose = { module = "androidx.activity:activity-compose", ver
 androidx-lifecycle-viewmodel-compose = { module = "androidx.lifecycle:lifecycle-viewmodel-compose", version.ref = "lifecycle" }
 androidx-lifecycle-runtime-compose = { module = "androidx.lifecycle:lifecycle-runtime-compose", version.ref = "lifecycle" }
 androidx-compose-bom = { module = "androidx.compose:compose-bom", version.ref = "composeBom" }
+androidsvg = { module = "com.caverock:androidsvg-aar", version.ref = "androidsvg" }
+androidx-exifinterface = { module = "androidx.exifinterface:exifinterface", version.ref = "exifinterface" }
 richeditor-compose = { module = "com.mohamedrejeb.richeditor:richeditor-compose", version.ref = "richeditor" }
 androidx-compose-ui = { module = "androidx.compose.ui:ui" }
 androidx-compose-ui-tooling = { module = "androidx.compose.ui:ui-tooling" }

@@ -3,6 +3,11 @@ package de.nibsync.document
 import de.nibsync.model.BackgroundSpec
 import de.nibsync.model.DeviceId
 import de.nibsync.model.ElementDraft
+import de.nibsync.model.FileElement
+import de.nibsync.model.FileLink
+import de.nibsync.model.FileLinkDraft
+import de.nibsync.model.ImageDraft
+import de.nibsync.model.ImageElement
 import de.nibsync.model.IdGenerator
 import de.nibsync.model.PageElement
 import de.nibsync.model.Quantization
@@ -85,6 +90,27 @@ class DocumentSession(
             widthMm = Quantization.quantizePosition(draft.widthMm),
             heightMm = Quantization.quantizePosition(draft.heightMm),
             text = draft.text,
+            createdAtEpochMs = clock(),
+            author = device,
+        )
+        is ImageDraft -> ImageElement(
+            id = ids.newStrokeId(),
+            x = Quantization.quantizePosition(draft.x),
+            y = Quantization.quantizePosition(draft.y),
+            widthMm = Quantization.quantizePosition(draft.widthMm),
+            heightMm = Quantization.quantizePosition(draft.heightMm),
+            asset = draft.asset,
+            createdAtEpochMs = clock(),
+            author = device,
+        )
+        is FileLinkDraft -> FileLink(
+            id = ids.newStrokeId(),
+            x = Quantization.quantizePosition(draft.x),
+            y = Quantization.quantizePosition(draft.y),
+            widthMm = Quantization.quantizePosition(draft.widthMm),
+            heightMm = Quantization.quantizePosition(draft.heightMm),
+            asset = draft.asset,
+            fileName = draft.fileName,
             createdAtEpochMs = clock(),
             author = device,
         )
@@ -191,12 +217,14 @@ class DocumentSession(
         pending.trySend(Pending.Write(op))
     }
 
-    /** One add op per element kind, strokes first. */
+    /** One add op per element kind: strokes, text boxes, files. */
     private fun emitAdd(elements: List<PageElement>) {
         val strokes = elements.filterIsInstance<Stroke>()
         val boxes = elements.filterIsInstance<TextBox>()
         if (strokes.isNotEmpty()) emit { DocumentOp.AddStrokes(it, strokes) }
         if (boxes.isNotEmpty()) emit { DocumentOp.AddTextBoxes(it, boxes) }
+        val files = elements.filterIsInstance<FileElement>()
+        if (files.isNotEmpty()) emit { DocumentOp.AddFiles(it, files) }
     }
 
     private fun applyEdit(edit: Edit, record: Boolean) {

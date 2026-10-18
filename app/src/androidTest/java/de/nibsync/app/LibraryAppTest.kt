@@ -219,6 +219,7 @@ class LibraryAppTest {
         createDocumentThroughTheDrawer()
         val view = { activity { it.canvasView } as NoteCanvasView }
         val before = view().showPageBreaks
+        compose.onNodeWithTag(NoteScreenTags.MORE).performClick()
         compose.onNodeWithTag(NoteScreenTags.PAGE_BREAKS).performClick()
         waitUntil("toggled") { view().showPageBreaks != before }
         assertThat(settings.showPageBreaks).isEqualTo(!before)

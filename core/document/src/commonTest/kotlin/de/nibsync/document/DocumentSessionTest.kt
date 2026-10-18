@@ -139,6 +139,27 @@ class DocumentSessionTest {
     }
 
     @Test
+    fun picturesAndLinksAreAddedAsFileOps() = runTest {
+        val s = session()
+        val asset = de.nibsync.model.Asset("a".repeat(64), de.nibsync.model.Asset.PNG)
+        val added = s.replaceElements(
+            emptySet(),
+            listOf(
+                de.nibsync.model.ImageDraft(10f, 10f, 40f, 30f, asset),
+                de.nibsync.model.FileLinkDraft(10f, 50f, 60f, 12f, asset.copy(mimeType = de.nibsync.model.Asset.PDF), "a.pdf"),
+            ),
+        )
+        s.flush()
+        assertEquals(listOf(DocumentOp.AddFiles::class), written.map { it::class })
+        assertEquals(added, s.state.value.files)
+        // Pictures lie behind highlighter and ink, links with the text.
+        assertEquals(de.nibsync.model.Layer.IMAGE, added[0].layer)
+        assertEquals(de.nibsync.model.Layer.TEXT, added[1].layer)
+        assertTrue(s.undo())
+        assertEquals(emptyList(), s.state.value.files)
+    }
+
+    @Test
     fun mixedSelectionMovesInOneStep() = runTest {
         val s = session()
         val stroke = s.addStroke(draft())

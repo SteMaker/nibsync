@@ -34,14 +34,35 @@ internal data class OpRecord(
     @SerialName("r") val removed: List<String> = emptyList(),
     @SerialName("b") val background: BackgroundRecord? = null,
     @SerialName("x") val textBoxes: List<TextBoxRecord> = emptyList(),
+    @SerialName("f") val files: List<FileElementRecord> = emptyList(),
 ) {
     companion object {
         const val TYPE_ADD = 1
         const val TYPE_REMOVE = 2
         const val TYPE_BACKGROUND = 3
         const val TYPE_ADD_TEXT = 4
+        const val TYPE_ADD_FILES = 5
     }
 }
+
+/**
+ * A picture ([kind] "image") or file link ("link"); position and size in position steps,
+ * [sha256] and [mimeType] name the asset file. Unknown kinds are skipped.
+ */
+@Serializable
+internal data class FileElementRecord(
+    @SerialName("k") val kind: String,
+    @SerialName("id") val id: String,
+    @SerialName("x") val x: Int,
+    @SerialName("y") val y: Int,
+    @SerialName("w") val width: Int,
+    @SerialName("h") val height: Int,
+    @SerialName("ts") val createdAtEpochMs: Long,
+    @SerialName("a") val author: String,
+    @SerialName("s") val sha256: String,
+    @SerialName("m") val mimeType: String,
+    @SerialName("n") val name: String? = null,
+)
 
 /** A text box; position and size in [de.nibsync.model.Quantization] position steps. */
 @Serializable

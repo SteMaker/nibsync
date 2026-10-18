@@ -8,6 +8,7 @@ class FakeRemoteStore : RemoteStore {
     val files = LinkedHashMap<String, ByteArray>()
     val dirs = linkedSetOf("")
     var requests = 0
+    var writes = 0
     var failNext: Exception? = null
 
     private fun check() {
@@ -45,6 +46,7 @@ class FakeRemoteStore : RemoteStore {
         check()
         require(parent(path) in dirs) { "409 parent of $path missing" }
         files[path] = bytes.copyOf()
+        writes++
     }
 
     override suspend fun makeDirectory(path: String) {
