@@ -12,12 +12,12 @@ val cloudProperties = Properties().apply {
 }
 
 android {
-    namespace = "de.nibsync.app"
+    namespace = "com.stemaker.nibsync.app"
     compileSdk = libs.versions.compileSdk.get().toInt()
     compileSdkMinor = libs.versions.compileSdkMinor.get().toInt()
 
     defaultConfig {
-        applicationId = "de.nibsync.app"
+        applicationId = "com.stemaker.nibsync"
         buildConfigField("String", "ONEDRIVE_CLIENT_ID", "\"${cloudProperties.getProperty("onedrive.clientId", "")}\"")
         minSdk = libs.versions.minSdk.get().toInt()
         targetSdk = libs.versions.targetSdk.get().toInt()

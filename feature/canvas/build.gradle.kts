@@ -5,7 +5,7 @@ plugins {
 }
 
 android {
-    namespace = "de.nibsync.canvas"
+    namespace = "com.stemaker.nibsync.canvas"
     compileSdk = libs.versions.compileSdk.get().toInt()
     compileSdkMinor = libs.versions.compileSdkMinor.get().toInt()
 

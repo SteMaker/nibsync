@@ -5,7 +5,7 @@ plugins {
 }
 
 android {
-    namespace = "de.nibsync.library.ui"
+    namespace = "com.stemaker.nibsync.library.ui"
     compileSdk = libs.versions.compileSdk.get().toInt()
     compileSdkMinor = libs.versions.compileSdkMinor.get().toInt()
 

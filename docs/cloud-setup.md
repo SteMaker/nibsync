@@ -10,7 +10,7 @@ the app win. Without an id the service shows "no client id".
 1. https://entra.microsoft.com → Applications → App registrations → New registration.
    - Name `NibSync`; supported accounts: any organisational directory and personal accounts.
    - Redirect URI: platform "Public client/native (mobile & desktop)", `http://localhost`.
-2. Authentication: add the redirect URI `de.nibsync.app://oauth` (Android); "Allow public
+2. Authentication: add the redirect URI `com.stemaker.nibsync://oauth` (Android); "Allow public
    client flows": yes.
 3. API permissions → Microsoft Graph → delegated: `Files.ReadWrite.AppFolder`,
    `offline_access` (NibSync then only sees its folder "Apps/NibSync").
@@ -26,7 +26,7 @@ the app win. Without an id the service shows "no client id".
    - "Desktop app" → client id and secret into the PC app's settings (or
      `google.desktop.clientId`, `google.desktop.clientSecret`); the secret is not secret for
      desktop apps by Google's design.
-   - "Android": package `de.nibsync.app`, SHA-1 of the signing certificate
+   - "Android": package `com.stemaker.nibsync`, SHA-1 of the signing certificate
      (`keytool -list -v -keystore ~/.android/debug.keystore -storepass android` for debug
      builds). Nothing to enter on the tablet: Google recognises the app by package and
      certificate. Google Drive is offered whenever Google Play services are present; without
@@ -39,6 +39,6 @@ the app win. Without an id the service shows "no client id".
 - PC: authorisation code with PKCE, the browser returns to a loopback address
   (`http://localhost:<port>` for Microsoft, `http://127.0.0.1:<port>` for Google). The refresh
   token is stored in `<data>/sync-account.properties` (owner-only).
-- Android, OneDrive: the same flow with the redirect `de.nibsync.app://oauth`
+- Android, OneDrive: the same flow with the redirect `com.stemaker.nibsync://oauth`
   (`OAuthRedirectActivity`). Android, Google: Google's authorisation API from Play services
   gives access tokens directly; no refresh token is stored.

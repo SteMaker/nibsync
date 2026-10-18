@@ -6,7 +6,7 @@ plugins {
 }
 
 android {
-    namespace = "de.nibsync.text"
+    namespace = "com.stemaker.nibsync.text"
     compileSdk = libs.versions.compileSdk.get().toInt()
     compileSdkMinor = libs.versions.compileSdkMinor.get().toInt()
 

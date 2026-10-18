@@ -4,7 +4,7 @@ plugins {
 }
 
 android {
-    namespace = "de.nibsync.media"
+    namespace = "com.stemaker.nibsync.media"
     compileSdk = libs.versions.compileSdk.get().toInt()
     compileSdkMinor = libs.versions.compileSdkMinor.get().toInt()
 

@@ -29,7 +29,7 @@
             </intent-filter>
         </activity>
 
-        <!-- Receives the OneDrive login answer (redirect URI de.nibsync.app://oauth). -->
+        <!-- Receives the OneDrive login answer (redirect URI com.stemaker.nibsync://oauth). -->
         <activity
             android:name=".sync.OAuthRedirectActivity"
             android:exported="true"
@@ -40,7 +40,7 @@
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />
-                <data android:scheme="de.nibsync.app" android:host="oauth" />
+                <data android:scheme="com.stemaker.nibsync" android:host="oauth" />
             </intent-filter>
         </activity>
 

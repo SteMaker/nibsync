@@ -52,7 +52,7 @@ kotlin {
 
 compose.desktop {
     application {
-        mainClass = "de.nibsync.desktop.MainKt"
+        mainClass = "com.stemaker.nibsync.desktop.MainKt"
         // Notes need little memory; without a cap the JVM may take a quarter of the RAM.
         jvmArgs += listOf("-Xmx1g")
         nativeDistributions {
