@@ -1,0 +1,51 @@
+# The JVM tests (core, sync, shared text, PC app) on Windows and Linux for every push and pull
+# request. The PC app is only tested on Linux locally; Windows differs in file locking, paths and
+# the desktop integration, which this catches. Android tests stay local (emulator, see CLAUDE.md);
+# the Nextcloud integration tests skip themselves without the local Docker server.
+name: Tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tests-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  jvm:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: JVM tests
+        shell: bash
+        run: >
+          ./gradlew --no-daemon --continue
+          :core:model:jvmTest :core:document:jvmTest :core:storage:jvmTest :core:shapes:jvmTest
+          :core:library:jvmTest :core:sync:jvmTest
+          :sync:webdav:jvmTest :sync:client:jvmTest :sync:cloud:jvmTest
+          :shared:text:jvmTest :desktop:jvmTest
+
+      - name: Test reports
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-reports-${{ runner.os }}
+          path: "**/build/reports/tests/"
