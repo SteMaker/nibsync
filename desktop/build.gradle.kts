@@ -59,7 +59,8 @@ compose.desktop {
             // Each format is built on its own system: .deb/.rpm on Linux, .msi on Windows.
             targetFormats(TargetFormat.Deb, TargetFormat.Rpm, TargetFormat.Msi)
             packageName = "nibsync"
-            packageVersion = "1.0.0"
+            // From the release tag (CI sets NIBSYNC_VERSION), else a local build.
+            packageVersion = providers.environmentVariable("NIBSYNC_VERSION").getOrElse("1.0.0")
             description = "Handwritten notes in books and chapters, synced with Nextcloud, OneDrive or Google Drive"
             vendor = "Stefan Macher"
             copyright = "© 2026 Stefan Macher"
