@@ -106,4 +106,52 @@ class TextEditingUiTest {
         assertThat(viewportScale).isGreaterThan(0f)
         runBlocking { container.closeAll() }
     }
+
+    @Test
+    fun homeAndArrowsKeepTheCursorOutOfListMarkers() = runComposeUiTest {
+        val root = tmp.root.toOkioPath()
+        val container = DesktopContainer(root)
+        val settings = Settings(container.fs, root / "settings.properties")
+        setContent { App(container, settings, Strings(german = true)) }
+        waitUntil(timeoutMillis = 5000) { onAllNodesWithTag("page").fetchSemanticsNodes().isNotEmpty() }
+        waitForIdle()
+        onNodeWithTag("page").performMouseInput { click(Offset(300f, 300f)) }
+        waitUntil(timeoutMillis = 5000) { onAllNodesWithTag(TextTags.EDITOR).fetchSemanticsNodes().isNotEmpty() }
+        val editor = onNodeWithTag(TextTags.EDITOR)
+        editor.performTextInput("Titel")
+        editor.performKeyInput { pressKey(Key.Enter) }
+        onNodeWithTag(TextTags.BULLETS).performClick()
+        waitForIdle()
+        editor.performTextInput("Punkt eins")
+        editor.performKeyInput { pressKey(Key.Enter) }
+        editor.performTextInput("Punkt zwei")
+        waitForIdle()
+        fun cursor(): Int = editor.fetchSemanticsNode().config[androidx.compose.ui.semantics.SemanticsProperties.TextSelectionRange].start
+        fun shown(): String = editor.fetchSemanticsNode().config[androidx.compose.ui.semantics.SemanticsProperties.EditableText].text
+        fun press(key: Key) {
+            editor.performKeyInput { pressKey(key) }
+            waitForIdle()
+        }
+        // "Titel • Punkt eins • Punkt zwei": Home goes behind the marker, not before it.
+        val textStart = shown().lastIndexOf("Punkt zwei")
+        press(Key.MoveHome)
+        assertThat(cursor()).isEqualTo(textStart)
+        // Left from there leaves the line (end of "Punkt eins"), right comes back behind the marker.
+        press(Key.DirectionLeft)
+        assertThat(cursor()).isEqualTo(shown().indexOf("Punkt eins") + "Punkt eins".length)
+        press(Key.DirectionRight)
+        assertThat(cursor()).isEqualTo(textStart)
+        // Typing there goes into the text, the list stays intact.
+        editor.performTextInput("X")
+        editor.performKeyInput { pressKey(Key.Escape) }
+        waitUntil(timeoutMillis = 5000) { onAllNodesWithTag(TextTags.EDITOR).fetchSemanticsNodes().isEmpty() }
+        val docId = settings.lastDocument ?: runBlocking { container.library.tree.value.documents.single().id.asDocumentId }
+        val box = runBlocking { container.openSession(docId) }.state.value.textBoxes.single()
+        assertThat(box.text.paragraphs.map { it.text to it.list }).containsExactly(
+            "Titel" to com.stemaker.nibsync.model.ListKind.NONE,
+            "Punkt eins" to com.stemaker.nibsync.model.ListKind.BULLET,
+            "XPunkt zwei" to com.stemaker.nibsync.model.ListKind.BULLET,
+        ).inOrder()
+        runBlocking { container.closeAll() }
+    }
 }

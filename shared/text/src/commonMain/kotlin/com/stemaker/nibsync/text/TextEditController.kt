@@ -14,6 +14,7 @@ import androidx.compose.ui.unit.sp
 import com.mohamedrejeb.richeditor.annotation.ExperimentalRichTextApi
 import com.mohamedrejeb.richeditor.model.RichTextState
 import com.mohamedrejeb.richeditor.paragraph.type.OrderedListStyleType
+import com.mohamedrejeb.richeditor.document.RichTextBlockType
 import com.stemaker.nibsync.model.RichText
 import com.stemaker.nibsync.model.withoutStrayBreaks
 import com.stemaker.nibsync.model.TextFont
@@ -94,10 +95,48 @@ class TextEditController internal constructor(internal val state: RichTextState)
             RichText.plain(state.annotatedString.text.replace("\r\n", "\n")).withoutStrayBreaks()
         }
 
+    /**
+     * Where the editor shows list markers ("• ", "1. ") as text: a cursor must not stand before
+     * or inside them. Each range spans the marker; its end is where the paragraph's text begins.
+     */
+    internal fun listMarkers(): List<IntRange> {
+        val shown = state.annotatedString.text
+        val blocks = runCatching { state.toRichTextDocument().blocks }.getOrNull() ?: return emptyList()
+        val out = ArrayList<IntRange>()
+        var pos = 0
+        for (block in blocks) {
+            if (pos > shown.length) break
+            var marker = 0
+            if (block.type is RichTextBlockType.ListItem) {
+                // The marker is one token and a space, e.g. "• " or "12. ".
+                marker = LIST_MARKER.matchAt(shown, pos)?.value?.length ?: 0
+                if (marker > 0) out += pos until pos + marker
+            }
+            // Paragraphs are separated by one character.
+            pos += marker + block.text.length + 1
+        }
+        return out
+    }
+
+    /**
+     * Where the cursor goes instead of [offset] if that is before or inside a list marker:
+     * behind the marker (Home, a click, an arrow from the left), or to the end of the previous
+     * paragraph when it stepped left from the start of the text ([from] is the previous
+     * position), so it can still leave the line to the left.
+     */
+    internal fun cursorOutsideMarkers(offset: Int, from: Int?): Int {
+        val marker = listMarkers().firstOrNull { offset in it } ?: return offset
+        val textStart = marker.last + 1
+        val steppedLeft = from == textStart && offset < from
+        return if (steppedLeft && marker.first > 0) marker.first - 1 else textStart
+    }
+
     /** Changes whenever the content changes; read it in a snapshot flow to save while typing. */
     val contentVersion: Any get() = state.annotatedString
 
     companion object {
+        private val LIST_MARKER = Regex("\\S+ ")
+
         fun create(initial: RichText): TextEditController {
             val state = RichTextState()
             // Lists as the page renderer draws them (RichTextLayout).

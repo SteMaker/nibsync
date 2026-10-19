@@ -4,7 +4,9 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.withFrameNanos
+import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalDensity
@@ -24,6 +26,19 @@ fun TextBoxEditor(controller: TextEditController, widthMm: Float, pxPerMm: Float
         // Let the text field apply its own cursor update first.
         repeat(2) { withFrameNanos { } }
         controller.reapplyPendingStyle()
+    }
+    // Keep the cursor out of list markers (Home, arrow keys, clicks): they are text to the
+    // editor but not to the user.
+    LaunchedEffect(controller) {
+        var previous: TextRange? = null
+        snapshotFlow { controller.state.selection }.collect { sel ->
+            val before = previous
+            val start = controller.cursorOutsideMarkers(sel.start, before?.start)
+            val end = if (sel.collapsed) start else controller.cursorOutsideMarkers(sel.end, before?.end)
+            val fixed = TextRange(start, end)
+            previous = fixed
+            if (fixed != sel) controller.state.selection = fixed
+        }
     }
     val density = TextMetrics.densityFor(pxPerMm)
     CompositionLocalProvider(LocalDensity provides density) {
