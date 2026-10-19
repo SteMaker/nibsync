@@ -244,10 +244,16 @@ come from the file dialog, the clipboard (Ctrl+V) or drag & drop; placement is t
 `MediaFiles` (core/model), EXIF rotation is applied with Skia. Pen pressure from graphics
 tablets is used when the platform reports a stylus (AWT usually reports a mouse).
 
+Library on the PC (`LibraryPane`, `LibraryDialogs`): "+" creates a book with its sync account;
+a right click on an entry offers a new chapter or document inside (name, DIN width,
+orientation, pattern, like the tablet), rename and delete. The tree keeps the shown document's
+book and chapters open.
+
 Sync on the PC is the same `SyncController` as on Android (module `sync/client`; the apps
-provide a `SyncHost` with their open documents and a `SyncConfigStore`). The PC keeps the
-login in `<data>/sync-account.properties` (owner-only permissions), logs in with Login Flow v2
-in the default browser, syncs on start, every 10 s, after changes and once more on close.
+provide a `SyncHost` with their open documents and an `AccountStore`). The PC keeps the
+accounts in `<data>/sync-account.properties` (owner-only permissions), logs in with Login Flow
+v2 or OAuth in the default browser, syncs on start, every 10 s, after changes and once more on
+close.
 
 Text on the PC (`NoteController`): a click on free paper starts a text box at the click
 (120 mm wide or up to the margin), a click on a box opens it, Esc closes it; Ctrl+B/I format,
@@ -269,4 +275,5 @@ boxes the same way.
 | H ✅ | Undo/redo | tool bar buttons, Ctrl+Z / Ctrl+Y / Ctrl+Shift+Z; history per open document and app run |
 | M ✅ | Pictures (PNG, JPEG, SVG) with scaling, PDFs as links | `FileElement`, assets, `feature/media`, insert menu |
 | T ✅ | Text boxes with formatting (bold, italic, font, size, lists) | `TextBox`, `feature/text`, text tool in `NoteScreen` |
+| S ✅ | Several sync accounts (Nextcloud, OneDrive, Google Drive), one per book | `sync/client` (`SyncAccount`, `BookAccounts`), `BookScope` in `SyncEngine`; settings "Accounts" |
 | I ✅ | Lined/grid/dotted backgrounds | `BackgroundPattern`, `DocumentOp.SetBackground`, `ui/background`, `NoteCanvasView.drawPattern` |

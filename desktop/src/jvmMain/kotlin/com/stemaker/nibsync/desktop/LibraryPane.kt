@@ -39,7 +39,11 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.pointer.PointerEventType
+import androidx.compose.ui.input.pointer.isSecondaryPressed
+import androidx.compose.ui.input.pointer.onPointerEvent
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -69,6 +73,10 @@ fun treeRows(tree: LibraryTree, expanded: Set<NodeId>): List<TreeRow> {
 object LibraryTags {
     const val SETTINGS = "library-settings"
     const val NEW_BOOK = "library-new-book"
+    const val NEW_CHAPTER = "library-new-chapter"
+    const val NEW_DOCUMENT = "library-new-document"
+    const val RENAME = "library-rename"
+    const val DELETE = "library-delete"
     fun row(title: String) = "library-row-$title"
     fun bookMenu(title: String) = "library-book-menu-$title"
     fun assign(account: String) = "library-assign-$account"
@@ -81,13 +89,28 @@ class BookAccountsUi(
     val onAssign: (NodeId, AccountId) -> Unit,
 )
 
-/** The library as a tree: click folders to open them, documents to show them. */
+/** What the context menu of a library entry asks for. */
+sealed interface LibraryAction {
+    data class NewChapter(val parent: LibraryNode) : LibraryAction
+    data class NewDocument(val parent: LibraryNode) : LibraryAction
+    data class Rename(val node: LibraryNode) : LibraryAction
+    data class Delete(val node: LibraryNode) : LibraryAction
+}
+
+/**
+ * The library as a tree: click folders to open them, documents to show them; a right click
+ * opens the entry's menu (new chapter or document inside, rename, delete). [expanded] is kept
+ * by the caller, so new entries can be revealed.
+ */
+@OptIn(ExperimentalComposeUiApi::class)
 @Composable
 fun LibraryPane(
     tree: LibraryTree,
     current: NodeId?,
     strings: Strings,
     onOpen: (NodeId) -> Unit,
+    expanded: Set<NodeId>,
+    onExpandedChange: (Set<NodeId>) -> Unit,
     modifier: Modifier = Modifier,
     /** Shown below the tree, e.g. the sync status. */
     footer: @Composable () -> Unit = {},
@@ -95,9 +118,11 @@ fun LibraryPane(
     onSettings: (() -> Unit)? = null,
     /** Starts creating a book; null hides the button. */
     onNewBook: (() -> Unit)? = null,
+    /** The entries' context menu; null: no menu. */
+    onAction: ((LibraryAction) -> Unit)? = null,
     bookAccounts: BookAccountsUi? = null,
 ) {
-    var expanded by remember { mutableStateOf(current?.let { c -> tree.pathTo(c).dropLast(1).map { it.id }.toSet() } ?: emptySet()) }
+    var menuFor by remember { mutableStateOf<NodeId?>(null) }
     Column(modifier.fillMaxHeight().width(280.dp).background(MaterialTheme.colorScheme.surfaceContainerLow)) {
         Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 4.dp, top = 4.dp, bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
             Text(strings.library, style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
@@ -116,37 +141,58 @@ fun LibraryPane(
             items(treeRows(tree, expanded), key = { it.node.id.value }) { row ->
                 val node = row.node
                 val selected = node.id == current
-                Row(
-                    Modifier
-                        .fillMaxWidth()
-                        .background(if (selected) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surfaceContainerLow)
-                        .clickable {
-                            if (node.isFolder) {
-                                expanded = if (node.id in expanded) expanded - node.id else expanded + node.id
-                            } else {
-                                onOpen(node.id)
+                Box {
+                    Row(
+                        Modifier
+                            .fillMaxWidth()
+                            .background(if (selected) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surfaceContainerLow)
+                            .onPointerEvent(PointerEventType.Press) { event ->
+                                if (onAction != null && event.buttons.isSecondaryPressed) menuFor = node.id
                             }
+                            .clickable {
+                                if (node.isFolder) {
+                                    onExpandedChange(if (node.id in expanded) expanded - node.id else expanded + node.id)
+                                } else {
+                                    onOpen(node.id)
+                                }
+                            }
+                            .padding(start = (12 + row.depth * 18).dp, end = 12.dp, top = 6.dp, bottom = 6.dp)
+                            .testTag(LibraryTags.row(node.title)),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    ) {
+                        if (node.isFolder && row.hasChildren) {
+                            Icon(if (row.expanded) Icons.Filled.ExpandMore else Icons.AutoMirrored.Filled.KeyboardArrowRight, null, Modifier.size(18.dp))
+                        } else {
+                            Spacer(Modifier.width(18.dp))
                         }
-                        .padding(start = (12 + row.depth * 18).dp, end = 12.dp, top = 6.dp, bottom = 6.dp)
-                        .testTag(LibraryTags.row(node.title)),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                ) {
-                    if (node.isFolder && row.hasChildren) {
-                        Icon(if (row.expanded) Icons.Filled.ExpandMore else Icons.AutoMirrored.Filled.KeyboardArrowRight, null, Modifier.size(18.dp))
-                    } else {
-                        Spacer(Modifier.width(18.dp))
+                        val icon = when {
+                            !node.isFolder -> Icons.Filled.Description
+                            node.parent == null -> Icons.AutoMirrored.Filled.MenuBook
+                            else -> Icons.Filled.Folder
+                        }
+                        Icon(icon, null, Modifier.size(18.dp))
+                        Text(node.title, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
+                        if (node.parent == null && bookAccounts != null) {
+                            Spacer(Modifier.weight(1f))
+                            BookAccountLabel(node, bookAccounts, strings)
+                        }
                     }
-                    val icon = when {
-                        !node.isFolder -> Icons.Filled.Description
-                        node.parent == null -> Icons.AutoMirrored.Filled.MenuBook
-                        else -> Icons.Filled.Folder
-                    }
-                    Icon(icon, null, Modifier.size(18.dp))
-                    Text(node.title, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
-                    if (node.parent == null && bookAccounts != null) {
-                        Spacer(Modifier.weight(1f))
-                        BookAccountLabel(node, bookAccounts, strings)
+                    if (onAction != null) {
+                        DropdownMenu(expanded = menuFor == node.id, onDismissRequest = { menuFor = null }) {
+                            @Composable
+                            fun entry(label: String, tag: String, action: LibraryAction) = DropdownMenuItem(
+                                text = { Text(label) },
+                                onClick = { menuFor = null; onAction(action) },
+                                modifier = Modifier.testTag(tag),
+                            )
+                            if (node.isFolder) {
+                                entry(strings.newChapter, LibraryTags.NEW_CHAPTER, LibraryAction.NewChapter(node))
+                                entry(strings.newDocument, LibraryTags.NEW_DOCUMENT, LibraryAction.NewDocument(node))
+                            }
+                            entry(strings.rename, LibraryTags.RENAME, LibraryAction.Rename(node))
+                            entry(strings.delete, LibraryTags.DELETE, LibraryAction.Delete(node))
+                        }
                     }
                 }
             }

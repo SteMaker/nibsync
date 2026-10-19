@@ -79,8 +79,9 @@ fun App(
             val tree by container.library.tree.collectAsState()
             var showSettings by remember { mutableStateOf(false) }
             var newBook by remember { mutableStateOf(false) }
+            var libraryAction by remember { mutableStateOf<LibraryAction?>(null) }
             // Dialogs get the keys (pasting into a field must not paste into the document).
-            SideEffect { keys.blocked = (showSettings && sync != null) || newBook }
+            SideEffect { keys.blocked = (showSettings && sync != null) || newBook || libraryAction != null }
             val appScope = rememberCoroutineScope()
             val accounts = sync?.accounts?.collectAsState()?.value.orEmpty()
             val bookAccounts = sync?.books?.map?.collectAsState()?.value.orEmpty()
@@ -102,6 +103,50 @@ fun App(
             // One clipboard for the window, so elements can be copied between documents.
             val clipboard = remember { DesktopClipboard() }
             var documentId by remember { mutableStateOf<DocumentId?>(null) }
+            var expanded by remember { mutableStateOf(emptySet<NodeId>()) }
+            // The shown document's book and chapters stay open in the tree.
+            LaunchedEffect(documentId, ready) {
+                val id = documentId ?: return@LaunchedEffect
+                expanded = expanded + tree.pathTo(NodeId(id.value)).dropLast(1).map { it.id }
+            }
+            fun open(id: NodeId) {
+                documentId = id.asDocumentId
+                settings.lastDocument = id.asDocumentId
+            }
+            when (val action = libraryAction) {
+                null -> Unit
+                is LibraryAction.NewChapter -> LibraryNameDialog(strings.newChapter, strings, placeholder = strings.newChapter, onDismiss = { libraryAction = null }) { title ->
+                    libraryAction = null
+                    appScope.launch {
+                        container.library.createFolder(action.parent.id, title)
+                        expanded = expanded + action.parent.id
+                    }
+                }
+                is LibraryAction.NewDocument -> NewDocumentDialog(strings, onDismiss = { libraryAction = null }) { title, format, background ->
+                    libraryAction = null
+                    appScope.launch {
+                        val doc = container.library.createDocument(action.parent.id, title, format, background)
+                        expanded = expanded + action.parent.id
+                        open(doc.id)
+                    }
+                }
+                is LibraryAction.Rename -> LibraryNameDialog(strings.rename, strings, placeholder = action.node.title, initial = action.node.title, onDismiss = { libraryAction = null }) { title ->
+                    libraryAction = null
+                    appScope.launch { container.library.rename(action.node.id, title) }
+                }
+                is LibraryAction.Delete -> DeleteEntryDialog(action.node, strings, onDismiss = { libraryAction = null }) {
+                    libraryAction = null
+                    val gone = tree.descendantsOf(action.node.id) + action.node
+                    val docs = gone.filter { !it.isFolder }.map { it.id.asDocumentId }.toSet()
+                    // Leave a document that is deleted before its session closes.
+                    if (documentId in docs) documentId = tree.documents.map { it.id.asDocumentId }.firstOrNull { it !in docs }
+                    appScope.launch {
+                        container.beforeDocumentsDeleted(docs)
+                        container.library.delete(action.node.id)
+                        expanded = expanded - gone.map { it.id }.toSet()
+                    }
+                }
+            }
             LaunchedEffect(ready, tree) {
                 if (!ready) return@LaunchedEffect
                 val docs = tree.documents.map { it.id.asDocumentId }
@@ -114,10 +159,10 @@ fun App(
                     tree = tree,
                     current = documentId?.let { NodeId(it.value) },
                     strings = strings,
-                    onOpen = {
-                        documentId = it.asDocumentId
-                        settings.lastDocument = it.asDocumentId
-                    },
+                    onOpen = ::open,
+                    expanded = expanded,
+                    onExpandedChange = { expanded = it },
+                    onAction = { libraryAction = it },
                     footer = { if (sync != null) SyncStatusLine(sync, strings) },
                     onSettings = if (sync != null) ({ showSettings = true }) else null,
                     onNewBook = { newBook = true },
