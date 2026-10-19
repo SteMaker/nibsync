@@ -17,6 +17,7 @@ import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performImeAction
 import androidx.compose.ui.test.assertTextContains
+import androidx.compose.ui.test.assertIsNotFocused
 import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.performTextReplacement
 import androidx.compose.ui.test.performScrollTo
@@ -370,6 +371,17 @@ class LibraryAppTest {
             waitUntil("path updated") {
                 runCatching { compose.onNodeWithTag(com.stemaker.nibsync.text.HeaderTags.PATH).assertTextContains("$bookTitle › Kapitel 1 › Protokoll") }.isSuccess
             }
+
+            // A tap on the page ends typing (no cursor stays) and renames, too.
+            compose.onNodeWithTag(title).performClick()
+            compose.onNodeWithTag(title).performTextReplacement("Planung")
+            compose.onNodeWithTag(NoteScreenTags.CANVAS).performTouchInput { click(androidx.compose.ui.geometry.Offset(width * 0.6f, height * 0.3f)) }
+            waitUntil("renamed by leaving") { tree()[docId]?.title == "Planung" }
+            compose.onNodeWithTag(title).assertIsNotFocused()
+
+            // A rename in the library shows on the page.
+            runBlocking { app.container.library.rename(docId, "Ideen") }
+            waitUntil("title follows the library") { runCatching { compose.onNodeWithTag(title).assertTextContains("Ideen") }.isSuccess }
 
             // Settings: the date off, then the title.
             openDrawer()

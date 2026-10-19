@@ -50,6 +50,8 @@ import com.stemaker.nibsync.document.DocumentSession
 import com.stemaker.nibsync.library.NodeId
 import com.stemaker.nibsync.library.OpenTodo
 import com.stemaker.nibsync.text.DocumentHeader
+import com.stemaker.nibsync.text.DocumentHeaderState
+import com.stemaker.nibsync.text.endsTitleEditing
 import com.stemaker.nibsync.text.DocumentPath
 import com.stemaker.nibsync.library.TodoCollector
 import androidx.compose.runtime.mutableIntStateOf
@@ -289,6 +291,7 @@ private fun DocumentPane(
     }
     val editing by controller.text.editing.collectAsState()
     val titleEditing = remember(id) { mutableStateOf(false) }
+    val headerState = remember(id) { DocumentHeaderState() }
     val todoEdit by controller.todo.editing.collectAsState()
     val tools by controller.tools.collectAsState()
     val selection by controller.selection.collectAsState()
@@ -379,6 +382,7 @@ private fun DocumentPane(
                     .weight(1f)
                     .fillMaxHeight()
                     .clipToBounds()
+                    .endsTitleEditing(headerState)
                     .dragAndDropTarget(
                         shouldStartDragAndDrop = { true },
                         target = remember(controller) {
@@ -424,6 +428,7 @@ private fun DocumentPane(
                         showDate = header.showCreated,
                         viewport = viewport,
                         onRename = header.onRename,
+                        state = headerState,
                         onEditingChange = { titleEditing.value = it },
                     )
                 }

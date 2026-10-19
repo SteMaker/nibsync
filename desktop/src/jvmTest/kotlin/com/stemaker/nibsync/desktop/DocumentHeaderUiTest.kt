@@ -2,6 +2,11 @@ package com.stemaker.nibsync.desktop
 
 import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.assertTextContains
+import androidx.compose.ui.test.assertIsFocused
+import androidx.compose.ui.test.assertIsNotFocused
+import androidx.compose.ui.test.click
+import androidx.compose.ui.test.performMouseInput
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performClick
@@ -44,6 +49,21 @@ class DocumentHeaderUiTest {
         waitUntil(timeoutMillis = 5000) { container.library.tree.value[doc.id]?.title == "Besprechung" }
         waitUntil(timeoutMillis = 5000) { onAllNodesWithTag(LibraryTags.row("Besprechung")).fetchSemanticsNodes().isNotEmpty() }
         onNodeWithTag(HeaderTags.PATH).assertTextContains("Notizen › Besprechung")
+        onNodeWithTag(HeaderTags.TITLE).assertIsNotFocused()
+
+        // A click on the page also ends typing (no cursor stays behind) and renames.
+        onNodeWithTag(HeaderTags.TITLE).performClick()
+        onNodeWithTag(HeaderTags.TITLE).assertIsFocused()
+        onNodeWithTag(HeaderTags.TITLE).performTextClearance()
+        onNodeWithTag(HeaderTags.TITLE).performTextInput("Planung")
+        onNodeWithTag("page").performMouseInput { click(Offset(400f, 500f)) }
+        waitUntil(timeoutMillis = 5000) { container.library.tree.value[doc.id]?.title == "Planung" }
+        onNodeWithTag(HeaderTags.TITLE).assertIsNotFocused()
+        waitUntil(timeoutMillis = 5000) { onAllNodesWithTag(LibraryTags.row("Planung")).fetchSemanticsNodes().isNotEmpty() }
+
+        // A rename in the library shows on the page.
+        runBlocking { container.library.rename(doc.id, "Ideen") }
+        waitUntil(timeoutMillis = 5000) { runCatching { onNodeWithTag(HeaderTags.TITLE).assertTextContains("Ideen") }.isSuccess }
 
         // The settings switch title and date separately.
         onNodeWithTag(LibraryTags.SETTINGS).performClick()

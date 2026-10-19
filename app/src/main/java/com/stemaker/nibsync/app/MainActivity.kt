@@ -59,6 +59,8 @@ import com.stemaker.nibsync.canvas.CanvasViewModel
 import com.stemaker.nibsync.canvas.NoteCanvasView
 import com.stemaker.nibsync.canvas.NoteScreen
 import com.stemaker.nibsync.text.DocumentHeader
+import com.stemaker.nibsync.text.DocumentHeaderState
+import com.stemaker.nibsync.text.endsTitleEditing
 import com.stemaker.nibsync.text.DocumentPath
 import com.stemaker.nibsync.canvas.TickedTodo
 import com.stemaker.nibsync.canvas.TodoListScreen
@@ -389,6 +391,7 @@ class MainActivity : ComponentActivity() {
                 }
             }
             val scope = rememberCoroutineScope()
+            val headerState = remember(docId) { DocumentHeaderState() }
             NoteScreen(
                 vm,
                 Modifier.safeDrawingPadding(),
@@ -410,9 +413,11 @@ class MainActivity : ComponentActivity() {
                         showDate = header.showCreated,
                         viewport = viewport,
                         onRename = header.onRename,
+                        state = headerState,
                     )
                     DocumentPath(header.path, Modifier.align(Alignment.BottomEnd))
                 },
+                pageModifier = Modifier.endsTitleEditing(headerState),
                 onCanvasCreated = { view ->
                     canvasView = view
                     // Opened from the list of to-dos: show the to-do.

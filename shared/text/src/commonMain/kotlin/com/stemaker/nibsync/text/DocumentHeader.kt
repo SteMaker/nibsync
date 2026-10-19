@@ -19,6 +19,18 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.PointerEventType
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.LayoutCoordinates
+import androidx.compose.ui.layout.boundsInRoot
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalDensity
@@ -40,6 +52,36 @@ object HeaderTags {
     const val TITLE = "document-title"
     const val DATE = "document-date"
     const val PATH = "document-path"
+}
+
+/**
+ * Lets the page end typing in the title: a press anywhere outside the title (see
+ * [endsTitleEditing]) leaves the field, which stores the new title. Without it the field would
+ * keep the focus (and the cursor) when one goes on writing on the page.
+ */
+class DocumentHeaderState {
+    internal var titleBounds: Rect? = null
+    internal var editing = false
+    internal var endEditing: () -> Unit = {}
+}
+
+/**
+ * On the box that holds the page and the [DocumentHeader]: a press outside the title ends typing
+ * in it. Only watches (initial pass), so the page still gets the press.
+ */
+fun Modifier.endsTitleEditing(state: DocumentHeaderState): Modifier {
+    var coordinates: LayoutCoordinates? = null
+    return onGloballyPositioned { coordinates = it }.pointerInput(state) {
+        awaitPointerEventScope {
+            while (true) {
+                val event = awaitPointerEvent(PointerEventPass.Initial)
+                if (event.type != PointerEventType.Press || !state.editing) continue
+                val c = coordinates ?: continue
+                val p = c.localToRoot(event.changes.first().position)
+                if (state.titleBounds?.contains(p) != true) state.endEditing()
+            }
+        }
+    }
 }
 
 /** Where the header sits on the page and how large it is, in mm. */
@@ -64,6 +106,7 @@ fun DocumentHeader(
     showDate: Boolean,
     viewport: Viewport,
     onRename: ((String) -> Unit)?,
+    state: DocumentHeaderState,
     modifier: Modifier = Modifier,
     /** The title is being typed (true) or not anymore; e.g. to keep shortcuts away from it. */
     onEditingChange: (Boolean) -> Unit = {},
@@ -88,6 +131,7 @@ fun DocumentHeader(
                 // A rename from elsewhere (library, other device) shows up unless one is typing.
                 LaunchedEffect(title) { if (!focused) value = TextFieldValue(title) }
                 val focusManager = LocalFocusManager.current
+                state.endEditing = { focusManager.clearFocus() }
                 fun commit() {
                     val text = value.text.trim()
                     if (text.isEmpty()) value = TextFieldValue(title) else if (text != title) rename?.invoke(text)
@@ -102,11 +146,22 @@ fun DocumentHeader(
                     keyboardActions = KeyboardActions(onDone = { focusManager.clearFocus() }),
                     modifier = Modifier
                         .widthIn(min = 40.dp, max = maxWidth)
+                        .onGloballyPositioned { state.titleBounds = it.boundsInRoot() }
+                        // Enter ends typing on a hardware keyboard, too.
+                        .onPreviewKeyEvent {
+                            if (it.key == Key.Enter || it.key == Key.NumPadEnter) {
+                                if (it.type == KeyEventType.KeyDown) focusManager.clearFocus()
+                                true
+                            } else {
+                                false
+                            }
+                        }
                         .onFocusChanged {
                             if (focused && !it.isFocused) commit()
                             if (!focused && it.isFocused) value = value.copy(selection = TextRange(value.text.length))
                             if (focused != it.isFocused) onEditingChange(it.isFocused)
                             focused = it.isFocused
+                            state.editing = it.isFocused
                         }
                         .testTag(HeaderTags.TITLE),
                 )

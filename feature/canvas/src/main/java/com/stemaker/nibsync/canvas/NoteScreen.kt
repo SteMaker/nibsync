@@ -156,6 +156,8 @@ fun NoteScreen(
     onCanvasCreated: (NoteCanvasView) -> Unit = {},
     /** Extra content over the page, placed with its viewport (e.g. the document title). */
     pageOverlay: @Composable androidx.compose.foundation.layout.BoxScope.(Viewport) -> Unit = {},
+    /** Added to the box holding the page and [pageOverlay], e.g. to watch presses on the page. */
+    pageModifier: Modifier = Modifier,
 ) {
     val document by viewModel.document.collectAsStateWithLifecycle()
     val tools by viewModel.tools.collectAsStateWithLifecycle()
@@ -228,7 +230,7 @@ fun NoteScreen(
             onDeleteTodo = viewModel::deleteTodo,
         )
         Row(Modifier.fillMaxSize()) {
-            Box(Modifier.weight(1f).fillMaxHeight().clipToBounds()) {
+            Box(Modifier.weight(1f).fillMaxHeight().clipToBounds().then(pageModifier)) {
                 AndroidView(
                     modifier = Modifier.fillMaxSize().testTag(NoteScreenTags.CANVAS),
                     factory = { context ->
