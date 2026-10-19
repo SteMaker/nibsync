@@ -264,19 +264,51 @@ class LibraryAppTest {
     fun libraryShowsOnlyTheSyncStatusTheSettingsHoldTheActions() {
         openDrawer()
         compose.onNodeWithTag(com.stemaker.nibsync.app.sync.SyncTags.STATUS_LINE).assertExists()
-        compose.onNodeWithTag(com.stemaker.nibsync.app.sync.SyncTags.SYNC_NOW).assertDoesNotExist()
+        compose.onNodeWithTag(com.stemaker.nibsync.app.sync.SyncTags.ADD_ACCOUNT).assertDoesNotExist()
         compose.onNodeWithTag(LibraryTags.SETTINGS).performClick()
-        if (app.sync.config.value == null) {
-            for (service in com.stemaker.nibsync.sync.client.SyncService.entries) {
-                compose.onNodeWithTag(com.stemaker.nibsync.app.sync.SyncTags.service(service)).assertExists()
-            }
-        } else {
-            compose.onNodeWithTag(com.stemaker.nibsync.app.sync.SyncTags.SYNC_NOW).assertExists()
-            compose.onNodeWithTag(com.stemaker.nibsync.app.sync.SyncTags.SIGN_OUT).assertExists()
+        for (account in app.sync.accounts.value) {
+            compose.onNodeWithTag(com.stemaker.nibsync.app.sync.SyncTags.account(account.name)).assertExists()
+        }
+        compose.onNodeWithTag(com.stemaker.nibsync.app.sync.SyncTags.ADD_ACCOUNT).performScrollTo().performClick()
+        for (service in com.stemaker.nibsync.sync.client.SyncService.entries) {
+            compose.onNodeWithTag(com.stemaker.nibsync.app.sync.SyncTags.service(service)).assertExists()
         }
         compose.onNodeWithTag(SettingsTags.PAGE_BREAKS).assertExists()
         compose.onNodeWithTag(SettingsTags.DRAW_WITH_FINGER).assertExists()
         compose.onNodeWithTag(SettingsTags.CLOSE).performClick()
         compose.onNodeWithTag(SettingsTags.SCREEN).assertDoesNotExist()
+    }
+
+    @Test
+    fun newBookChoosesItsAccountOrStaysOnTheDevice() = runBlocking<Unit> {
+        // A throw-away account nobody can reach: it is only chosen, never synced (sync paused).
+        val account = checkNotNull(app.sync.addAccount("Testkonto", com.stemaker.nibsync.sync.client.NextcloudConfig(
+            com.stemaker.nibsync.sync.webdav.NextcloudAccount("http://127.0.0.1:9", "x", "y"), "nibsync-test-" + UUID.randomUUID().toString().take(6))))
+        val previousChoice = settings.lastBookAccount
+        try {
+            openDrawer()
+            compose.onNodeWithTag(LibraryTags.NEW_BOOK).performClick()
+            compose.onNodeWithTag(LibraryTags.NAME_FIELD).performTextInput(bookTitle)
+            compose.onNodeWithTag(LibraryTags.account("Testkonto · Nextcloud")).performClick()
+            compose.onNodeWithTag(LibraryTags.CONFIRM).performClick()
+            waitUntil("book") { tree().books.any { it.title == bookTitle } }
+            val book = tree().books.first { it.title == bookTitle }
+            waitUntil("assigned") { app.sync.books.accountOf(book.id) == account.id }
+
+            // A second book stays on the device; the menu of a local book offers the account.
+            compose.onNodeWithTag(LibraryTags.NEW_BOOK).performClick()
+            compose.onNodeWithTag(LibraryTags.NAME_FIELD).performTextInput("$bookTitle lokal")
+            compose.onNodeWithTag(LibraryTags.account(null)).performClick()
+            compose.onNodeWithTag(LibraryTags.CONFIRM).performClick()
+            waitUntil("local book") { tree().books.any { it.title == "$bookTitle lokal" } }
+            val local = tree().books.first { it.title == "$bookTitle lokal" }
+            assertThat(app.sync.books.accountOf(local.id)).isNull()
+            row("$bookTitle lokal").performTouchInput { longClick() }
+            compose.onNodeWithTag(LibraryTags.assign("Testkonto · Nextcloud")).performClick()
+            waitUntil("local book assigned") { app.sync.books.accountOf(local.id) == account.id }
+        } finally {
+            app.sync.removeAccount(account.id)
+            settings.lastBookAccount = previousChoice
+        }
     }
 }

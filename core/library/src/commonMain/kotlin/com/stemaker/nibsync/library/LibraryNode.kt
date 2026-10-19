@@ -63,3 +63,17 @@ data class LibraryNode(
         return if (deleted || other.deleted) newer.copy(deleted = true) else newer
     }
 }
+
+/**
+ * The book (top-level folder) [id] belongs to, following parents through [nodes] (tombstones
+ * included). If the chain breaks, the id of the missing ancestor is returned.
+ */
+fun bookOf(id: NodeId, nodes: Map<NodeId, LibraryNode>): NodeId {
+    var current = id
+    val seen = HashSet<NodeId>()
+    while (seen.add(current)) {
+        val parent = nodes[current]?.parent ?: return current
+        current = parent
+    }
+    return current
+}

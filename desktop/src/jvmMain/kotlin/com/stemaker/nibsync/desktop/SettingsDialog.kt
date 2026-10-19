@@ -32,7 +32,7 @@ fun SettingsDialog(
     sync: SyncController,
     strings: Strings,
     openBrowser: (String) -> Boolean,
-    connect: (SyncService) -> (() -> Unit)?,
+    cloudLogin: suspend (SyncService) -> com.stemaker.nibsync.sync.client.SyncConfig,
     onClose: () -> Unit,
 ) {
     Dialog(onDismissRequest = onClose) {
@@ -40,7 +40,7 @@ fun SettingsDialog(
             Column(Modifier.padding(24.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(16.dp)) {
                 Text(strings.settings, style = MaterialTheme.typography.headlineSmall)
                 Text(strings.settingsSync, style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary)
-                SyncSettings(sync, strings, openBrowser, connect)
+                AccountSettings(sync, strings, openBrowser, cloudLogin)
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End, verticalAlignment = Alignment.CenterVertically) {
                     TextButton(onClick = onClose, modifier = Modifier.testTag(SettingsTags.CLOSE)) { Text(strings.close) }
                 }

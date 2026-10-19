@@ -23,4 +23,7 @@
     <string name="landscape">Landscape</string>
     <string name="width_info">%1$d mm wide, endless length</string>
     <string name="settings">Settings</string>
+    <string name="sync_with">Sync with</string>
+    <string name="local_only">Only on this device</string>
+    <string name="sync_book_with">Sync with “%1$s”</string>
 </resources>

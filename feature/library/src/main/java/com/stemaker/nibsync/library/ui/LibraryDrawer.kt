@@ -3,6 +3,7 @@ package com.stemaker.nibsync.library.ui
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -38,6 +39,7 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -81,9 +83,29 @@ object LibraryTags {
     const val RENAME = "library-rename"
     const val DELETE = "library-delete"
     fun row(title: String) = "library-row-$title"
+    /** Account choice of a new book; null: only on this device. */
+    fun account(label: String?) = "library-account-${label ?: "local"}"
+    fun assign(label: String) = "library-assign-$label"
     fun paper(size: PaperSize) = "library-paper-${size.name}"
     fun orientation(o: Orientation) = "library-orientation-${o.name}"
 }
+
+/** A sync account a book can belong to, as the app names it. */
+data class AccountChoice(val key: String, val label: String)
+
+/**
+ * Sync accounts of books (this module knows nothing about syncing): every book belongs to one
+ * account or stays on the device. [accountOf] gives a book's account key.
+ */
+class BookSyncUi(
+    val accounts: List<AccountChoice>,
+    val accountOf: (NodeId) -> String?,
+    /** Preselected account of a new book. */
+    val initial: String?,
+    val onCreated: (book: NodeId, account: String?) -> Unit,
+    /** A book that was only on this device syncs with the account from now on. */
+    val onAssign: (book: NodeId, account: String) -> Unit,
+)
 
 private sealed interface Dialog {
     data object NewBook : Dialog
@@ -108,6 +130,7 @@ fun LibraryDrawer(
     footer: @Composable () -> Unit = {},
     /** Opens the app settings; null hides the gear button. */
     onSettings: (() -> Unit)? = null,
+    bookSync: BookSyncUi? = null,
 ) {
     val tree by viewModel.tree.collectAsStateWithLifecycle()
     val expanded by viewModel.expanded.collectAsStateWithLifecycle()
@@ -172,12 +195,23 @@ fun LibraryDrawer(
                             contentDescription = null,
                         )
                         Spacer(Modifier.width(12.dp))
-                        Text(
-                            node.title,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                            fontWeight = if (node.id == currentDocument) FontWeight.Bold else FontWeight.Normal,
-                        )
+                        Column(Modifier.weight(1f)) {
+                            Text(
+                                node.title,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                fontWeight = if (node.id == currentDocument) FontWeight.Bold else FontWeight.Normal,
+                            )
+                            if (node.parent == null && bookSync != null) {
+                                val key = bookSync.accountOf(node.id)
+                                Text(
+                                    bookSync.accounts.firstOrNull { it.key == key }?.label ?: stringResource(R.string.local_only),
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    maxLines = 1,
+                                )
+                            }
+                        }
                     }
                     DropdownMenu(expanded = menuFor == node.id, onDismissRequest = { menuFor = null }) {
                         DropdownMenuItem(
@@ -190,6 +224,15 @@ fun LibraryDrawer(
                             onClick = { menuFor = null; dialog = Dialog.Delete(node) },
                             modifier = Modifier.testTag(LibraryTags.DELETE),
                         )
+                        if (node.parent == null && bookSync != null && bookSync.accountOf(node.id) == null) {
+                            for (account in bookSync.accounts) {
+                                DropdownMenuItem(
+                                    text = { Text(stringResource(R.string.sync_book_with, account.label)) },
+                                    onClick = { menuFor = null; bookSync.onAssign(node.id, account.key) },
+                                    modifier = Modifier.testTag(LibraryTags.assign(account.label)),
+                                )
+                            }
+                        }
                     }
                 }
             }
@@ -221,10 +264,18 @@ fun LibraryDrawer(
 
     when (val d = dialog) {
         null -> Unit
-        Dialog.NewBook -> NameDialog(stringResource(R.string.new_book), placeholder = stringResource(R.string.default_book_name), onDismiss = { dialog = null }) { name ->
-            scope.launch { viewModel.createBook(name) }
+        Dialog.NewBook -> NameDialog(
+            stringResource(R.string.new_book),
+            placeholder = stringResource(R.string.default_book_name),
+            onDismiss = { dialog = null },
+            accounts = bookSync?.let { it.accounts to it.initial },
+        ) { name, account ->
+            scope.launch {
+                val book = viewModel.createBook(name)
+                bookSync?.onCreated(book.id, account)
+            }
         }
-        Dialog.NewFolder -> NameDialog(stringResource(R.string.new_folder), placeholder = stringResource(R.string.default_folder_name), onDismiss = { dialog = null }) { name ->
+        Dialog.NewFolder -> NameDialog(stringResource(R.string.new_folder), placeholder = stringResource(R.string.default_folder_name), onDismiss = { dialog = null }) { name, _ ->
             scope.launch { viewModel.createFolder(name) }
         }
         Dialog.NewDocument -> NewDocumentDialog(onDismiss = { dialog = null }) { name, format, background ->
@@ -235,7 +286,7 @@ fun LibraryDrawer(
                 }
             }
         }
-        is Dialog.Rename -> NameDialog(stringResource(R.string.rename), placeholder = d.node.title, initial = d.node.title, onDismiss = { dialog = null }) { name ->
+        is Dialog.Rename -> NameDialog(stringResource(R.string.rename), placeholder = d.node.title, initial = d.node.title, onDismiss = { dialog = null }) { name, _ ->
             scope.launch { viewModel.rename(d.node.id, name) }
         }
         is Dialog.Delete -> AlertDialog(
@@ -254,30 +305,55 @@ fun LibraryDrawer(
 
 /**
  * Asks for a name. The field starts empty (except when renaming) with [placeholder] as hint,
- * which is also used when nothing is entered. The keyboard opens right away.
+ * which is also used when nothing is entered. The keyboard opens right away. With [accounts]
+ * (choices and the preselected key) it also asks which account the new book syncs with.
  */
 @Composable
-private fun NameDialog(title: String, placeholder: String, initial: String = "", onDismiss: () -> Unit, onConfirm: (String) -> Unit) {
+private fun NameDialog(
+    title: String,
+    placeholder: String,
+    initial: String = "",
+    onDismiss: () -> Unit,
+    accounts: Pair<List<AccountChoice>, String?>? = null,
+    onConfirm: (String, String?) -> Unit,
+) {
     // Renaming starts with the whole old name selected, so typing replaces it.
     var name by remember { mutableStateOf(TextFieldValue(initial, TextRange(0, initial.length))) }
+    var account by remember { mutableStateOf(accounts?.let { (list, key) -> key?.takeIf { k -> list.any { it.key == k } } }) }
     val focus = remember { FocusRequester() }
     LaunchedEffect(Unit) { focus.requestFocus() }
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(title) },
         text = {
-            OutlinedTextField(
-                value = name,
-                onValueChange = { name = it },
-                singleLine = true,
-                label = { Text(stringResource(R.string.name)) },
-                placeholder = { Text(placeholder) },
-                modifier = Modifier.focusRequester(focus).testTag(LibraryTags.NAME_FIELD),
-            )
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedTextField(
+                    value = name,
+                    onValueChange = { name = it },
+                    singleLine = true,
+                    label = { Text(stringResource(R.string.name)) },
+                    placeholder = { Text(placeholder) },
+                    modifier = Modifier.focusRequester(focus).testTag(LibraryTags.NAME_FIELD),
+                )
+                if (accounts != null) {
+                    Text(stringResource(R.string.sync_with), style = MaterialTheme.typography.labelLarge)
+                    @Composable
+                    fun choice(key: String?, label: String, tag: String) = Row(
+                        Modifier.fillMaxWidth().selectable(selected = account == key, onClick = { account = key }).testTag(tag),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        RadioButton(selected = account == key, onClick = null)
+                        Spacer(Modifier.width(8.dp))
+                        Text(label)
+                    }
+                    for (a in accounts.first) choice(a.key, a.label, LibraryTags.account(a.label))
+                    choice(null, stringResource(R.string.local_only), LibraryTags.account(null))
+                }
+            }
         },
         confirmButton = {
             TextButton(
-                onClick = { onDismiss(); onConfirm(name.text.ifBlank { placeholder }) },
+                onClick = { onDismiss(); onConfirm(name.text.ifBlank { placeholder }, account) },
                 modifier = Modifier.testTag(LibraryTags.CONFIRM),
             ) { Text(stringResource(R.string.ok)) }
         },

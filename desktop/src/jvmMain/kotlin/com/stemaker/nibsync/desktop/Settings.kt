@@ -18,6 +18,14 @@ class Settings(private val fs: FileSystem, private val file: Path) {
             save()
         }
 
+    /** Account chosen for the last new book (null: only on this PC). */
+    var lastBookAccount: String?
+        get() = props.getProperty(LAST_BOOK_ACCOUNT)
+        set(value) {
+            if (value == null) props.remove(LAST_BOOK_ACCOUNT) else props.setProperty(LAST_BOOK_ACCOUNT, value)
+            save()
+        }
+
     private fun save() {
         file.parent?.let(fs::createDirectories)
         fs.write(file) { props.store(outputStream(), "NibSync") }
@@ -25,5 +33,6 @@ class Settings(private val fs: FileSystem, private val file: Path) {
 
     private companion object {
         const val LAST_DOCUMENT = "lastDocument"
+        const val LAST_BOOK_ACCOUNT = "lastBookAccount"
     }
 }

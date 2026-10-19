@@ -44,7 +44,6 @@ import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.stemaker.nibsync.app.media.MediaActions
-import com.stemaker.nibsync.app.sync.CloudConnectDialog
 import com.stemaker.nibsync.app.sync.SyncStatusLine
 import com.stemaker.nibsync.app.sync.googleAuthorize
 import com.stemaker.nibsync.app.sync.googleConfig
@@ -61,7 +60,11 @@ import com.stemaker.nibsync.canvas.NoteCanvasView
 import com.stemaker.nibsync.canvas.NoteScreen
 import com.stemaker.nibsync.document.DocumentSession
 import com.stemaker.nibsync.library.NodeId
+import com.stemaker.nibsync.library.ui.AccountChoice
+import com.stemaker.nibsync.library.ui.BookSyncUi
 import com.stemaker.nibsync.library.ui.LibraryDrawer
+import com.stemaker.nibsync.sync.client.AccountId
+import com.stemaker.nibsync.sync.client.displayName
 import com.stemaker.nibsync.library.ui.LibraryViewModel
 import com.stemaker.nibsync.model.DocumentId
 import com.stemaker.nibsync.shapes.GeometricShapeRecognizer
@@ -164,22 +167,10 @@ class MainActivity : ComponentActivity() {
                 var showPageBreaks by remember { mutableStateOf(settings.showPageBreaks) }
                 var drawWithFinger by remember { mutableStateOf(settings.drawWithFinger) }
                 var showSettings by remember { mutableStateOf(false) }
-                var connecting by remember { mutableStateOf<SyncService?>(null) }
-                connecting?.let { service ->
-                    CloudConnectDialog(
-                        service,
-                        login = { cloudLogin(service) },
-                        onDismiss = { connecting = null },
-                        onConnected = {
-                            connecting = null
-                            sync.configure(it)
-                        },
-                    )
-                }
                 if (showSettings) {
                     SettingsScreen(
                         sync = sync,
-                        connect = { service -> if (sync.available(service)) ({ connecting = service }) else null },
+                        cloudLogin = ::cloudLogin,
                         showPageBreaks = showPageBreaks,
                         onShowPageBreaks = {
                             showPageBreaks = it
@@ -220,6 +211,19 @@ class MainActivity : ComponentActivity() {
                     scope.launch { drawerState.close() }
                 }
 
+                val accounts by sync.accounts.collectAsStateWithLifecycle()
+                val bookAccounts by sync.books.map.collectAsStateWithLifecycle()
+                val bookSync = BookSyncUi(
+                    accounts = accounts.map { AccountChoice(it.id.value, "${it.name} · ${it.config.service.displayName}") },
+                    accountOf = { bookAccounts[it]?.value },
+                    initial = settings.lastBookAccount,
+                    onCreated = { book, account ->
+                        settings.lastBookAccount = account
+                        if (account != null) sync.assignBook(book, AccountId(account))
+                    },
+                    onAssign = { book, account -> sync.assignBook(book, AccountId(account)) },
+                )
+
                 ModalNavigationDrawer(
                     drawerState = drawerState,
                     // No swipe-to-open: it would fight with writing near the left edge.
@@ -233,6 +237,7 @@ class MainActivity : ComponentActivity() {
                                 modifier = Modifier.safeDrawingPadding(),
                                 footer = { SyncStatusLine(sync) },
                                 onSettings = { showSettings = true },
+                                bookSync = bookSync,
                             )
                         }
                     },

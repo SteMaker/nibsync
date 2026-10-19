@@ -78,27 +78,26 @@ fun App(
             }
             val tree by container.library.tree.collectAsState()
             var showSettings by remember { mutableStateOf(false) }
-            var connecting by remember { mutableStateOf<com.stemaker.nibsync.sync.client.SyncService?>(null) }
+            var newBook by remember { mutableStateOf(false) }
             // Dialogs get the keys (pasting into a field must not paste into the document).
-            SideEffect { keys.blocked = (showSettings || connecting != null) && sync != null }
-            if (showSettings && sync != null) {
-                SettingsDialog(
-                    sync, strings, openBrowser,
-                    connect = { service -> if (sync.available(service)) ({ connecting = service }) else null },
-                    onClose = { showSettings = false },
-                )
+            SideEffect { keys.blocked = (showSettings && sync != null) || newBook }
+            val appScope = rememberCoroutineScope()
+            val accounts = sync?.accounts?.collectAsState()?.value.orEmpty()
+            val bookAccounts = sync?.books?.map?.collectAsState()?.value.orEmpty()
+            var lastAccount by remember { mutableStateOf(settings.lastBookAccount?.let { runCatching { com.stemaker.nibsync.sync.client.AccountId(it) }.getOrNull() }) }
+            if (newBook) {
+                NewBookDialog(strings, accounts, initial = lastAccount, onDismiss = { newBook = false }) { title, account ->
+                    newBook = false
+                    lastAccount = account
+                    settings.lastBookAccount = account?.value
+                    appScope.launch {
+                        val book = container.library.createBook(title)
+                        if (account != null) sync?.assignBook(book.id, account)
+                    }
+                }
             }
-            val service = connecting
-            if (service != null && sync != null) {
-                CloudConnectDialog(
-                    service, strings,
-                    login = { cloudLogin(service) },
-                    onDismiss = { connecting = null },
-                    onConnected = {
-                        connecting = null
-                        sync.configure(it)
-                    },
-                )
+            if (showSettings && sync != null) {
+                SettingsDialog(sync, strings, openBrowser, cloudLogin = cloudLogin, onClose = { showSettings = false })
             }
             // One clipboard for the window, so elements can be copied between documents.
             val clipboard = remember { DesktopClipboard() }
@@ -121,6 +120,8 @@ fun App(
                     },
                     footer = { if (sync != null) SyncStatusLine(sync, strings) },
                     onSettings = if (sync != null) ({ showSettings = true }) else null,
+                    onNewBook = { newBook = true },
+                    bookAccounts = sync?.let { BookAccountsUi(accounts, { id -> bookAccounts[id] }, it::assignBook) },
                 )
                 VerticalDivider()
                 Box(Modifier.weight(1f).fillMaxSize(), contentAlignment = Alignment.Center) {

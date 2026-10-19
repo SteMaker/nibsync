@@ -2,6 +2,8 @@ package com.stemaker.nibsync.sync
 
 import com.stemaker.nibsync.document.DocumentOp
 import com.stemaker.nibsync.library.Library
+import com.stemaker.nibsync.library.LibraryNode
+import com.stemaker.nibsync.library.bookOf
 import com.stemaker.nibsync.library.NodeId
 import com.stemaker.nibsync.model.DeviceId
 import com.stemaker.nibsync.model.DocumentId
@@ -31,6 +33,30 @@ data class SyncReport(
 )
 
 /**
+ * Which books an engine syncs, when several remote places (accounts) share one library. Every
+ * book belongs to one account or to none (only on this device).
+ */
+interface BookScope {
+    /** The book is synced with this engine's remote. */
+    fun owns(book: NodeId): Boolean
+
+    /** The book belongs to some account (this or another). */
+    fun isAssigned(book: NodeId): Boolean
+
+    /** Books that arrived from this engine's remote and are new on this device: they now belong to it. */
+    suspend fun adopt(books: Set<NodeId>)
+
+    companion object {
+        /** A single remote for the whole library. */
+        val ALL = object : BookScope {
+            override fun owns(book: NodeId) = true
+            override fun isAssigned(book: NodeId) = true
+            override suspend fun adopt(books: Set<NodeId>) = Unit
+        }
+    }
+}
+
+/**
  * Synchronises the local documents and library with a remote folder of the same layout:
  *
  * ```
@@ -45,7 +71,8 @@ data class SyncReport(
  * Assets are named by their content and never change, so they are copied both ways as they
  * are; a device uploads its new assets before its log, so ops never arrive before their files.
  * Library entries are merged with [com.stemaker.nibsync.library.LibraryNode.mergedWith] (latest change
- * wins, deleted stays deleted). Only documents that are part of the library are synced.
+ * wins, deleted stays deleted). Only documents that are part of the library are synced, and
+ * only those of the books in [scope].
  *
  * Runs are serialised; call [sync] as often as convenient. Etags make an unchanged state cost
  * a single request.
@@ -60,6 +87,7 @@ class SyncEngine(
     private val io: CoroutineDispatcher,
     /** Called before documents are deleted because another device deleted them. */
     private val beforeDocumentsDeleted: suspend (Set<DocumentId>) -> Unit = {},
+    private val scope: BookScope = BookScope.ALL,
 ) {
     private val lock = Mutex()
     private var foldersReady = false
@@ -70,7 +98,7 @@ class SyncEngine(
         ensureFolders()
 
         val root = remote.list("") ?: error("Sync folder vanished")
-        val nodes = library.allNodes()
+        val nodes = mine(library.allNodes())
         val nodeHash = nodes.associate { it.id.value to library.encode(it).contentHashCode() }
         val pendingNodes = nodes.filter { state.nodeHashes[it.id.value] != nodeHash[it.id.value] }
         val syncedDocs = nodes.filter { !it.isFolder && !it.deleted }.map { it.id.asDocumentId }
@@ -85,21 +113,32 @@ class SyncEngine(
 
         // 1. Library: fetch changed entries, merge, then upload what differs from the server.
         val libraryListing = remote.list(LIBRARY) ?: RemoteListing("", emptyList())
-        val received = ArrayList<com.stemaker.nibsync.library.LibraryNode>()
+        val fetched = ArrayList<Pair<String, LibraryNode>>()
         val libraryEtags = state.libraryEtags.toMutableMap()
         val nodeHashes = state.nodeHashes.toMutableMap()
         for (entry in libraryListing.entries) {
             if (entry.isDirectory || !entry.name.endsWith(".json") || libraryEtags[entry.name] == entry.etag) continue
             val bytes = remote.read("$LIBRARY/${entry.name}")
             downloads++
-            library.decode(bytes)?.let {
-                received += it
-                nodeHashes[it.id.value] = library.encode(it).contentHashCode()
-            }
-            libraryEtags[entry.name] = entry.etag
+            val node = library.decode(bytes)
+            if (node == null) libraryEtags[entry.name] = entry.etag else fetched += entry.etag to node
+        }
+        // Entries of books that belong elsewhere (another account, or only this device) are
+        // left alone, and read again only if they change.
+        val local = library.allNodes().associateBy { it.id }
+        val known = local + fetched.associate { it.second.id to it.second }
+        val adopted = fetched.map { bookOf(it.second.id, known) }
+            .filterTo(HashSet()) { !scope.owns(it) && !scope.isAssigned(it) && it !in local }
+        if (adopted.isNotEmpty()) scope.adopt(adopted)
+        val received = ArrayList<LibraryNode>()
+        for ((etag, node) in fetched) {
+            if (!scope.owns(bookOf(node.id, known))) continue
+            received += node
+            nodeHashes[node.id.value] = library.encode(node).contentHashCode()
+            libraryEtags["${node.id.value}.json"] = etag
         }
         val libraryChanged = library.mergeRemote(received, beforeDocumentsDeleted).isNotEmpty()
-        for (node in library.allNodes()) {
+        for (node in mine(library.allNodes())) {
             val encoded = library.encode(node)
             if (nodeHashes[node.id.value] == encoded.contentHashCode()) continue
             remote.write("$LIBRARY/${node.id.value}.json", encoded)
@@ -110,7 +149,7 @@ class SyncEngine(
         state = state.copy(libraryEtags = libraryEtags, nodeHashes = nodeHashes)
 
         // 2. Documents.
-        val allNodes = library.allNodes()
+        val allNodes = mine(library.allNodes())
         val deletedDocs = allNodes.filter { !it.isFolder && it.deleted }.map { it.id.value }.toSet()
         val liveDocs = allNodes.filter { !it.isFolder && !it.deleted }.map { it.id.asDocumentId }
         val documentsListing = remote.list(DOCUMENTS) ?: RemoteListing("", emptyList())
@@ -218,6 +257,13 @@ class SyncEngine(
             uploads = uploads,
             downloads = downloads,
         )
+    }
+
+    /** The nodes of the books this engine syncs. */
+    private fun mine(nodes: List<LibraryNode>): List<LibraryNode> {
+        if (scope === BookScope.ALL) return nodes
+        val byId = nodes.associateBy { it.id }
+        return nodes.filter { scope.owns(bookOf(it.id, byId)) }
     }
 
     private suspend fun ensureFolders() {

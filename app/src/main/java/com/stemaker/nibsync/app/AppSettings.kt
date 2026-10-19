@@ -20,7 +20,13 @@ class AppSettings(context: Context) {
         get() = prefs.getBoolean(KEY_DRAW_WITH_FINGER, false)
         set(value) = prefs.edit { putBoolean(KEY_DRAW_WITH_FINGER, value) }
 
+    /** Account chosen for the last new book (null: only on this device). */
+    var lastBookAccount: String?
+        get() = prefs.getString(KEY_LAST_BOOK_ACCOUNT, null)
+        set(value) = prefs.edit { putString(KEY_LAST_BOOK_ACCOUNT, value) }
+
     private companion object {
+        const val KEY_LAST_BOOK_ACCOUNT = "lastBookAccount"
         const val KEY_DRAW_WITH_FINGER = "drawWithFinger"
         const val KEY_LAST_DOCUMENT = "lastDocument"
         const val KEY_PAGE_BREAKS = "showPageBreaks"

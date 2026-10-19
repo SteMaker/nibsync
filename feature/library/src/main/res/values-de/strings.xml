@@ -23,4 +23,7 @@
     <string name="landscape">Querformat</string>
     <string name="width_info">%1$d mm breit, endlos lang</string>
     <string name="settings">Einstellungen</string>
+    <string name="sync_with">Synchronisieren mit</string>
+    <string name="local_only">Nur auf diesem Gerät</string>
+    <string name="sync_book_with">Mit „%1$s“ synchronisieren</string>
 </resources>

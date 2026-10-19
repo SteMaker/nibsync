@@ -27,7 +27,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
-import com.stemaker.nibsync.app.sync.SyncSettings
+import com.stemaker.nibsync.app.sync.AccountSettings
 import com.stemaker.nibsync.sync.client.SyncController
 import com.stemaker.nibsync.sync.client.SyncService
 
@@ -43,7 +43,7 @@ object SettingsTags {
 @Composable
 fun SettingsScreen(
     sync: SyncController,
-    connect: (SyncService) -> (() -> Unit)?,
+    cloudLogin: suspend (SyncService) -> com.stemaker.nibsync.sync.client.SyncConfig,
     showPageBreaks: Boolean,
     onShowPageBreaks: (Boolean) -> Unit,
     drawWithFinger: Boolean,
@@ -69,7 +69,7 @@ fun SettingsScreen(
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
                 Column(Modifier.widthIn(max = 640.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Section(stringResource(R.string.settings_sync)) { SyncSettings(sync, connect) }
+                    Section(stringResource(R.string.settings_sync)) { AccountSettings(sync, cloudLogin) }
                     HorizontalDivider()
                     Section(stringResource(R.string.settings_display)) {
                         SwitchLine(stringResource(R.string.page_breaks), showPageBreaks, onShowPageBreaks, SettingsTags.PAGE_BREAKS)

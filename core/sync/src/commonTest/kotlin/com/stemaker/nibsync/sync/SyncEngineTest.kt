@@ -41,7 +41,7 @@ class SyncEngineTest {
         val documents = FileDocumentRepository(fs, root / "documents", io)
         val library = Library(FileLibraryRepository(fs, root / "library", io), documents, IdGenerator(Random(name.hashCode())), clock = { now++ })
         val closedForDeletion = mutableListOf<Set<DocumentId>>()
-        val engine = SyncEngine(fs, root / "documents", root / "sync-state.json", library, id, remote, io) { closedForDeletion += it }
+        val engine = SyncEngine(fs, root / "documents", root / "sync-state.json", library, id, remote, io, beforeDocumentsDeleted = { closedForDeletion += it })
         private val sessions = HashMap<DocumentId, DocumentSession>()
 
         suspend fun session(doc: DocumentId): DocumentSession = sessions.getOrPut(doc) {

@@ -6,6 +6,9 @@ import com.stemaker.nibsync.model.DeviceId
 import com.stemaker.nibsync.model.DocumentId
 import com.stemaker.nibsync.sync.RemoteStore
 import com.stemaker.nibsync.sync.SyncEngine
+import com.stemaker.nibsync.sync.BookScope
+import com.stemaker.nibsync.library.NodeId
+import kotlinx.coroutines.CancellationException
 import com.stemaker.nibsync.sync.webdav.AuthenticationException
 import com.stemaker.nibsync.sync.webdav.NextcloudAccount
 import com.stemaker.nibsync.sync.webdav.WebDavRemoteStore
@@ -26,7 +29,7 @@ import okio.FileSystem
 import okio.Path
 import java.security.MessageDigest
 
-/** The cloud services NibSync can sync with; one at a time. Persisted by name: never rename. */
+/** The cloud services NibSync can sync with. Persisted by name: never rename. */
 enum class SyncService { NEXTCLOUD, ONEDRIVE, GOOGLE_DRIVE }
 
 /** Where and as whom to sync. */
@@ -75,12 +78,6 @@ sealed interface SyncStatus {
     data class Failed(val message: String, val loginInvalid: Boolean) : SyncStatus
 }
 
-/** Keeps the login between app runs (platform specific: app-private storage). */
-interface SyncConfigStore {
-    fun load(): SyncConfig?
-    fun save(config: SyncConfig?)
-}
-
 /** What the sync needs from the app: its files, library and open documents. */
 interface SyncHost {
     val fs: FileSystem
@@ -108,25 +105,27 @@ interface SyncHost {
 }
 
 /**
- * Runs the sync while the app is in use: right away, every [INTERVAL_MS], shortly after local
- * changes and once more when the app goes to the background or closes. Ops received from
- * other devices go straight into open documents.
+ * Runs the sync of all accounts while the app is in use: right away, every [INTERVAL_MS],
+ * shortly after local changes and once more when the app goes to the background or closes.
+ * Each account syncs only its books ([BookAccounts]); books of no account stay on this device.
+ * Ops received from other devices go straight into open documents.
  */
 @OptIn(FlowPreview::class)
 class SyncController(
     private val host: SyncHost,
-    private val store: SyncConfigStore,
+    private val store: AccountStore,
     private val scope: CoroutineScope,
     /** The OAuth clients this build has, for OneDrive and Google Drive. */
     val clients: CloudClients = CloudClients(),
-    /** On Android: access tokens for Google Drive from Google's sign-in. */
-    private val googleTokens: com.stemaker.nibsync.sync.cloud.AccessTokens? = null,
+    /** On Android: access tokens for a Google account (by email) from Google's sign-in. */
+    private val googleTokens: ((String) -> com.stemaker.nibsync.sync.cloud.AccessTokens)? = null,
     /** The remote store for a configuration (tests replace it). */
     remoteFor: ((SyncConfig) -> RemoteStore)? = null,
     private val clock: () -> Long = System::currentTimeMillis,
 ) {
-    private val remoteFor: (SyncConfig) -> RemoteStore =
-        remoteFor ?: { CloudStores.storeFor(it, clients, googleTokens, ::rememberLogin) }
+    private val remoteFor: (SyncConfig) -> RemoteStore = remoteFor ?: { config ->
+        CloudStores.storeFor(config, clients, (config as? GoogleDriveConfig)?.let { googleTokens?.invoke(it.user) }) { rememberLogin(it) }
+    }
 
     /** Which services can be connected in this build. */
     fun available(service: SyncService): Boolean = when (service) {
@@ -135,42 +134,83 @@ class SyncController(
         SyncService.GOOGLE_DRIVE -> clients.googleOnDevice || clients.googleDesktop != null
     }
 
-    private val _status = MutableStateFlow<SyncStatus>(SyncStatus.NotConfigured)
-    val status: StateFlow<SyncStatus> = _status.asStateFlow()
+    private val _accounts = MutableStateFlow(AccountsCodec.fromMap(store.load()))
+    val accounts: StateFlow<List<SyncAccount>> = _accounts.asStateFlow()
 
-    private val _config = MutableStateFlow(store.load())
-    val config: StateFlow<SyncConfig?> = _config.asStateFlow()
+    private val _statuses = MutableStateFlow<Map<AccountId, SyncStatus>>(emptyMap())
 
-    /**
-     * While true no sync runs. Instrumented tests set it so they never sync test data with
-     * the account configured on the device. Not persisted.
-     */
+    /** Status per account (missing: not synced yet in this app run). */
+    val statuses: StateFlow<Map<AccountId, SyncStatus>> = _statuses.asStateFlow()
+
+    val books = BookAccounts(host.fs, host.stateDir / BOOK_ACCOUNTS_FILE)
+
+    /** Tests pause the sync while they change the library behind its back. */
     @Volatile
-    var paused: Boolean = false
+    var paused = false
 
-    private var engine: SyncEngine? = null
+    private val engines = HashMap<AccountId, SyncEngine>()
     private val runLock = Mutex()
     private var loop: Job? = null
 
     init {
-        rebuildEngine()
+        rebuildEngines()
         scope.launch {
             host.localChanges.debounce(LOCAL_CHANGE_DELAY_MS).collect { if (loop != null) syncNow() }
         }
     }
 
-    /** Stores a renewed login (new refresh token) without restarting the sync. */
-    private fun rememberLogin(config: SyncConfig) {
-        if (_config.value?.stateKey != config.stateKey) return
-        store.save(config)
-        _config.value = config
+    fun account(id: AccountId): SyncAccount? = _accounts.value.firstOrNull { it.id == id }
+
+    /**
+     * Adds an account and syncs it: its books on the server come to this device. Returns null if
+     * the same login and place is set up already.
+     */
+    fun addAccount(name: String, config: SyncConfig): SyncAccount? = synchronized(this) {
+        if (_accounts.value.any { it.config.stateKey == config.stateKey }) return null
+        val account = SyncAccount(AccountId.new(), name.trim().ifEmpty { config.service.displayName }, config)
+        saveAccounts(_accounts.value + account)
+        account
+    }.also { syncNow() }
+
+    fun renameAccount(id: AccountId, name: String) = synchronized(this) {
+        saveAccounts(_accounts.value.map { if (it.id == id) it.copy(name = name.trim().ifEmpty { it.name }) else it })
     }
 
-    fun configure(config: SyncConfig?) {
-        store.save(config)
-        _config.value = config
-        rebuildEngine()
-        if (config != null) syncNow()
+    /** A new login for the same place (e.g. after the old one was revoked); books stay with the account. */
+    fun updateLogin(id: AccountId, config: SyncConfig) {
+        synchronized(this) { saveAccounts(_accounts.value.map { if (it.id == id) it.copy(config = config) else it }) }
+        syncNow()
+    }
+
+    /** Removes the account from this device; its books stay here, unsynced. Server and other devices are untouched. */
+    fun removeAccount(id: AccountId) {
+        val account = account(id) ?: return
+        synchronized(this) { saveAccounts(_accounts.value.filter { it.id != id }) }
+        books.release(id)
+        host.fs.delete(stateFile(host.stateDir, account.config), mustExist = false)
+        _statuses.value = _statuses.value - id
+    }
+
+    /** Syncs a book (only on this device so far) with [account] from now on. */
+    fun assignBook(book: NodeId, account: AccountId) {
+        if (books.accountOf(book) != null || account(account) == null) return
+        books.assign(listOf(book), account)
+        syncNow()
+    }
+
+    /** Stores a renewed login (new refresh token) without restarting the sync. */
+    private fun rememberLogin(config: SyncConfig) = synchronized(this) {
+        val list = _accounts.value
+        if (list.none { it.config.stateKey == config.stateKey }) return
+        val updated = list.map { if (it.config.stateKey == config.stateKey) it.copy(config = config) else it }
+        store.save(AccountsCodec.toMap(updated))
+        _accounts.value = updated
+    }
+
+    private fun saveAccounts(list: List<SyncAccount>) {
+        store.save(AccountsCodec.toMap(list))
+        _accounts.value = list
+        rebuildEngines()
     }
 
     /** The app came to the foreground (or started). */
@@ -196,50 +236,81 @@ class SyncController(
     }
 
     /**
-     * One sync; returns when done. Runs are serialised, so a run requested while another is in
-     * progress still happens afterwards with the current configuration (an unchanged server
-     * costs one PROPFIND).
+     * One sync of every account; returns when done. Runs are serialised, so a run requested
+     * while another is in progress still happens afterwards with the current accounts (an
+     * unchanged server costs one listing). A failing account does not hold up the others.
      */
     suspend fun runOnce() {
-        if (paused) return
+        if (paused || !host.library.isLoaded) return
         runLock.withLock {
-            val engine = engine ?: return
+            migrateBooks()
+            val current = synchronized(this) { engines.toMap() }
+            if (current.isEmpty()) return
             // Flush local writes first so the newest changes go out in this run.
             host.flushOpenSessions()
-            _status.value = SyncStatus.Syncing
-            _status.value = try {
-                val report = engine.sync()
-                if (report.receivedAssets.isNotEmpty()) host.assetsArrived(report.receivedAssets)
-                for ((doc, ops) in report.receivedOps) host.applyRemote(doc, ops)
-                SyncStatus.Synced(clock())
-            } catch (e: AuthenticationException) {
-                SyncStatus.Failed(e.message ?: "Login", loginInvalid = true)
-            } catch (e: Exception) {
-                SyncStatus.Failed(e.message ?: e.javaClass.simpleName, loginInvalid = false)
+            for ((id, engine) in current) {
+                if (account(id) == null) continue
+                setStatus(id, SyncStatus.Syncing)
+                setStatus(id, try {
+                    val report = engine.sync()
+                    if (report.receivedAssets.isNotEmpty()) host.assetsArrived(report.receivedAssets)
+                    for ((doc, ops) in report.receivedOps) host.applyRemote(doc, ops)
+                    SyncStatus.Synced(clock())
+                } catch (e: AuthenticationException) {
+                    SyncStatus.Failed(e.message ?: "Login", loginInvalid = true)
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    SyncStatus.Failed(e.message ?: e.javaClass.simpleName, loginInvalid = false)
+                })
             }
         }
     }
 
-    private fun rebuildEngine() {
-        val c = _config.value
-        engine = c?.let {
-            SyncEngine(
+    /** Versions before accounts synced every book with their one login: those books stay with it. */
+    private suspend fun migrateBooks() {
+        if (books.exists) return
+        if (account(AccountId.LEGACY) != null) {
+            val all = host.library.allNodes().filter { it.parent == null && it.isFolder }.map { it.id }
+            books.assign(all, AccountId.LEGACY)
+        } else {
+            books.markMigrated()
+        }
+    }
+
+    private fun setStatus(id: AccountId, status: SyncStatus) {
+        if (account(id) != null) _statuses.value = _statuses.value + (id to status)
+    }
+
+    private fun rebuildEngines() = synchronized(this) {
+        val list = _accounts.value
+        engines.keys.retainAll(list.map { it.id }.toSet())
+        for (account in list) {
+            // A changed login gets a new engine (same state file: same place).
+            engines[account.id] = SyncEngine(
                 fs = host.fs,
                 documentsRoot = host.documentsRoot,
-                stateFile = stateFile(host.stateDir, it),
+                stateFile = stateFile(host.stateDir, account.config),
                 library = host.library,
                 device = host.deviceId,
-                remote = remoteFor(it),
+                remote = remoteFor(account.config),
                 io = Dispatchers.IO,
                 beforeDocumentsDeleted = host::beforeDocumentsDeleted,
+                scope = bookScope(account.id),
             )
         }
-        if (c == null) _status.value = SyncStatus.NotConfigured
+    }
+
+    private fun bookScope(id: AccountId) = object : BookScope {
+        override fun owns(book: NodeId) = books.accountOf(book) == id
+        override fun isAssigned(book: NodeId) = books.accountOf(book) != null
+        override suspend fun adopt(books: Set<NodeId>) = this@SyncController.books.assign(books, id)
     }
 
     companion object {
         const val INTERVAL_MS = 10_000L
         const val LOCAL_CHANGE_DELAY_MS = 2_000L
+        const val BOOK_ACCOUNTS_FILE = "book-accounts.txt"
 
         /** Separate state per remote place: switching starts a fresh comparison. */
         fun stateFile(dir: Path, config: SyncConfig): Path {

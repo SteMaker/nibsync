@@ -201,16 +201,26 @@ is skipped when the server is unreachable.
 Known limits: whole own log is re-uploaded on change (fine for typical sizes; could be split
 into segments later); no background sync while the app is closed.
 
-## Sync services
+## Sync accounts and services
 
-One service at a time (`SyncConfig`: Nextcloud, OneDrive, Google Drive), chosen in the
-settings. Nextcloud uses WebDAV, whose folder etags already change with anything below them.
-OneDrive (app folder, Microsoft Graph) and Google Drive ("NibSync" in My Drive, scope
-drive.file) do not; their stores keep a `RemoteIndex` of the sync folder, updated from the
-provider's change feed (Graph delta, Drive changes) whenever the sync folder is listed, and
-compute such etags from it, so the same `SyncEngine` runs on all three. Same-named duplicate
-folders (two devices creating one at once) count as one. Setup of the OAuth clients:
-`docs/cloud-setup.md`.
+Several accounts per device (`SyncAccount`: a name such as "Privat" or "Arbeit" plus a
+`SyncConfig` for Nextcloud, OneDrive or Google Drive), managed in the settings and kept in
+private storage (`AccountStore`, `AccountsCodec`). Every book belongs to one account or stays
+on the device only (`BookAccounts`, `book-accounts.txt`, device-local because account ids
+differ between devices). Each account has its own `SyncEngine` over its own remote folder,
+restricted by a `BookScope` to its books: books it receives from its server and does not know
+yet become its books; entries of books owned elsewhere are ignored. A local book can be
+assigned to an account later; there is no moving between accounts. Removing an account keeps
+its books on the device, unsynced. The single login of versions before accounts becomes the
+account `legacy`, which gets all books that existed then.
+
+Nextcloud uses WebDAV, whose folder etags already change with anything below them. OneDrive
+(app folder, Microsoft Graph) and Google Drive ("NibSync" in My Drive, scope drive.file) do
+not; their stores keep a `RemoteIndex` of the sync folder, updated from the provider's change
+feed (Graph delta, Drive changes) whenever the sync folder is listed, and compute such etags
+from it, so the same `SyncEngine` runs on all three. Same-named duplicate folders (two devices
+creating one at once) count as one. On Android, Google tokens come per Google account from Play
+services. Setup of the OAuth clients: `docs/cloud-setup.md`.
 
 ## PC app (desktop/)
 

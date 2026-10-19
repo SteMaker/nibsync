@@ -5,13 +5,12 @@
     <string name="default_book_title">Notes</string>
     <string name="no_document">No document yet. Create a book and a document in the library.</string>
     <string name="open_library">Open library</string>
-    <string name="sync_not_configured">Not connected. Notes stay on this device.</string>
+    <string name="sync_not_configured">No account. All books stay on this device.</string>
     <string name="sync_now">Sync now</string>
-    <string name="sync_sign_out">Disconnect</string>
     <string name="sync_running">Syncing…</string>
     <string name="sync_done">Synced at %1$s</string>
     <string name="sync_failed">Sync failed: %1$s</string>
-    <string name="sync_login_invalid">Login no longer valid. Disconnect and connect again.</string>
+    <string name="sync_login_invalid">Login no longer valid. Please log in again in the settings.</string>
     <string name="sync_server">Server address</string>
     <string name="sync_folder">Folder in Nextcloud</string>
     <string name="sync_waiting_for_login">Log in with the browser, then come back…</string>
@@ -24,7 +23,7 @@
     <string name="media_no_viewer">No app found to open this file.</string>
     <string name="media_not_synced">The file has not arrived from the sync yet.</string>
     <string name="settings">Settings</string>
-    <string name="settings_sync">Synchronisation</string>
+    <string name="settings_sync">Accounts</string>
     <string name="settings_display">Display and input</string>
     <string name="close">Close</string>
     <string name="page_breaks">Show page breaks</string>
@@ -38,4 +37,15 @@
     <string name="sync_connect_to">Connect to %1$s</string>
     <string name="sync_login_again">Try again</string>
     <string name="sync_google_not_registered">Google Drive is not set up for this app yet. In the Google Cloud project (Google Auth Platform → Clients) create a client of type “Android” with package %1$s and SHA-1 %2$s; the Google Drive API must be enabled and your account listed as a test user. A new client may take a few minutes to work.</string>
+    <string name="accounts_hint">Each book syncs with one account or stays on this device only, so private and work notes stay apart.</string>
+    <string name="add_account">Add account</string>
+    <string name="account_name">Account name</string>
+    <string name="account_name_hint">e.g. Private or Work</string>
+    <string name="account_exists">This account is set up already.</string>
+    <string name="save">Save</string>
+    <string name="rename_account">Rename</string>
+    <string name="remove_account">Remove</string>
+    <string name="relogin">Log in again</string>
+    <string name="remove_account_question">Remove account “%1$s”?</string>
+    <string name="remove_account_text">Its books stay on this device but are no longer synced. Nothing changes on the server or on other devices.</string>
 </resources>

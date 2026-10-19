@@ -4,13 +4,12 @@
     <string name="default_book_title">Notizen</string>
     <string name="no_document">Noch kein Dokument. Lege in der Bibliothek ein Buch und ein Dokument an.</string>
     <string name="open_library">Bibliothek öffnen</string>
-    <string name="sync_not_configured">Nicht verbunden. Notizen bleiben auf diesem Gerät.</string>
+    <string name="sync_not_configured">Kein Konto. Alle Bücher bleiben auf diesem Gerät.</string>
     <string name="sync_now">Jetzt synchronisieren</string>
-    <string name="sync_sign_out">Trennen</string>
     <string name="sync_running">Synchronisiere…</string>
     <string name="sync_done">Synchronisiert um %1$s</string>
     <string name="sync_failed">Sync fehlgeschlagen: %1$s</string>
-    <string name="sync_login_invalid">Anmeldung ungültig. Bitte trennen und neu verbinden.</string>
+    <string name="sync_login_invalid">Anmeldung ungültig. Bitte in den Einstellungen neu anmelden.</string>
     <string name="sync_server">Server-Adresse</string>
     <string name="sync_folder">Ordner in der Nextcloud</string>
     <string name="sync_waiting_for_login">Im Browser anmelden, dann hierher zurückkehren…</string>
@@ -23,7 +22,7 @@
     <string name="media_no_viewer">Keine App zum Öffnen dieser Datei gefunden.</string>
     <string name="media_not_synced">Die Datei ist über den Sync noch nicht angekommen.</string>
     <string name="settings">Einstellungen</string>
-    <string name="settings_sync">Synchronisierung</string>
+    <string name="settings_sync">Konten</string>
     <string name="settings_display">Anzeige und Eingabe</string>
     <string name="close">Schließen</string>
     <string name="page_breaks">Seitenumbrüche anzeigen</string>
@@ -37,4 +36,15 @@
     <string name="sync_connect_to">Mit %1$s verbinden</string>
     <string name="sync_login_again">Erneut versuchen</string>
     <string name="sync_google_not_registered">Google Drive ist für diese App noch nicht eingerichtet. Lege im Google-Cloud-Projekt (Google Auth Platform → Clients) einen Client vom Typ „Android“ an, mit Paketname %1$s und SHA-1 %2$s. Die Google Drive API muss aktiviert und dein Konto als Testnutzer eingetragen sein. Ein neuer Client kann ein paar Minuten brauchen, bis er wirkt.</string>
+    <string name="accounts_hint">Jedes Buch synchronisiert mit einem Konto oder bleibt nur auf diesem Gerät. So lassen sich private und berufliche Notizen trennen.</string>
+    <string name="add_account">Konto hinzufügen</string>
+    <string name="account_name">Name des Kontos</string>
+    <string name="account_name_hint">z. B. Privat oder Arbeit</string>
+    <string name="account_exists">Dieses Konto ist schon eingerichtet.</string>
+    <string name="save">Speichern</string>
+    <string name="rename_account">Umbenennen</string>
+    <string name="remove_account">Entfernen</string>
+    <string name="relogin">Neu anmelden</string>
+    <string name="remove_account_question">Konto „%1$s“ entfernen?</string>
+    <string name="remove_account_text">Seine Bücher bleiben auf diesem Gerät, werden aber nicht mehr synchronisiert. Auf dem Server und auf anderen Geräten ändert sich nichts.</string>
 </resources>

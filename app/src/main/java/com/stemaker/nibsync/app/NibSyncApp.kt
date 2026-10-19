@@ -32,7 +32,7 @@ class NibSyncApp : Application() {
             SyncAccountStore(this),
             container.appScope,
             clients = cloudClients,
-            googleTokens = GoogleDeviceTokens(this),
+            googleTokens = { email -> GoogleDeviceTokens(this, email) },
         )
     }
 }

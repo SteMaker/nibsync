@@ -11,7 +11,7 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.google.common.truth.Truth.assertThat
 import com.stemaker.nibsync.sync.client.NextcloudConfig
-import com.stemaker.nibsync.sync.client.SyncConfig
+import com.stemaker.nibsync.sync.client.SyncAccount
 import com.stemaker.nibsync.sync.client.SyncStatus
 import com.stemaker.nibsync.document.DocumentOp
 import com.stemaker.nibsync.document.OpStamp
@@ -43,8 +43,9 @@ import java.util.UUID
 
 /**
  * Sync end to end on the device against a Nextcloud (by default the development container on
- * the developer machine, see app/build.gradle.kts). Uses a throw-away server folder and book;
- * the user's own sync settings are restored afterwards. Skipped if the server is unreachable.
+ * the developer machine, see app/build.gradle.kts). Uses a throw-away account (server folder)
+ * and book; the user's own accounts and books are not touched. Skipped if the server is
+ * unreachable.
  */
 @RunWith(AndroidJUnit4::class)
 class SyncAppTest {
@@ -57,7 +58,7 @@ class SyncAppTest {
     private val account = NextcloudAccount(serverUrl, "nibsync", "nibsync-test-pass")
     private val folder = "nibsync-app-test-" + UUID.randomUUID().toString().take(8)
     private val remote = WebDavRemoteStore(serverUrl, account.loginName, account.appPassword, folder)
-    private var previousConfig: SyncConfig? = null
+    private lateinit var testAccount: SyncAccount
     private lateinit var book: LibraryNode
     private var docId: String = ""
     private val doc: DocumentId get() = DocumentId(docId)
@@ -67,13 +68,14 @@ class SyncAppTest {
     fun setUp() = runBlocking {
         val reachable = runCatching { WebDavRemoteStore(serverUrl, account.loginName, account.appPassword, "").list("") != null }.getOrDefault(false)
         assumeTrue("Nextcloud at $serverUrl not reachable", reachable)
-        previousConfig = app.sync.config.value
         previousStateFiles = stateFiles()
-        // Switch to the test server first: the test book must never reach the account
-        // configured on the device.
-        app.sync.configure(NextcloudConfig(account, folder))
         app.container.ensureLibraryLoaded("Notizen", "Notizen")
+        testAccount = checkNotNull(app.sync.addAccount("Sync-Test", NextcloudConfig(account, folder)))
+        // The test book belongs to the test account only: it never reaches the user's accounts.
+        app.sync.paused = true
         book = app.container.library.createBook("Sync-Test-" + UUID.randomUUID().toString().take(6))
+        app.sync.assignBook(book.id, testAccount.id)
+        app.sync.paused = false
         docId = app.container.library.createDocument(book.id, "Seite", PageFormat()).id.value
         scenario = ActivityScenario.launch(Intent(app, MainActivity::class.java).putExtra(MainActivity.EXTRA_DOCUMENT_ID, doc.value))
         waitUntil("canvas") { activity { it.canvasView }?.viewport?.hasSize == true && activity { it.session } != null }
@@ -83,9 +85,9 @@ class SyncAppTest {
     fun tearDown() = runBlocking {
         if (!::scenario.isInitialized) return@runBlocking
         scenario.close()
-        // Remove the test book (and what other "devices" added) while the test server is
-        // still configured, then go back to the previous account.
+        // Remove the test account (its book becomes local), then the book and the server folder.
         app.sync.paused = true
+        app.sync.removeAccount(testAccount.id)
         val lib = app.container.library
         val ids = lib.tree.value.descendantsOf(book.id).map { it.id } + book.id
         app.container.beforeDelete(ids.map { it.asDocumentId }.toSet())
@@ -93,7 +95,6 @@ class SyncAppTest {
         ids.forEach { java.io.File(app.container.libraryRoot.toString(), "${it.value}.json").delete() }
         runCatching { WebDavRemoteStore(serverUrl, account.loginName, account.appPassword, "").delete(folder) }
         (stateFiles() - previousStateFiles).forEach { it.delete() }
-        app.sync.configure(previousConfig)
         app.sync.paused = false
     }
 
@@ -140,7 +141,7 @@ class SyncAppTest {
         drawLine(300f)
         waitUntil("stroke") { strokeCount() == 1 }
         app.sync.runOnce()
-        assertThat(app.sync.status.value).isInstanceOf(SyncStatus.Synced::class.java)
+        assertThat(testStatus()).isInstanceOf(SyncStatus.Synced::class.java)
         val ownLog = "${app.container.deviceId.value}.oplog"
         assertThat(remote.list("documents/${doc.value}/ops")!![ownLog]).isNotNull()
         assertThat(remote.list("library")!!["${book.id.value}.json"]).isNotNull()
@@ -165,14 +166,16 @@ class SyncAppTest {
         // 4. Nothing changed: the next sync has nothing to do.
         app.sync.runOnce()
         app.sync.runOnce()
-        assertThat(app.sync.status.value).isInstanceOf(SyncStatus.Synced::class.java)
+        assertThat(testStatus()).isInstanceOf(SyncStatus.Synced::class.java)
     }
+
+    private fun testStatus() = app.sync.statuses.value[testAccount.id]
 
     @Test
     fun wrongPasswordIsReportedAsInvalidLogin() = runBlocking {
-        app.sync.configure(NextcloudConfig(account.copy(appPassword = "wrong"), folder))
+        app.sync.updateLogin(testAccount.id, NextcloudConfig(account.copy(appPassword = "wrong"), folder))
         app.sync.runOnce()
-        val status = app.sync.status.value
+        val status = testStatus()
         assertThat(status).isInstanceOf(SyncStatus.Failed::class.java)
         assertThat((status as SyncStatus.Failed).loginInvalid).isTrue()
     }

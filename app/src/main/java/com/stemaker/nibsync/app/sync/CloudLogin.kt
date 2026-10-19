@@ -60,11 +60,15 @@ const val REDIRECT_URI = "com.stemaker.nibsync://oauth"
 
 private val driveFileScope = Scope("https://www.googleapis.com/auth/drive.file")
 
-private fun googleRequest() = AuthorizationRequest.builder().setRequestedScopes(listOf(driveFileScope)).build()
+/** Access to Drive, for [email] or (null) an account the user picks. */
+private fun googleRequest(email: String?) = AuthorizationRequest.builder()
+    .setRequestedScopes(listOf(driveFileScope))
+    .apply { if (email != null) setAccount(android.accounts.Account(email, "com.google")) }
+    .build()
 
 /** Asks Google for access; the result may need the user's consent first (it has a resolution). */
-suspend fun googleAuthorize(context: Context): AuthorizationResult = suspendCancellableCoroutine { cont ->
-    Identity.getAuthorizationClient(context).authorize(googleRequest())
+suspend fun googleAuthorize(context: Context, email: String? = null): AuthorizationResult = suspendCancellableCoroutine { cont ->
+    Identity.getAuthorizationClient(context).authorize(googleRequest(email))
         .addOnSuccessListener { cont.resume(it) }
         .addOnFailureListener { cont.resumeWithException(it) }
 }
@@ -102,11 +106,12 @@ fun signingSha1(context: Context): String {
 suspend fun googleConfig(accessToken: String): SyncConfig = GoogleDriveConfig(googleAccount(accessToken), refreshToken = "")
 
 /**
- * Google Drive access tokens on Android, from Google's sign-in on the device: no refresh token
+ * Google Drive access tokens of the Google account [email] on Android, from Google's sign-in on
+ * the device (each account separately, e.g. private and work): no refresh token
  * is stored, Google renews access silently while it stays granted. If the user takes access
  * back, sync reports an invalid login and the user connects again.
  */
-class GoogleDeviceTokens(private val context: Context) : AccessTokens {
+class GoogleDeviceTokens(private val context: Context, private val email: String) : AccessTokens {
     private val lock = Mutex()
     private var token: String? = null
     private var fetchedAt = 0L
@@ -118,7 +123,7 @@ class GoogleDeviceTokens(private val context: Context) : AccessTokens {
     override suspend fun refresh(): String = lock.withLock { fetch() }
 
     private suspend fun fetch(): String {
-        val result = googleAuthorize(context)
+        val result = googleAuthorize(context, email)
         if (result.hasResolution()) throw AuthenticationException(401)
         return (result.accessToken ?: throw AuthenticationException(401)).also {
             token = it

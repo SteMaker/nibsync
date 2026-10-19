@@ -7,8 +7,7 @@ import com.stemaker.nibsync.model.PageFormat
 import com.stemaker.nibsync.model.RichText
 import com.stemaker.nibsync.model.TextBoxDraft
 import com.stemaker.nibsync.sync.client.NextcloudConfig
-import com.stemaker.nibsync.sync.client.SyncConfig
-import com.stemaker.nibsync.sync.client.SyncConfigStore
+import com.stemaker.nibsync.sync.client.AccountStore
 import com.stemaker.nibsync.sync.client.SyncController
 import com.stemaker.nibsync.sync.client.SyncStatus
 import com.stemaker.nibsync.sync.webdav.NextcloudAccount
@@ -40,17 +39,26 @@ class DesktopSyncIntegrationTest {
     private val folder = "nibsync-pc-test-" + UUID.randomUUID().toString().take(8)
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
-    private class MemoryStore(var config: SyncConfig?) : SyncConfigStore {
-        override fun load() = config
-        override fun save(config: SyncConfig?) {
-            this.config = config
+    private val privateFolder = "$folder-private"
+
+    private class MemoryStore(var entries: Map<String, String> = emptyMap()) : AccountStore {
+        override fun load() = entries
+        override fun save(entries: Map<String, String>) {
+            this.entries = entries
         }
     }
 
-    private fun pc(name: String): Pair<DesktopContainer, SyncController> {
+    /** A PC whose first book syncs with the (work) account in [folder], like after setting it up. */
+    private suspend fun pc(name: String, firstBook: String): Pair<DesktopContainer, SyncController> {
         val container = DesktopContainer(tmp.newFolder(name).toOkioPath(), appScope = scope)
-        return container to SyncController(container, MemoryStore(NextcloudConfig(account, folder)), scope)
+        container.library.load(firstBook, "Seite 1")
+        val sync = SyncController(container, MemoryStore(), scope)
+        val work = sync.addAccount("Arbeit", NextcloudConfig(account, folder))!!
+        sync.assignBook(container.library.tree.value.books.single().id, work.id)
+        return container to sync
     }
+
+    private fun SyncController.statusOf(name: String) = statuses.value[accounts.value.first { it.name == name }.id]
 
     @Before
     fun serverReachable() {
@@ -61,15 +69,14 @@ class DesktopSyncIntegrationTest {
     @After
     fun cleanUp() {
         runCatching { runBlocking { WebDavRemoteStore(server, account.loginName, account.appPassword, "").delete(folder) } }
+        runCatching { runBlocking { WebDavRemoteStore(server, account.loginName, account.appPassword, "").delete(privateFolder) } }
         scope.cancel()
     }
 
     @Test
     fun notesWrittenOnOnePcAppearOnTheOther() = runBlocking {
-        val (a, syncA) = pc("a")
-        val (b, syncB) = pc("b")
-        a.library.load("Notizen", "Seite 1")
-        b.library.load("Notes", "Page 1")
+        val (a, syncA) = pc("a", "Notizen")
+        val (b, syncB) = pc("b", "Notes")
         val book = a.library.tree.value.books.single()
         val doc = a.library.createDocument(book.id, "Vom PC", PageFormat()).id.asDocumentId
         val picture = a.repository.putAsset(doc, ByteArray(3000) { it.toByte() })
@@ -81,12 +88,13 @@ class DesktopSyncIntegrationTest {
             ),
         )
         syncA.runOnce()
-        assertThat(syncA.status.value).isInstanceOf(SyncStatus.Synced::class.java)
+        assertThat(syncA.statusOf("Arbeit")).isInstanceOf(SyncStatus.Synced::class.java)
 
         syncB.runOnce()
-        assertThat(syncB.status.value).isInstanceOf(SyncStatus.Synced::class.java)
+        assertThat(syncB.statusOf("Arbeit")).isInstanceOf(SyncStatus.Synced::class.java)
         val titles = b.library.tree.value.documents.map { it.title }
-        assertThat(titles).containsAtLeast("Vom PC", "Seite 1", "Page 1")
+        assertThat(titles).containsAtLeast("Vom PC", "Seite 1")
+        assertThat(b.library.tree.value.books.map { it.title }).containsExactly("Notizen", "Notes")
         val state = b.openSession(doc).state.value
         assertThat(state.textBoxes.single().text.plainText).isEqualTo("Hallo vom PC")
         assertThat(b.repository.hasAsset(doc, picture)).isTrue()
@@ -102,12 +110,41 @@ class DesktopSyncIntegrationTest {
     }
 
     @Test
+    fun privateAndWorkBooksStayInTheirAccounts() = runBlocking {
+        val (a, syncA) = pc("a", "Arbeit A")
+        val privat = syncA.addAccount("Privat", NextcloudConfig(account, privateFolder))!!
+        val diary = a.library.createBook("Tagebuch")
+        syncA.assignBook(diary.id, privat.id)
+        val local = a.library.createBook("Nur hier")
+        syncA.runOnce()
+        assertThat(syncA.statusOf("Privat")).isInstanceOf(SyncStatus.Synced::class.java)
+
+        // The colleague's PC knows only the work account: the private and local books never arrive.
+        val (b, syncB) = pc("b", "Arbeit B")
+        syncB.runOnce()
+        val books = b.library.tree.value.books.map { it.title }
+        assertThat(books).containsExactly("Arbeit A", "Arbeit B")
+        assertThat(WebDavRemoteStore(server, account.loginName, account.appPassword, privateFolder).list("library")!!.entries.map { it.name })
+            .contains("${diary.id.value}.json")
+        assertThat(WebDavRemoteStore(server, account.loginName, account.appPassword, folder).list("library")!!.entries.map { it.name })
+            .containsNoneOf("${diary.id.value}.json", "${local.id.value}.json")
+
+        // Removing the private account keeps its book on the PC.
+        syncA.removeAccount(privat.id)
+        assertThat(a.library.tree.value[diary.id]).isNotNull()
+        assertThat(syncA.books.accountOf(diary.id)).isNull()
+        a.closeAll()
+        b.closeAll()
+    }
+
+    @Test
     fun wrongPasswordIsReportedAsInvalidLogin() = runBlocking {
         val container = DesktopContainer(tmp.newFolder("c").toOkioPath(), appScope = scope)
         container.library.load("Notizen", "Seite 1")
-        val sync = SyncController(container, MemoryStore(NextcloudConfig(account.copy(appPassword = "wrong"), folder)), scope)
+        val sync = SyncController(container, MemoryStore(), scope)
+        sync.addAccount("Arbeit", NextcloudConfig(account.copy(appPassword = "wrong"), folder))
         sync.runOnce()
-        val status = sync.status.value
+        val status = sync.statusOf("Arbeit")
         assertThat(status).isInstanceOf(SyncStatus.Failed::class.java)
         assertThat((status as SyncStatus.Failed).loginInvalid).isTrue()
     }

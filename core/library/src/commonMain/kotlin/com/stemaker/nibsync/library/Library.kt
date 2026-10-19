@@ -27,6 +27,10 @@ class Library(
     private val _tree = MutableStateFlow(LibraryTree(emptyList()))
     val tree: StateFlow<LibraryTree> = _tree.asStateFlow()
 
+    /** [load] has run: the nodes are known. */
+    var isLoaded: Boolean = false
+        private set
+
     /**
      * Loads the library. A new installation gets a first book with one document; notes from
      * before the library existed (document [legacyDocument]) are put into that book.
@@ -43,6 +47,7 @@ class Library(
                 createDocumentLocked(book.id, defaultDocumentTitle, PageFormat())
             }
         }
+        isLoaded = true
         publish()
     }
 
