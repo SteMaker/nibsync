@@ -35,6 +35,8 @@ internal data class OpRecord(
     @SerialName("b") val background: BackgroundRecord? = null,
     @SerialName("x") val textBoxes: List<TextBoxRecord> = emptyList(),
     @SerialName("f") val files: List<FileElementRecord> = emptyList(),
+    @SerialName("o") val todos: List<TodoRecord> = emptyList(),
+    @SerialName("td") val todoDone: TodoDoneRecord? = null,
 ) {
     companion object {
         const val TYPE_ADD = 1
@@ -42,6 +44,8 @@ internal data class OpRecord(
         const val TYPE_BACKGROUND = 3
         const val TYPE_ADD_TEXT = 4
         const val TYPE_ADD_FILES = 5
+        const val TYPE_ADD_TODOS = 6
+        const val TYPE_TODO_DONE = 7
     }
 }
 
@@ -75,6 +79,31 @@ internal data class TextBoxRecord(
     @SerialName("ts") val createdAtEpochMs: Long,
     @SerialName("a") val author: String,
     @SerialName("p") val paragraphs: List<ParagraphRecord>,
+)
+
+/**
+ * A to-do; position and size in position steps. Its content is either typed text
+ * ([paragraphs]) or handwriting ([strokes], positions relative to the content area).
+ */
+@Serializable
+internal data class TodoRecord(
+    @SerialName("id") val id: String,
+    @SerialName("k") val task: String,
+    @SerialName("x") val x: Int,
+    @SerialName("y") val y: Int,
+    @SerialName("w") val width: Int,
+    @SerialName("h") val height: Int,
+    @SerialName("ts") val createdAtEpochMs: Long,
+    @SerialName("a") val author: String,
+    @SerialName("p") val paragraphs: List<ParagraphRecord>? = null,
+    @SerialName("s") val strokes: List<StrokeRecord>? = null,
+)
+
+/** Done state of the to-do task [task]. */
+@Serializable
+internal data class TodoDoneRecord(
+    @SerialName("k") val task: String,
+    @SerialName("d") val done: Boolean,
 )
 
 @Serializable

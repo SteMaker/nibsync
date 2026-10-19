@@ -5,7 +5,7 @@ import com.stemaker.nibsync.model.BrushFamily
 import com.stemaker.nibsync.model.BrushSpec
 
 /** What a mouse or pen drag does on the page. Typing comes first on the PC: [TEXT] is the default. */
-enum class DesktopTool { TEXT, PEN, ERASER, LASSO }
+enum class DesktopTool { TEXT, PEN, ERASER, LASSO, TODO }
 
 /** The same choices as the Android tool bar (feature/canvas PenPalette). */
 object DesktopPalette {
@@ -34,6 +34,8 @@ data class DesktopToolState(
     },
     val eraserMode: EraserMode = EraserMode.OBJECT,
     val eraserSizeMm: Float = DesktopPalette.eraserSizes[1],
+    /** New to-dos are handwritten (true) or typed. */
+    val todoInk: Boolean = false,
 ) {
     val choice: PenChoice get() = pens.getValue(pen)
     val brush: BrushSpec get() = BrushSpec(pen, choice.colorArgb, choice.sizeMm)

@@ -15,6 +15,9 @@ sealed interface Edit {
 
     /** [removed] were replaced by [added] in one step (e.g. two strokes merged into one shape). */
     data class Replaced(val removed: List<PageElement>, val added: List<PageElement>) : Edit
+
+    /** A to-do task was ticked off or reopened ([done]); it was [was] before. */
+    data class TodoDone(val taskId: StrokeId, val done: Boolean, val was: Boolean) : Edit
 }
 
 /**
@@ -73,6 +76,7 @@ class UndoManager(private val ids: IdGenerator, private val maxDepth: Int = 200)
         is Edit.Added -> Edit.Removed(edit.strokes.map(::current))
         is Edit.Removed -> Edit.Added(restore(edit.strokes))
         is Edit.Replaced -> Edit.Replaced(removed = edit.added.map(::current), added = restore(edit.removed))
+        is Edit.TodoDone -> Edit.TodoDone(edit.taskId, done = edit.was, was = edit.done)
     }
 
     private fun restore(strokes: List<PageElement>): List<PageElement> = strokes.map(::current).map { old ->

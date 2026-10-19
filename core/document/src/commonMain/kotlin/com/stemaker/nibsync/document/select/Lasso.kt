@@ -5,6 +5,7 @@ import com.stemaker.nibsync.model.PageElement
 import com.stemaker.nibsync.model.Stroke
 import com.stemaker.nibsync.model.StrokeDraft
 import com.stemaker.nibsync.model.StrokeId
+import com.stemaker.nibsync.model.TodoDraft
 import com.stemaker.nibsync.model.toDraft
 import com.stemaker.nibsync.model.geometry.Rect
 
@@ -115,7 +116,9 @@ class ClipContent private constructor(val drafts: List<ElementDraft>, val width:
             val b = boundsOf(strokes) ?: return null
             val cx = (b.left + b.right) / 2
             val cy = (b.top + b.bottom) / 2
-            return ClipContent(strokes.map { it.translated(-cx, -cy) }, b.width, b.height)
+            // A copied to-do is a new task, not a second view of the same one.
+            val drafts = strokes.map { e -> e.translated(-cx, -cy).let { if (it is TodoDraft) it.copy(taskId = null) else it } }
+            return ClipContent(drafts, b.width, b.height)
         }
     }
 }

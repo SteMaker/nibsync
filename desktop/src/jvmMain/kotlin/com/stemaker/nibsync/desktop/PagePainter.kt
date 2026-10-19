@@ -27,6 +27,8 @@ import com.stemaker.nibsync.model.ImageElement
 import com.stemaker.nibsync.model.Stroke
 import com.stemaker.nibsync.model.StrokeId
 import com.stemaker.nibsync.model.TextBox
+import com.stemaker.nibsync.model.TodoContent
+import com.stemaker.nibsync.model.TodoItem
 import com.stemaker.nibsync.model.geometry.Viewport
 import kotlin.math.roundToInt
 
@@ -44,6 +46,10 @@ class PagePainter(private val text: DesktopTextLayout, private val media: MediaC
         val selection: Set<StrokeId> = emptySet(),
         val selectionFrame: com.stemaker.nibsync.model.geometry.Rect? = null,
         val resizable: Boolean = false,
+        /** The to-do being edited, drawn as it is now instead of its stored version. */
+        val todo: TodoItem? = null,
+        /** Its text is typed in an editor over the page, so only frame and circle are drawn. */
+        val todoInEditor: Boolean = false,
     )
 
     fun draw(scope: DrawScope, doc: DocumentState, viewport: Viewport, hiddenTextBox: Any? = null, overlay: Overlay = Overlay()) = with(scope) {
@@ -72,26 +78,71 @@ class PagePainter(private val text: DesktopTextLayout, private val media: MediaC
             for (element in elements) {
                 val selected = element.id in overlay.selection
                 when {
-                    selected && gesture is GesturePreview.Moving -> translate(gesture.dx, gesture.dy) { drawElement(this, element, hiddenTextBox) }
+                    selected && gesture is GesturePreview.Moving -> translate(gesture.dx, gesture.dy) { drawElement(this, element, hiddenTextBox, doc) }
                     selected && gesture is GesturePreview.Resizing && element is com.stemaker.nibsync.model.FileElement -> withTransform({
                         translate(element.x, element.y)
                         scale(gesture.factor, gesture.factor, pivot = Offset.Zero)
                         translate(-element.x, -element.y)
-                    }) { drawElement(this, element, hiddenTextBox) }
-                    element.bounds.intersects(visible) -> drawElement(this, element, hiddenTextBox)
+                    }) { drawElement(this, element, hiddenTextBox, doc) }
+                    element is TodoItem && element.id == overlay.todo?.id -> Unit
+                    element.bounds.intersects(visible) -> drawElement(this, element, hiddenTextBox, doc)
                 }
             }
+            overlay.todo?.let { drawTodo(this, it, doc.isDone(it.taskId), content = !overlay.todoInEditor, editing = true) }
             if (gesture is GesturePreview.Drawing) StrokePainter.draw(this, gesture.stroke)
         }
         drawOverlay(this, viewport, overlay)
     }
 
-    private fun drawElement(scope: DrawScope, element: com.stemaker.nibsync.model.PageElement, hiddenTextBox: Any?) {
+    private fun drawElement(scope: DrawScope, element: com.stemaker.nibsync.model.PageElement, hiddenTextBox: Any?, doc: DocumentState) {
         when (element) {
             is Stroke -> StrokePainter.draw(scope, element)
             is TextBox -> if (element.id != hiddenTextBox) drawTextBox(scope, element)
             is ImageElement -> drawImage(scope, element)
             is FileLink -> drawLink(scope, element)
+            is TodoItem -> drawTodo(scope, element, doc.isDone(element.taskId))
+        }
+    }
+
+    /**
+     * A to-do: an almost opaque card (it lies above everything), a red check circle with a thick
+     * rim, filled with a tick once [done], and the faded content when done.
+     */
+    fun drawTodo(scope: DrawScope, item: TodoItem, done: Boolean, content: Boolean = true, editing: Boolean = false) = with(scope) {
+        val topLeft = Offset(item.x, item.y)
+        val size = Size(item.widthMm, item.heightMm)
+        val corner = CornerRadius(1.5f)
+        drawRoundRect(TODO_FILL, topLeft, size, corner)
+        drawRoundRect(if (editing) SELECTION else TODO_FRAME, topLeft, size, corner, style = StrokeStyle(if (editing) 0.4f else 0.3f))
+        val c = item.checkBounds
+        val center = Offset((c.left + c.right) / 2, (c.top + c.bottom) / 2)
+        val rim = TodoItem.CHECK_SIZE_MM * 0.16f
+        val r = TodoItem.CHECK_SIZE_MM / 2 - rim / 2
+        if (done) {
+            drawCircle(TODO_RED, r + rim / 2, center)
+            val tick = androidx.compose.ui.graphics.Path().apply {
+                moveTo(center.x - r * 0.5f, center.y + r * 0.02f)
+                lineTo(center.x - r * 0.12f, center.y + r * 0.42f)
+                lineTo(center.x + r * 0.55f, center.y - r * 0.38f)
+            }
+            drawPath(tick, Color.White, style = StrokeStyle(rim * 0.9f, cap = androidx.compose.ui.graphics.StrokeCap.Round, join = androidx.compose.ui.graphics.StrokeJoin.Round))
+        } else {
+            drawCircle(TODO_RED, r, center, style = StrokeStyle(rim))
+        }
+        if (!content) return@with
+        val alpha = if (done) DONE_ALPHA else 1f
+        when (val body = item.content) {
+            is TodoContent.Text -> {
+                val layout = text.layoutOf(item.id, body.text, item.contentWidthMm)
+                val f = 1f / DesktopTextLayout.LAYOUT_PX_PER_MM
+                withTransform({
+                    translate(item.contentX, item.contentY)
+                    scale(f, f, pivot = Offset.Zero)
+                }) { drawText(layout, alpha = alpha) }
+            }
+            is TodoContent.Ink -> translate(item.contentX, item.contentY) {
+                for (s in body.strokes) StrokePainter.draw(this, s, alpha)
+            }
         }
     }
 
@@ -214,5 +265,9 @@ class PagePainter(private val text: DesktopTextLayout, private val media: MediaC
         private val LINK_FILL = Color(0xfff5f7fa)
         private val BADGE = Color(0xffd32f2f)
         private val NAME = Color(0xff263238)
+        private val TODO_FILL = Color(0xf5fffdf7)
+        private val TODO_FRAME = Color(0xffb0bec5)
+        val TODO_RED = Color(0xffd32f2f)
+        private const val DONE_ALPHA = 0.45f
     }
 }

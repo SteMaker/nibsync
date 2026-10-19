@@ -16,6 +16,9 @@ import com.stemaker.nibsync.model.StrokeDraft
 import com.stemaker.nibsync.model.StrokeId
 import com.stemaker.nibsync.model.TextBox
 import com.stemaker.nibsync.model.TextBoxDraft
+import com.stemaker.nibsync.model.TodoContent
+import com.stemaker.nibsync.model.TodoDraft
+import com.stemaker.nibsync.model.TodoItem
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.channels.Channel
@@ -114,7 +117,24 @@ class DocumentSession(
             createdAtEpochMs = clock(),
             author = device,
         )
+        is TodoDraft -> TodoItem(
+            id = ids.newStrokeId(),
+            taskId = draft.taskId ?: ids.newStrokeId(),
+            x = Quantization.quantizePosition(draft.x),
+            y = Quantization.quantizePosition(draft.y),
+            widthMm = Quantization.quantizePosition(draft.widthMm),
+            heightMm = Quantization.quantizePosition(draft.heightMm),
+            content = draft.content,
+            createdAtEpochMs = clock(),
+            author = device,
+        )
     }
+
+    /**
+     * Handwriting for a to-do: [drafts] with points relative to its content area become strokes
+     * (snapped to the storage grid like [addStroke]); they are only stored with the to-do.
+     */
+    fun todoInk(drafts: List<StrokeDraft>): TodoContent.Ink = TodoContent.Ink(drafts.map(::newStroke))
 
     private fun newStroke(draft: StrokeDraft): Stroke {
         return Stroke(
@@ -171,6 +191,12 @@ class DocumentSession(
         if (strokes.isNotEmpty()) applyEdit(Edit.Removed(strokes), record = true)
     }
 
+    /** Ticks the task off or reopens it, in one undo step. Does nothing if it already is so. */
+    fun setTodoDone(taskId: StrokeId, done: Boolean) {
+        val was = _state.value.isDone(taskId)
+        if (was != done) applyEdit(Edit.TodoDone(taskId, done, was), record = true)
+    }
+
     /** Changes the paper pattern. It is a document setting, not an edit: undo does not revert it. */
     fun setBackground(background: BackgroundSpec) {
         if (background == _state.value.background) return
@@ -217,7 +243,7 @@ class DocumentSession(
         pending.trySend(Pending.Write(op))
     }
 
-    /** One add op per element kind: strokes, text boxes, files. */
+    /** One add op per element kind: strokes, text boxes, files, to-dos. */
     private fun emitAdd(elements: List<PageElement>) {
         val strokes = elements.filterIsInstance<Stroke>()
         val boxes = elements.filterIsInstance<TextBox>()
@@ -225,6 +251,8 @@ class DocumentSession(
         if (boxes.isNotEmpty()) emit { DocumentOp.AddTextBoxes(it, boxes) }
         val files = elements.filterIsInstance<FileElement>()
         if (files.isNotEmpty()) emit { DocumentOp.AddFiles(it, files) }
+        val todos = elements.filterIsInstance<TodoItem>()
+        if (todos.isNotEmpty()) emit { DocumentOp.AddTodos(it, todos) }
     }
 
     private fun applyEdit(edit: Edit, record: Boolean) {
@@ -235,6 +263,7 @@ class DocumentSession(
                 emit { DocumentOp.RemoveStrokes(it, edit.removed.map { s -> s.id }.toSet()) }
                 emitAdd(edit.added)
             }
+            is Edit.TodoDone -> emit { DocumentOp.SetTodoDone(it, edit.taskId, edit.done) }
         }
         if (record) undo.record(edit)
         _canUndo.value = undo.canUndo

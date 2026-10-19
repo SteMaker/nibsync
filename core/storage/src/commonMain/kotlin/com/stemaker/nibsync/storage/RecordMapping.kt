@@ -29,6 +29,8 @@ import com.stemaker.nibsync.model.TextBox
 import com.stemaker.nibsync.model.TextFont
 import com.stemaker.nibsync.model.TextMark
 import com.stemaker.nibsync.model.TextParagraph
+import com.stemaker.nibsync.model.TodoContent
+import com.stemaker.nibsync.model.TodoItem
 
 internal const val FORMAT_VERSION = 1
 
@@ -78,6 +80,18 @@ internal fun DocumentOp.toRecord(): OpRecord = when (this) {
         type = OpRecord.TYPE_ADD_FILES,
         files = elements.map { it.toRecord() },
     )
+    is DocumentOp.AddTodos -> OpRecord(
+        counter = stamp.counter,
+        device = stamp.device.value,
+        type = OpRecord.TYPE_ADD_TODOS,
+        todos = items.map { it.toRecord() },
+    )
+    is DocumentOp.SetTodoDone -> OpRecord(
+        counter = stamp.counter,
+        device = stamp.device.value,
+        type = OpRecord.TYPE_TODO_DONE,
+        todoDone = TodoDoneRecord(taskId.value, done),
+    )
     is DocumentOp.SetBackground -> OpRecord(
         counter = stamp.counter,
         device = stamp.device.value,
@@ -100,6 +114,8 @@ internal fun OpRecord.toDomain(): DocumentOp? {
         OpRecord.TYPE_BACKGROUND -> background?.let { DocumentOp.SetBackground(stamp, it.toDomain()) }
         OpRecord.TYPE_ADD_TEXT -> DocumentOp.AddTextBoxes(stamp, textBoxes.map { it.toDomain() })
         OpRecord.TYPE_ADD_FILES -> DocumentOp.AddFiles(stamp, files.mapNotNull { it.toDomain() })
+        OpRecord.TYPE_ADD_TODOS -> DocumentOp.AddTodos(stamp, todos.mapNotNull { it.toDomain() })
+        OpRecord.TYPE_TODO_DONE -> todoDone?.let { DocumentOp.SetTodoDone(stamp, StrokeId(it.task), it.done) }
         else -> null
     }
 }
@@ -141,9 +157,7 @@ internal fun TextBox.toRecord() = TextBoxRecord(
     height = Quantization.positionToSteps(heightMm),
     createdAtEpochMs = createdAtEpochMs,
     author = author.value,
-    paragraphs = text.paragraphs.map { p ->
-        ParagraphRecord(p.text, p.list.name, p.indent, p.marks.map { it.toRecord() })
-    },
+    paragraphs = text.toRecords(),
 )
 
 private fun TextMark.toRecord(): MarkRecord = when (val s = style) {
@@ -153,17 +167,53 @@ private fun TextMark.toRecord(): MarkRecord = when (val s = style) {
     is MarkStyle.Font -> MarkRecord(start, end, MARK_FONT, s.font.name)
 }
 
-internal fun TextBoxRecord.toDomain(): TextBox {
-    val paragraphs = paragraphs.map { p ->
+private fun RichText.toRecords(): List<ParagraphRecord> = paragraphs.map { p ->
+    ParagraphRecord(p.text, p.list.name, p.indent, p.marks.map { it.toRecord() })
+}
+
+private fun List<ParagraphRecord>.toRichText(): RichText {
+    val paragraphs = map { p ->
         TextParagraph(p.text, enumOr(p.list, ListKind.NONE), p.indent.coerceAtLeast(0), p.marks.mapNotNull { it.toDomain(p.text.length) })
     }
+    return if (paragraphs.isEmpty()) RichText.EMPTY else RichText(paragraphs)
+}
+
+internal fun TodoItem.toRecord(): TodoRecord {
+    val p = Quantization::positionToSteps
+    val content = content
+    return TodoRecord(
+        id = id.value,
+        task = taskId.value,
+        x = p(x),
+        y = p(y),
+        width = p(widthMm),
+        height = p(heightMm),
+        createdAtEpochMs = createdAtEpochMs,
+        author = author.value,
+        paragraphs = (content as? TodoContent.Text)?.text?.toRecords(),
+        strokes = (content as? TodoContent.Ink)?.strokes?.map { it.toRecord() },
+    )
+}
+
+/** Invalid records are skipped. */
+internal fun TodoRecord.toDomain(): TodoItem? {
+    val q = Quantization::stepsToPosition
+    if (width <= 0 || height <= 0) return null
+    val content = when {
+        strokes != null -> TodoContent.Ink(strokes.mapNotNull { it.toDomain() })
+        else -> TodoContent.Text(paragraphs.orEmpty().toRichText())
+    }
+    return TodoItem(StrokeId(id), StrokeId(task), q(x), q(y), q(width), q(height), content, createdAtEpochMs, DeviceId(author))
+}
+
+internal fun TextBoxRecord.toDomain(): TextBox {
     return TextBox(
         id = StrokeId(id),
         x = Quantization.stepsToPosition(x),
         y = Quantization.stepsToPosition(y),
         widthMm = Quantization.stepsToPosition(width).coerceAtLeast(TextBox.MIN_WIDTH_MM),
         heightMm = Quantization.stepsToPosition(height).coerceAtLeast(0f),
-        text = if (paragraphs.isEmpty()) RichText.EMPTY else RichText(paragraphs),
+        text = paragraphs.toRichText(),
         createdAtEpochMs = createdAtEpochMs,
         author = DeviceId(author),
     )

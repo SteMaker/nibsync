@@ -125,6 +125,33 @@ class SyncEngineTest {
     }
 
     @Test
+    fun todosAndTheirDoneStateSync() = runTest {
+        val a = device("a")
+        val doc = a.firstDoc()
+        val sa = a.session(doc)
+        val item = sa.replaceElements(emptySet(), listOf(com.stemaker.nibsync.model.TodoDraft(10f, 10f, 80f, 14f, com.stemaker.nibsync.model.TodoContent.Text(com.stemaker.nibsync.model.RichText.plain("Milch"))))).single() as com.stemaker.nibsync.model.TodoItem
+        sa.flush()
+        a.engine.sync()
+        val b = device("b")
+        b.engine.sync()
+        assertEquals(listOf(item.taskId), b.documents.load(doc).todos.map { it.taskId })
+        // b ticks it off, a moves it at the same time: both survive.
+        val sb = b.session(doc)
+        sb.setTodoDone(item.taskId, true)
+        sb.flush()
+        sa.replaceElements(listOf(item.id), listOf(com.stemaker.nibsync.model.TodoDraft(10f, 40f, 80f, 14f, item.content, item.taskId)))
+        sa.flush()
+        b.engine.sync()
+        a.engine.sync()
+        b.engine.sync()
+        for (d in listOf(a, b)) {
+            val state = d.documents.load(doc)
+            assertEquals(listOf(40f), state.todos.map { it.y })
+            assertTrue(state.isDone(item.taskId))
+        }
+    }
+
+    @Test
     fun concurrentEditsOnTheSameDocumentMerge() = runTest {
         val a = device("a")
         val doc = a.firstDoc()

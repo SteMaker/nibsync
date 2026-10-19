@@ -6,6 +6,7 @@ import com.stemaker.nibsync.model.FileElement
 import com.stemaker.nibsync.model.Stroke
 import com.stemaker.nibsync.model.StrokeId
 import com.stemaker.nibsync.model.TextBox
+import com.stemaker.nibsync.model.TodoItem
 
 /**
  * Lamport timestamp of an operation. Unique per op (a device never reuses a counter value) and
@@ -30,6 +31,14 @@ sealed interface DocumentOp {
 
     /** Adds pictures and file links. Their files must be in the document's assets. */
     data class AddFiles(override val stamp: OpStamp, val elements: List<FileElement>) : DocumentOp
+
+    data class AddTodos(override val stamp: OpStamp, val items: List<TodoItem>) : DocumentOp
+
+    /**
+     * Ticks a to-do off ([done]) or reopens it, by [TodoItem.taskId]. Concurrent changes of the
+     * same task: the one with the highest stamp wins.
+     */
+    data class SetTodoDone(override val stamp: OpStamp, val taskId: StrokeId, val done: Boolean) : DocumentOp
 
     /** Removes elements of any kind (strokes, text boxes) by id. */
     data class RemoveStrokes(override val stamp: OpStamp, val ids: Set<StrokeId>) : DocumentOp

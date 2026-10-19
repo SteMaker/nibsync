@@ -14,7 +14,14 @@ import androidx.compose.material.icons.filled.ContentPaste
 import androidx.compose.material.icons.filled.Draw
 import androidx.compose.material.icons.filled.HighlightAlt
 import androidx.compose.material.icons.filled.HistoryEdu
+import androidx.compose.material.icons.filled.Keyboard
+import androidx.compose.material.icons.filled.TaskAlt
 import androidx.compose.material.icons.filled.TextFields
+import androidx.compose.ui.ExperimentalComposeUiApi
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.PointerEventType
+import androidx.compose.ui.input.pointer.PointerType
+import androidx.compose.ui.input.pointer.onPointerEvent
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.semantics.contentDescription
@@ -91,6 +98,9 @@ object ToolbarTags {
     fun pen(family: BrushFamily) = "pen-${family.name}"
     fun eraser(mode: EraserMode) = "eraser-${mode.name}"
     const val LASSO = "tool-lasso"
+    const val TODO = "tool-todo"
+    const val TODO_KEYBOARD = "todo-keyboard"
+    const val TODO_INK = "todo-ink"
     const val INSERT = "insert"
     fun color(index: Int) = "color-$index"
     fun size(index: Int) = "size-$index"
@@ -118,6 +128,9 @@ class ToolbarTools(
     val onCopySelection: () -> Unit,
     val onCutSelection: () -> Unit,
     val onPaste: () -> Unit,
+    /** The to-do tool was chosen; [ink] if with a pen (graphics tablet), else typed. */
+    val onTodo: (ink: Boolean) -> Unit = {},
+    val onTodoInk: (Boolean) -> Unit = {},
 )
 
 /** Tool bar above the page: undo/redo, and text formatting while a box is open. */
@@ -168,6 +181,7 @@ fun NoteToolbar(
     }
 }
 
+@OptIn(ExperimentalComposeUiApi::class)
 @Composable
 private fun ToolButtons(strings: Strings, t: ToolbarTools) {
     val s = t.state
@@ -186,6 +200,15 @@ private fun ToolButtons(strings: Strings, t: ToolbarTools) {
         Toggle(label, eraserIcon(mode), s.tool == DesktopTool.ERASER && s.eraserMode == mode, ToolbarTags.eraser(mode)) { t.onEraser(mode) }
     }
     Toggle(strings.lasso, Icons.Filled.HighlightAlt, s.tool == DesktopTool.LASSO, ToolbarTags.LASSO) { t.onTool(DesktopTool.LASSO) }
+    // A pen of a graphics tablet writes the to-do by hand, the mouse types it.
+    var pressedWithPen by remember { mutableStateOf(false) }
+    Box(
+        Modifier.onPointerEvent(PointerEventType.Press, PointerEventPass.Initial) { e ->
+            pressedWithPen = e.changes.any { it.type == PointerType.Stylus }
+        },
+    ) {
+        Toggle(strings.toolTodo, Icons.Filled.TaskAlt, s.tool == DesktopTool.TODO, ToolbarTags.TODO) { t.onTodo(pressedWithPen) }
+    }
     Action(strings.insert, Icons.Filled.AddPhotoAlternate, true, ToolbarTags.INSERT, t.onInsert)
 }
 
@@ -226,6 +249,20 @@ fun ToolSettingsBar(strings: Strings, t: ToolbarTools) {
                 DesktopTool.ERASER -> if (s.eraserMode == EraserMode.PIXEL) {
                     DesktopPalette.eraserSizes.forEachIndexed { i, mm ->
                         Dot((8 + i * 5).dp, s.eraserSizeMm == mm, strings.width(mm), ToolbarTags.eraserSize(i)) { t.onEraserSize(mm) }
+                    }
+                }
+                DesktopTool.TODO -> {
+                    Toggle(strings.todoKeyboard, Icons.Filled.Keyboard, !s.todoInk, ToolbarTags.TODO_KEYBOARD) { t.onTodoInk(false) }
+                    Toggle(strings.todoInk, Icons.Filled.Draw, s.todoInk, ToolbarTags.TODO_INK) { t.onTodoInk(true) }
+                    if (s.todoInk) {
+                        HorizontalDivider(Modifier.width(30.dp).padding(vertical = 4.dp))
+                        DesktopPalette.colors(s.pen).forEachIndexed { i, argb ->
+                            Swatch(argb, s.choice.colorArgb == argb, strings.color(i + 1), ToolbarTags.color(i)) { t.onColor(argb) }
+                        }
+                        HorizontalDivider(Modifier.width(30.dp).padding(vertical = 4.dp))
+                        DesktopPalette.sizes(s.pen).forEachIndexed { i, mm ->
+                            Dot((8 + i * 5).dp, s.choice.sizeMm == mm, strings.width(mm), ToolbarTags.size(i)) { t.onSize(mm) }
+                        }
                     }
                 }
                 DesktopTool.LASSO, DesktopTool.TEXT -> Unit

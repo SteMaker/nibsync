@@ -7,6 +7,7 @@ import com.stemaker.nibsync.model.PageElement
 import com.stemaker.nibsync.model.Stroke
 import com.stemaker.nibsync.model.StrokeId
 import com.stemaker.nibsync.model.TextBox
+import com.stemaker.nibsync.model.TodoItem
 
 /**
  * Immutable state of a note document, built purely from ops.
@@ -18,7 +19,8 @@ import com.stemaker.nibsync.model.TextBox
  *
  * With these rules the result does not depend on the order in which ops arrive, which is what
  * concurrent editing on several devices needs. The background is a last-writer-wins register:
- * the [DocumentOp.SetBackground] with the highest stamp counts, else the one in [meta].
+ * the [DocumentOp.SetBackground] with the highest stamp counts, else the one in [meta]. Likewise
+ * each to-do task's done state: the [DocumentOp.SetTodoDone] with the highest stamp counts.
  */
 class DocumentState private constructor(
     val meta: DocumentMeta,
@@ -30,6 +32,8 @@ class DocumentState private constructor(
     private val backgroundSetAt: OpStamp?,
     /** Paper pattern currently in effect. */
     val background: BackgroundSpec,
+    /** Done state per to-do task, with the stamp that set it (last writer wins). */
+    private val todoDone: Map<StrokeId, Pair<OpStamp, Boolean>>,
 ) {
     private class Entry(val element: PageElement, val addedAt: OpStamp)
 
@@ -48,6 +52,12 @@ class DocumentState private constructor(
 
     /** Visible pictures and file links, back to front. */
     val files: List<FileElement> by lazy { elements.filterIsInstance<FileElement>() }
+
+    /** Visible to-dos, back to front. */
+    val todos: List<TodoItem> by lazy { elements.filterIsInstance<TodoItem>() }
+
+    /** Whether the task has been ticked off (open unless a [DocumentOp.SetTodoDone] says so). */
+    fun isDone(taskId: StrokeId): Boolean = todoDone[taskId]?.second ?: false
 
     val strokeCount: Int get() = strokes.size
 
@@ -74,14 +84,20 @@ class DocumentState private constructor(
             is DocumentOp.AddStrokes -> add(op.stamp, op.strokes, newClock)
             is DocumentOp.AddTextBoxes -> add(op.stamp, op.boxes, newClock)
             is DocumentOp.AddFiles -> add(op.stamp, op.elements, newClock)
+            is DocumentOp.AddTodos -> add(op.stamp, op.items, newClock)
             is DocumentOp.RemoveStrokes ->
-                DocumentState(meta, entries - op.ids, tombstones + op.ids, applied + op.stamp, newClock, backgroundSetAt, background)
+                DocumentState(meta, entries - op.ids, tombstones + op.ids, applied + op.stamp, newClock, backgroundSetAt, background, todoDone)
             is DocumentOp.SetBackground ->
                 if (backgroundSetAt == null || op.stamp > backgroundSetAt) {
-                    DocumentState(meta, entries, tombstones, applied + op.stamp, newClock, op.stamp, op.background)
+                    DocumentState(meta, entries, tombstones, applied + op.stamp, newClock, op.stamp, op.background, todoDone)
                 } else {
-                    DocumentState(meta, entries, tombstones, applied + op.stamp, newClock, backgroundSetAt, background)
+                    DocumentState(meta, entries, tombstones, applied + op.stamp, newClock, backgroundSetAt, background, todoDone)
                 }
+            is DocumentOp.SetTodoDone -> {
+                val current = todoDone[op.taskId]
+                val done = if (current == null || op.stamp > current.first) todoDone + (op.taskId to (op.stamp to op.done)) else todoDone
+                DocumentState(meta, entries, tombstones, applied + op.stamp, newClock, backgroundSetAt, background, done)
+            }
         }
     }
 
@@ -93,17 +109,17 @@ class DocumentState private constructor(
             val existing = newEntries[e.id]
             if (existing == null || stamp < existing.addedAt) newEntries[e.id] = Entry(e, stamp)
         }
-        return DocumentState(meta, newEntries, tombstones, applied + stamp, newClock, backgroundSetAt, background)
+        return DocumentState(meta, newEntries, tombstones, applied + stamp, newClock, backgroundSetAt, background, todoDone)
     }
 
     fun applyAll(ops: Iterable<DocumentOp>): DocumentState = ops.fold(this) { s, op -> s.apply(op) }
 
     /** Replaces [meta]; its background only counts as long as no [DocumentOp.SetBackground] was applied. */
     fun withMeta(meta: DocumentMeta): DocumentState =
-        DocumentState(meta, entries, tombstones, applied, clock, backgroundSetAt, if (backgroundSetAt == null) meta.background else background)
+        DocumentState(meta, entries, tombstones, applied, clock, backgroundSetAt, if (backgroundSetAt == null) meta.background else background, todoDone)
 
     companion object {
         fun empty(meta: DocumentMeta): DocumentState =
-            DocumentState(meta, emptyMap(), emptySet(), emptySet(), 0L, null, meta.background)
+            DocumentState(meta, emptyMap(), emptySet(), emptySet(), 0L, null, meta.background, emptyMap())
     }
 }

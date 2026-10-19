@@ -102,3 +102,14 @@ fun sampleImage(id: String) = com.stemaker.nibsync.model.ImageElement(
 fun sampleLink(id: String) = com.stemaker.nibsync.model.FileLink(
     StrokeId(id), 10f, 100f, 60f, 12f, com.stemaker.nibsync.model.Asset(SAMPLE_SHA, com.stemaker.nibsync.model.Asset.PDF), "Skript Kapitel 3.pdf", 1_700_000_001_500, DEV_B,
 )
+
+fun textTodo(id: String, task: String) = com.stemaker.nibsync.model.TodoItem(
+    StrokeId(id), StrokeId(task), 15f, 60.5f, 90f, 14f,
+    com.stemaker.nibsync.model.TodoContent.Text(com.stemaker.nibsync.model.RichText.plain("Angebot schicken")), 1_700_000_002_000, DEV_A,
+)
+
+/** A handwritten to-do; the stroke's points are relative to its content area. */
+fun inkTodo(id: String, task: String) = com.stemaker.nibsync.model.TodoItem(
+    StrokeId(id), StrokeId(task), 15f, 80f, 70f, 16.25f,
+    com.stemaker.nibsync.model.TodoContent.Ink(listOf(penStroke("99999999-9999-4999-8999-999999999999"))), 1_700_000_002_500, DEV_B,
+)

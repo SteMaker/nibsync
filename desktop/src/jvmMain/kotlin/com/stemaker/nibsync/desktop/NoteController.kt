@@ -27,7 +27,9 @@ import com.stemaker.nibsync.model.TextBox
 import com.stemaker.nibsync.model.assets
 import com.stemaker.nibsync.model.geometry.Rect
 import com.stemaker.nibsync.shapes.HoldDetector
+import com.stemaker.nibsync.model.TodoItem
 import com.stemaker.nibsync.text.TextBoxEditing
+import com.stemaker.nibsync.text.TodoEditing
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -59,6 +61,9 @@ class NoteController(
 ) {
     val text = TextBoxEditing(session).also { it.measureText = measureText }
 
+    /** The to-do being written or typed, see [selectTodo]. */
+    val todo = TodoEditing(session).also { it.measureText = measureText }
+
     private val _tools = MutableStateFlow(DesktopToolState())
     val tools: StateFlow<DesktopToolState> = _tools.asStateFlow()
 
@@ -84,6 +89,7 @@ class NoteController(
 
     fun selectTool(tool: DesktopTool) {
         text.finish()
+        todo.finish()
         selectionByClick = false
         if (tool != DesktopTool.LASSO) clearSelection()
         _tools.update { it.copy(tool = tool) }
@@ -105,13 +111,45 @@ class NoteController(
 
     fun selectEraserSize(mm: Float) = _tools.update { it.copy(eraserSizeMm = mm) }
 
+    /** The to-do tool; new to-dos are handwritten with [ink], else typed. */
+    fun selectTodo(ink: Boolean) {
+        selectTool(DesktopTool.TODO)
+        // To-dos are written with a pen, not the highlighter.
+        _tools.update { it.copy(todoInk = ink, pen = if (it.pen == BrushFamily.HIGHLIGHTER) BrushFamily.BALLPOINT else it.pen) }
+    }
+
+    /** Switches between handwritten and typed new to-dos (the open one keeps its kind). */
+    fun selectTodoInk(ink: Boolean) = _tools.update { it.copy(todoInk = ink) }
+
+    /** Ticks the task off or reopens it. */
+    fun toggleTodo(taskId: StrokeId) {
+        session.setTodoDone(taskId, !session.state.value.isDone(taskId))
+    }
+
+    private fun openTodo(item: TodoItem) {
+        text.finish()
+        clearSelection()
+        selectionByClick = false
+        todo.open(item)
+        _tools.update { it.copy(tool = DesktopTool.TODO) }
+    }
+
     // ---- elements under the pointer ----------------------------------------------------------
 
     /** The topmost text box at ([x], [y]) mm, or null. */
     fun textBoxAt(x: Float, y: Float): TextBox? =
         session.state.value.textBoxes.lastOrNull { it.bounds.contains(x, y) }
 
-    /** The topmost text box, picture or file link at ([x], [y]) mm, or null. */
+    /** The to-do whose check circle is at ([x], [y]) mm (a little generous), or null. */
+    fun todoCheckAt(x: Float, y: Float): TodoItem? {
+        val reach = 1.5f
+        return session.state.value.todos.lastOrNull { t ->
+            val c = t.checkBounds
+            x >= c.left - reach && x <= c.right + reach && y >= c.top - reach && y <= c.bottom + reach
+        }
+    }
+
+    /** The topmost text box, picture, file link or to-do at ([x], [y]) mm, or null. */
     fun elementAt(x: Float, y: Float): PageElement? =
         session.state.value.elements.lastOrNull { it !is Stroke && it.bounds.contains(x, y) }
 
@@ -119,11 +157,12 @@ class NoteController(
 
     private sealed interface Active {
         class Click(val x: Float, val y: Float) : Active
-        class Draw(val draft: MutableList<StrokePoint>, val tool: InputTool, val hold: HoldDetector, val startTime: Long, val onElement: Boolean) : Active
+        class Draw(val draft: MutableList<StrokePoint>, val tool: InputTool, val hold: HoldDetector, val startTime: Long, val onElement: Boolean, val intoTodo: Boolean = false) : Active
         class Erase(val gesture: EraseGesture) : Active
         class Lasso(val path: ArrayList<Float>) : Active
         class Move(val startX: Float, val startY: Float, var dx: Float = 0f, var dy: Float = 0f) : Active
         class Resize(val element: FileElement, val anchorDist: Float, var factor: Float = 1f) : Active
+        class Check(val taskId: StrokeId) : Active
     }
 
     private var active: Active? = null
@@ -148,6 +187,13 @@ class NoteController(
         pressTime = timeMs
         travel = 0f
         val state = _tools.value
+        // The check circle of a to-do works with every tool but the eraser.
+        if (state.tool != DesktopTool.ERASER) {
+            todoCheckAt(x, y)?.let {
+                active = Active.Check(it.taskId)
+                return
+            }
+        }
         if (_selection.value.isNotEmpty() && state.tool != DesktopTool.ERASER) {
             val resizable = resizable()
             val frame = selectionFrame()
@@ -163,8 +209,20 @@ class NoteController(
             }
         }
         if (state.tool != DesktopTool.TEXT) text.finish()
+        if (state.tool != DesktopTool.TODO) todo.finish()
         active = when (state.tool) {
             DesktopTool.TEXT -> Active.Click(x, y)
+            DesktopTool.TODO -> {
+                val open = todo.editing.value
+                if (open != null && open.isInk && todo.contains(x, y)) {
+                    // Writing into the open handwritten to-do.
+                    val point = StrokePoint(x, y, 0, pressure ?: StrokePoint.NO_VALUE)
+                    Active.Draw(mutableListOf(point), if (pressure != null) InputTool.STYLUS else InputTool.MOUSE, HoldDetector(toleranceMm).also { it.onSample(x, y, timeMs) }, timeMs, onElement = false, intoTodo = true)
+                        .also { _gesture.value = GesturePreview.Drawing(previewStroke(it)) }
+                } else {
+                    Active.Click(x, y)
+                }
+            }
             DesktopTool.PEN -> {
                 val point = StrokePoint(x, y, 0, pressure ?: StrokePoint.NO_VALUE)
                 Active.Draw(mutableListOf(point), if (pressure != null) InputTool.STYLUS else InputTool.MOUSE, HoldDetector(toleranceMm).also { it.onSample(x, y, timeMs) }, timeMs, elementAt(x, y) != null)
@@ -206,7 +264,7 @@ class NoteController(
                 if (a.anchorDist > 0f) a.factor = maxOf(MIN_SIZE_MM / a.element.widthMm, hypot(x - a.element.x, y - a.element.y) / a.anchorDist)
                 _gesture.value = GesturePreview.Resizing(a.factor)
             }
-            is Active.Click, null -> Unit
+            is Active.Click, is Active.Check, null -> Unit
         }
     }
 
@@ -219,9 +277,12 @@ class NoteController(
         val isClick = travel <= toleranceMm && timeMs - pressTime <= CLICK_MAX_MS
         when (a) {
             is Active.Click -> if (isClick) click(x, y, timeMs, pageWidthMm)
+            is Active.Check -> if (isClick) toggleTodo(a.taskId)
             is Active.Draw -> {
                 // A short click of the pen on a text box, picture or link acts on it, not a dot.
-                if (isClick && a.onElement) {
+                if (a.intoTodo) {
+                    if (a.draft.isNotEmpty()) todo.addInk(StrokeDraft(_tools.value.brush, a.tool, a.draft.toList()))
+                } else if (isClick && a.onElement) {
                     click(pressX, pressY, timeMs, pageWidthMm)
                 } else if (a.draft.isNotEmpty()) {
                     session.addStroke(StrokeDraft(_tools.value.brush, a.tool, a.draft.toList()))
@@ -259,7 +320,7 @@ class NoteController(
     /** Called regularly while drawing: a pen held still turns the stroke into a clean shape. */
     fun checkHold(nowMs: Long) {
         val a = active as? Active.Draw ?: return
-        if (!a.hold.consumeHold(nowMs)) return
+        if (a.intoTodo || !a.hold.consumeHold(nowMs)) return
         val points = a.draft.subList(0, a.hold.anchorSampleCount.coerceAtMost(a.draft.size)).toList()
         val draft = StrokeDraft(_tools.value.brush, a.tool, points)
         val recent = session.state.value.strokes.filter { it.layer == draft.layer }.takeLast(RECENT_STROKES)
@@ -285,13 +346,21 @@ class NoteController(
             }
             is FileLink -> if (double) openFile(hit) else selectByClick(hit.id)
             is ImageElement -> selectByClick(hit.id)
+            is TodoItem -> when {
+                _tools.value.tool == DesktopTool.LASSO -> selectByClick(hit.id)
+                todo.editing.value?.itemId != hit.id -> openTodo(hit)
+            }
             else -> {
-                if (_selection.value.isNotEmpty()) {
+                if (todo.finish()) {
+                    // The first click beside an open to-do only ends it.
+                } else if (_selection.value.isNotEmpty()) {
                     // The first click beside a selection only ends it.
                     clearSelection()
                     endTemporarySelection()
                 } else if (_tools.value.tool == DesktopTool.TEXT) {
                     clickAt(x, y, pageWidthMm)
+                } else if (_tools.value.tool == DesktopTool.TODO && x in 0f..pageWidthMm && y >= 0f) {
+                    todo.startNew(x - TodoItem.CONTENT_OFFSET_MM / 2, y - TodoItem.MIN_HEIGHT_MM / 2, _tools.value.todoInk, pageWidthMm)
                 }
             }
         }
@@ -299,6 +368,7 @@ class NoteController(
 
     private fun selectByClick(id: StrokeId) {
         text.finish()
+        todo.finish()
         val tool = _tools.value.tool
         if (tool != DesktopTool.LASSO) {
             toolBeforeSelection = tool
@@ -376,6 +446,7 @@ class NoteController(
     fun paste(cx: Float, cy: Float): Boolean {
         val clip = clipboard.content.value ?: return false
         text.finish()
+        todo.finish()
         val drafts = clip.placedAt(cx, cy)
         val here = session.state.value.meta.id
         val source = clipboard.source
@@ -422,7 +493,7 @@ class NoteController(
 
     /** Escape: stop editing or selecting. */
     fun escape() {
-        if (!text.finish()) {
+        if (!text.finish() && !todo.finish()) {
             clearSelection()
             endTemporarySelection()
         }
@@ -430,15 +501,16 @@ class NoteController(
 
     fun endEditing() {
         text.finish()
+        todo.finish()
     }
 
     fun undo(): Boolean {
-        text.finish()
+        endEditing()
         return session.undo().also { pruneSelection() }
     }
 
     fun redo(): Boolean {
-        text.finish()
+        endEditing()
         return session.redo().also { pruneSelection() }
     }
 

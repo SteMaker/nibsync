@@ -27,8 +27,9 @@ object StrokePainter {
     private const val TAPER_SIZES = 3f
     private const val TAPER_END_FACTOR = 0.75f
 
-    fun draw(scope: DrawScope, stroke: Stroke) {
-        val color = Color(stroke.brush.colorArgb)
+    /** Draws [stroke]; [alpha] fades it (done to-dos). */
+    fun draw(scope: DrawScope, stroke: Stroke, alpha: Float = 1f) {
+        val color = Color(stroke.brush.colorArgb).let { if (alpha < 1f) it.copy(alpha = it.alpha * alpha) else it }
         when (stroke.brush.family) {
             BrushFamily.FOUNTAIN_PEN -> drawOutline(scope, stroke, color)
             // One path drawn once: a translucent highlighter does not darken where it overlaps itself.

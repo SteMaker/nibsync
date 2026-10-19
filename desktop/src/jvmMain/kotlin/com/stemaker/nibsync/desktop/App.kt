@@ -48,6 +48,10 @@ import androidx.compose.ui.input.key.type
 import androidx.compose.ui.graphics.Color
 import com.stemaker.nibsync.document.DocumentSession
 import com.stemaker.nibsync.library.NodeId
+import com.stemaker.nibsync.library.OpenTodo
+import com.stemaker.nibsync.library.TodoCollector
+import androidx.compose.runtime.mutableIntStateOf
+import kotlinx.coroutines.flow.debounce
 import com.stemaker.nibsync.model.DocumentId
 import com.stemaker.nibsync.sync.client.SyncController
 import java.io.File
@@ -110,9 +114,32 @@ fun App(
                 val id = documentId ?: return@LaunchedEffect
                 expanded = expanded + tree.pathTo(NodeId(id.value)).dropLast(1).map { it.id }
             }
+            var showTodos by remember { mutableStateOf(false) }
             fun open(id: NodeId) {
+                showTodos = false
                 documentId = id.asDocumentId
                 settings.lastDocument = id.asDocumentId
+            }
+            // The generated page of open to-dos: derived from the documents, never stored.
+            val todoCollector = remember {
+                TodoCollector({ container.openSessionOrNull(it)?.state?.value }, { container.repository.load(it) })
+            }
+            var todos by remember { mutableStateOf<List<OpenTodo>?>(null) }
+            var todoRefresh by remember { mutableIntStateOf(0) }
+            var ticked by remember { mutableStateOf<TickedTodo?>(null) }
+            var reveal by remember { mutableStateOf<Pair<DocumentId, Float>?>(null) }
+            val syncStatuses = sync?.statuses?.collectAsState()?.value
+            LaunchedEffect(syncStatuses) {
+                // The sync may have changed stored documents.
+                todoCollector.invalidate()
+                todoRefresh++
+            }
+            LaunchedEffect(Unit) {
+                @OptIn(kotlinx.coroutines.FlowPreview::class)
+                container.localChanges.debounce(TODO_REFRESH_MS).collect { todoRefresh++ }
+            }
+            LaunchedEffect(ready, tree, todoRefresh) {
+                if (ready) todos = todoCollector.collect(tree)
             }
             when (val action = libraryAction) {
                 null -> Unit
@@ -158,7 +185,7 @@ fun App(
             Row(Modifier.fillMaxSize()) {
                 LibraryPane(
                     tree = tree,
-                    current = documentId?.let { NodeId(it.value) },
+                    current = if (showTodos) null else documentId?.let { NodeId(it.value) },
                     strings = strings,
                     onOpen = ::open,
                     expanded = expanded,
@@ -168,14 +195,40 @@ fun App(
                     onSettings = if (sync != null) ({ showSettings = true }) else null,
                     onNewBook = { newBook = true },
                     bookAccounts = sync?.let { BookAccountsUi(accounts, { id -> bookAccounts[id] }, it::assignBook) },
+                    onTodos = { showTodos = true },
+                    todosShown = showTodos,
+                    todoCount = todos?.size,
                 )
                 VerticalDivider()
                 Box(Modifier.weight(1f).fillMaxSize(), contentAlignment = Alignment.Center) {
                     val id = documentId
-                    if (id == null) {
-                        if (ready) Text(strings.noDocument) else CircularProgressIndicator()
-                    } else {
-                        DocumentPane(container, id, strings, keys, sync, clipboard)
+                    when {
+                        showTodos -> TodoListPane(
+                            todos = todos,
+                            strings = strings,
+                            onTick = { t ->
+                                appScope.launch {
+                                    container.openSession(t.document).setTodoDone(t.item.taskId, true)
+                                    ticked = TickedTodo(t)
+                                    todoRefresh++
+                                }
+                            },
+                            onOpen = { t ->
+                                reveal = t.document to t.item.y
+                                open(NodeId(t.document.value))
+                            },
+                            ticked = ticked,
+                            onUndo = { t ->
+                                ticked = null
+                                appScope.launch {
+                                    container.openSession(t.todo.document).setTodoDone(t.todo.item.taskId, false)
+                                    todoRefresh++
+                                }
+                            },
+                            onUndoGone = { ticked = null },
+                        )
+                        id == null -> if (ready) Text(strings.noDocument) else CircularProgressIndicator()
+                        else -> DocumentPane(container, id, strings, keys, sync, clipboard, reveal?.takeIf { it.first == id }?.second) { reveal = null }
                     }
                 }
             }
@@ -185,7 +238,17 @@ fun App(
 
 @OptIn(ExperimentalComposeUiApi::class)
 @Composable
-private fun DocumentPane(container: DesktopContainer, id: DocumentId, strings: Strings, keys: KeyRouter, sync: SyncController?, clipboard: DesktopClipboard) {
+private fun DocumentPane(
+    container: DesktopContainer,
+    id: DocumentId,
+    strings: Strings,
+    keys: KeyRouter,
+    sync: SyncController?,
+    clipboard: DesktopClipboard,
+    /** Scroll so this height (mm) is in view, e.g. a to-do opened from the list. */
+    revealYMm: Float? = null,
+    onRevealed: () -> Unit = {},
+) {
     var session by remember(id) { mutableStateOf<DocumentSession?>(null) }
     LaunchedEffect(id) { session = container.openSession(id) }
     val s = session ?: return CircularProgressIndicator()
@@ -204,6 +267,7 @@ private fun DocumentPane(container: DesktopContainer, id: DocumentId, strings: S
         }
     }
     val editing by controller.text.editing.collectAsState()
+    val todoEdit by controller.todo.editing.collectAsState()
     val tools by controller.tools.collectAsState()
     val selection by controller.selection.collectAsState()
     val gesture by controller.gesture.collectAsState()
@@ -211,6 +275,11 @@ private fun DocumentPane(container: DesktopContainer, id: DocumentId, strings: S
     val canUndo by s.canUndo.collectAsState()
     val canRedo by s.canRedo.collectAsState()
     var viewport by remember(id) { mutableStateOf(initialViewport(doc.meta.format.widthMm, doc.meta.format.pageHeightMm)) }
+    LaunchedEffect(revealYMm, viewport.hasSize) {
+        if (revealYMm == null || !viewport.hasSize) return@LaunchedEffect
+        viewport = viewport.withContentBottom(doc.contentBottomMm).copy(scrollYMm = maxOf(0f, revealYMm - REVEAL_MARGIN_MM)).clamped()
+        onRevealed()
+    }
 
     /** Stores [file] with the document and puts it in the middle of the visible page. */
     fun insertFile(file: PickedFile?) {
@@ -267,15 +336,17 @@ private fun DocumentPane(container: DesktopContainer, id: DocumentId, strings: S
             onCopySelection = { controller.copySelection() },
             onCutSelection = { controller.cutSelection() },
             onPaste = ::pasteHere,
+            onTodo = controller::selectTodo,
+            onTodoInk = controller::selectTodoInk,
         )
         NoteToolbar(
             strings = strings,
-            canUndo = canUndo || editing != null,
+            canUndo = canUndo || editing != null || todoEdit != null,
             canRedo = canRedo,
             onUndo = { controller.undo() },
             onRedo = { controller.redo() },
-            editing = editing?.controller,
-            onDeleteText = { controller.text.delete() },
+            editing = editing?.controller ?: todoEdit?.text,
+            onDeleteText = { if (todoEdit != null) controller.todo.delete() else controller.text.delete() },
             tools = toolbarTools,
             end = { if (sync != null) SyncStatusIcon(sync, strings) },
         )
@@ -312,10 +383,15 @@ private fun DocumentPane(container: DesktopContainer, id: DocumentId, strings: S
                         selection = selection,
                         selectionFrame = if (selection.isEmpty()) null else controller.selectionFrame(),
                         resizable = controller.resizable() != null,
+                        todo = todoEdit?.preview(s.device),
+                        todoInEditor = todoEdit?.text != null,
                     ),
                 )
                 editing?.let { e ->
                     if (viewport.hasSize) TextBoxOverlay(e, viewport, strings, controller)
+                }
+                todoEdit?.let { e ->
+                    if (viewport.hasSize) TodoOverlay(e, viewport, strings, controller)
                 }
                 message?.let { text ->
                     LaunchedEffect(text) {
@@ -337,10 +413,27 @@ private fun DocumentPane(container: DesktopContainer, id: DocumentId, strings: S
     }
 }
 
+/** Space above a to-do revealed from the list. */
+private const val REVEAL_MARGIN_MM = 15f
+
+/** Edits are collected this long before the to-do list is rebuilt. */
+private const val TODO_REFRESH_MS = 800L
+
 /** Shortcuts that work anywhere in the window; text editing keys stay with the editor. */
 private fun handleKey(event: KeyEvent, controller: NoteController, paste: () -> Unit): Boolean {
     if (event.type != KeyEventType.KeyDown) return false
-    val editing = controller.text.editing.value
+    val todo = controller.todo.editing.value
+    if (todo != null && todo.isInk) {
+        return when (event.key) {
+            Key.Escape -> {
+                controller.endEditing()
+                true
+            }
+            Key.Delete, Key.Backspace -> controller.todo.delete()
+            else -> false
+        }
+    }
+    val editing = controller.text.editing.value ?: todo?.let { com.stemaker.nibsync.text.TextEditing(it.key, it.itemId, it.x, it.y, it.widthMm, it.text!!) }
     if (editing != null) {
         return when {
             event.key == Key.Escape -> {

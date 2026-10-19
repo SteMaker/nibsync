@@ -21,7 +21,10 @@ enum class Layer(val zIndex: Int) {
     TEXT(3),
 
     /** Regular handwriting. */
-    INK(4);
+    INK(4),
+
+    /** To-dos, above everything so they can always be ticked off. Holds no strokes. */
+    TODO(5);
 
     val holdsStrokes: Boolean get() = this == MARKER || this == INK
 }

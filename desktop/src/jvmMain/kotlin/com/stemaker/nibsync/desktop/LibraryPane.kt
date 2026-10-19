@@ -23,6 +23,8 @@ import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.TaskAlt
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -72,6 +74,7 @@ fun treeRows(tree: LibraryTree, expanded: Set<NodeId>): List<TreeRow> {
 
 object LibraryTags {
     const val SETTINGS = "library-settings"
+    const val TODOS = "library-todos"
     const val NEW_BOOK = "library-new-book"
     const val NEW_CHAPTER = "library-new-chapter"
     const val NEW_DOCUMENT = "library-new-document"
@@ -121,6 +124,11 @@ fun LibraryPane(
     /** The entries' context menu; null: no menu. */
     onAction: ((LibraryAction) -> Unit)? = null,
     bookAccounts: BookAccountsUi? = null,
+    /** Shows the generated page of open to-dos; null hides its entry. */
+    onTodos: (() -> Unit)? = null,
+    todosShown: Boolean = false,
+    /** Number of open to-dos, null while unknown. */
+    todoCount: Int? = null,
 ) {
     var menuFor by remember { mutableStateOf<NodeId?>(null) }
     Column(modifier.fillMaxHeight().width(280.dp).background(MaterialTheme.colorScheme.surfaceContainerLow)) {
@@ -136,6 +144,24 @@ fun LibraryPane(
                     Icon(Icons.Filled.Settings, contentDescription = strings.settings)
                 }
             }
+        }
+        if (onTodos != null) {
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    .background(if (todosShown) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surfaceContainerLow)
+                    .clickable(onClick = onTodos)
+                    .padding(start = 12.dp, end = 12.dp, top = 6.dp, bottom = 6.dp)
+                    .testTag(LibraryTags.TODOS),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                Spacer(Modifier.width(18.dp))
+                Icon(Icons.Filled.TaskAlt, null, Modifier.size(18.dp), tint = PagePainter.TODO_RED)
+                Text(strings.openTodos, modifier = Modifier.weight(1f))
+                if (todoCount != null) Text(todoCount.toString(), style = MaterialTheme.typography.labelMedium)
+            }
+            HorizontalDivider()
         }
         LazyColumn(Modifier.fillMaxWidth().weight(1f)) {
             items(treeRows(tree, expanded), key = { it.node.id.value }) { row ->

@@ -39,8 +39,17 @@ class DesktopTextLayout {
         return layout(box.text, box.widthMm).also { cache[box.id] = box to it }
     }
 
+    private val todoCache = HashMap<StrokeId, Triple<RichText, Float, TextLayoutResult>>()
+
+    /** Layout of a to-do's text in its content width, cached like [layoutOf]. */
+    fun layoutOf(id: StrokeId, text: RichText, widthMm: Float): TextLayoutResult {
+        todoCache[id]?.let { (t, w, result) -> if (t == text && w == widthMm) return result }
+        return layout(text, widthMm).also { todoCache[id] = Triple(text, widthMm, it) }
+    }
+
     fun retainOnly(ids: Set<StrokeId>) {
         cache.keys.retainAll(ids)
+        todoCache.keys.retainAll(ids)
     }
 
     companion object {

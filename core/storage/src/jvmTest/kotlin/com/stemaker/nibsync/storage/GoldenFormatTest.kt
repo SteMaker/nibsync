@@ -40,6 +40,19 @@ class GoldenFormatTest {
         com.stemaker.nibsync.document.DocumentOp.AddFiles(com.stemaker.nibsync.document.OpStamp(6, DEV_A), listOf(sampleImage("55555555-5555-4555-8555-555555555555"), sampleLink("66666666-6666-4666-8666-666666666666"))),
     )
 
+    // Added in format version 1 later on (op types 6 and 7); older readers skip them.
+    private val todoOps = listOf(
+        com.stemaker.nibsync.document.DocumentOp.AddTodos(
+            com.stemaker.nibsync.document.OpStamp(7, DEV_A),
+            listOf(textTodo("77777777-7777-4777-8777-777777777777", "88888888-8888-4888-8888-888888888888"), inkTodo("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb")),
+        ),
+        com.stemaker.nibsync.document.DocumentOp.SetTodoDone(
+            com.stemaker.nibsync.document.OpStamp(8, DEV_B),
+            com.stemaker.nibsync.model.StrokeId("88888888-8888-4888-8888-888888888888"),
+            true,
+        ),
+    )
+
     private val goldenDir = "src/jvmTest/resources/golden".toPath()
 
     private fun encodedLog(ops: List<com.stemaker.nibsync.document.DocumentOp> = this.ops): okio.ByteString {
@@ -72,6 +85,14 @@ class GoldenFormatTest {
         FileSystem.SYSTEM.write(goldenDir / "ops-v1-background.oplog") { write(encodedLog(backgroundOps)) }
         FileSystem.SYSTEM.write(goldenDir / "ops-v1-text.oplog") { write(encodedLog(textOps)) }
         FileSystem.SYSTEM.write(goldenDir / "ops-v1-files.oplog") { write(encodedLog(fileOps)) }
+        FileSystem.SYSTEM.write(goldenDir / "ops-v1-todos.oplog") { write(encodedLog(todoOps)) }
+    }
+
+    @Test
+    fun todoOpsAreStable() {
+        val golden = golden("ops-v1-todos.oplog")
+        assertThat(OpLogCodec.read(Buffer().write(golden)).ops).isEqualTo(todoOps)
+        assertThat(encodedLog(todoOps).hex()).isEqualTo(golden.hex())
     }
 
     @Test
