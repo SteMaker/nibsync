@@ -28,7 +28,10 @@ class DesktopSyncStoreTest {
         val accounts = listOf(SyncAccount(AccountId.new(), "Privat", nextcloud), SyncAccount(AccountId.new(), "Arbeit", OneDriveConfig("me@work.com", "rt")))
         store.save(AccountsCodec.toMap(accounts))
         assertThat(AccountsCodec.fromMap(store.load())).isEqualTo(accounts)
-        assertThat(PosixFilePermissions.toString(Files.getPosixFilePermissions(file))).isEqualTo("rw-------")
+        // Only POSIX systems have these rights; on Windows the user profile folder is private.
+        if ("posix" in java.nio.file.FileSystems.getDefault().supportedFileAttributeViews()) {
+            assertThat(PosixFilePermissions.toString(Files.getPosixFilePermissions(file))).isEqualTo("rw-------")
+        }
     }
 
     @Test

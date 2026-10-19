@@ -1,0 +1,5 @@
+# Byte-exact reference files of the storage format: never convert line endings (Windows checkout).
+core/storage/src/jvmTest/resources/golden/** binary
+# Shell scripts must keep LF to run.
+*.sh text eol=lf
+gradlew text eol=lf
