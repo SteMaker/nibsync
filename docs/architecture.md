@@ -195,8 +195,10 @@ Development server: `docker run ... --name nibsync-nextcloud -p 8089:80 nextclou
 (SQLite; user `nibsync` / `nibsync-test-pass`). The JVM integration test runs with
 `NIBSYNC_NEXTCLOUD_URL=http://localhost:8089 NIBSYNC_NEXTCLOUD_USER=nibsync
 NIBSYNC_NEXTCLOUD_PASSWORD=nibsync-test-pass ./gradlew :sync:webdav:jvmTest`; the device test
-`SyncAppTest` uses `http://192.168.4.100:8089` (override with `NIBSYNC_TEST_NEXTCLOUD_URL`) and
-is skipped when the server is unreachable.
+`SyncAppTest` uses `http://10.0.2.2:8089`, the PC as seen from the emulator (`scripts/verify.sh
+--tablet` passes the PC's LAN address; override with `NIBSYNC_TEST_NEXTCLOUD_URL`), and is
+skipped when the server is unreachable. Both addresses are in the container's
+`trusted_domains` (`occ config:system:set trusted_domains <n> --value=<address>`).
 
 Known limits: whole own log is re-uploaded on change (fine for typical sizes; could be split
 into segments later); no background sync while the app is closed.

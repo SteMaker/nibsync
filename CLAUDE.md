@@ -10,10 +10,13 @@ feature roadmap and where each feature lives.
   JetBrains JDK in `~/.gradle/jdks`); bytecode targets Java 17.
 - `./gradlew assembleDebug` – build the APK
 - `./gradlew test` – all JVM unit tests (core modules + Robolectric)
-- `./gradlew connectedDebugAndroidTest` – instrumented/app-level tests on the USB tablet
-  (`gradle.properties` keeps the app installed afterwards, so notes on the device survive)
-- `./gradlew installDebug` – install on the tablet
-- `scripts/verify.sh` – everything; `--no-device` skips instrumented tests
+- Instrumented/app-level tests run on the emulator `nibsync_honor` (`scripts/emulator.sh
+  start|stop|show`, modelled on the HONOR tablet: API 36, 1920x3000, 400 dpi, Play services),
+  not on the user's tablet: `ANDROID_SERIAL=emulator-5580 ./gradlew connectedDebugAndroidTest`
+- `./gradlew installDebug` – install (on the tablet only when the user asks; pin `ANDROID_SERIAL`
+  when both are connected)
+- `scripts/verify.sh` – everything, starting and stopping the emulator; `--tablet` runs the
+  instrumented tests on the real tablet instead, `--no-device` skips them
 - `./gradlew :desktop:createDistributable` – build the PC app; run it with
   `desktop/build/compose/binaries/main/app/nibsync/bin/nibsync [--data-dir <dir>]` (preferred
   over `:desktop:run`, which keeps a Gradle daemon busy); its tests run with `./gradlew test`
@@ -29,7 +32,8 @@ feature roadmap and where each feature lives.
   they also back the PC app (`desktop/`). `shared/*` modules are KMP with Android and JVM
   targets for UI code both apps use.
 - Memory: the dev PC froze once from RAM exhaustion; keep the caps in `gradle.properties` and
-  the desktop `-Xmx1g`, and do not leave `:desktop:run` running during builds.
+  the desktop `-Xmx1g`, and do not leave `:desktop:run` running during builds. The emulator
+  takes about 4 GB: stop it when done (`verify.sh` does).
 - `androidx.ink` types stay inside `ink/android` and `feature/canvas`; they never appear in
   public APIs of other modules. Likewise the rich text editor library stays inside
   `shared/text` (KMP, Android + PC) and `feature/text`; convert via `RichTextConversion`.

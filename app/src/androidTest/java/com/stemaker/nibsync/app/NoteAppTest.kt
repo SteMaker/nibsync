@@ -694,9 +694,12 @@ class NoteAppTest {
         waitUntil("editing a new text box") { editing() != null }
     }
 
-    /** Taps the page away from the boxes, which ends editing; waits until the editor is gone. */
+    /**
+     * Taps the page away from the boxes, which ends editing; waits until the editor is gone.
+     * High up on the right: the lower part of a landscape screen is under the keyboard.
+     */
     private fun tapOutside() {
-        tap(2600f, 1400f)
+        tap(2600f, 500f)
         waitUntil("editing ended") { editing() == null }
         compose.waitForIdle()
     }
@@ -863,7 +866,8 @@ class NoteAppTest {
         val onPage = inkBounds(closed, 0, 0)
         for (i in 0..3) assertThat(inEditor[i]).isWithin(3).of(onPage[i])
         assertThat(locAfter.toList()).isEqualTo(locBefore.toList())
-        assertThat(view.viewport).isEqualTo(viewportBefore)
+        // The page does not move. A docked keyboard may make the view shorter, nothing else.
+        assertThat(view.viewport.copy(viewHeightPx = viewportBefore.viewHeightPx)).isEqualTo(viewportBefore)
         assertThat(editor.left).isWithin(2f).of(expectedLeft)
         assertThat(editor.top).isWithin(2f).of(expectedTop)
         assertThat(editor.width).isWithin(2f).of(box.widthMm * view.viewport.scale)

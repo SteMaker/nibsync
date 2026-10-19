@@ -25,7 +25,7 @@ android {
         versionName = "0.1.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         // Nextcloud for the sync device test (the development container on this machine).
-        testInstrumentationRunnerArguments["nextcloudUrl"] = providers.environmentVariable("NIBSYNC_TEST_NEXTCLOUD_URL").getOrElse("http://192.168.4.100:8089")
+        testInstrumentationRunnerArguments["nextcloudUrl"] = providers.environmentVariable("NIBSYNC_TEST_NEXTCLOUD_URL").getOrElse("http://10.0.2.2:8089")
     }
 
     buildTypes {
