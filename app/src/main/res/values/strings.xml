@@ -48,4 +48,6 @@
     <string name="relogin">Log in again</string>
     <string name="remove_account_question">Remove account “%1$s”?</string>
     <string name="remove_account_text">Its books stay on this device but are no longer synced. Nothing changes on the server or on other devices.</string>
+    <string name="show_title">Document title at the top of the page</string>
+    <string name="show_created">Date and time created below it</string>
 </resources>

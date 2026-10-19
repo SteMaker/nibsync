@@ -49,6 +49,8 @@ import androidx.compose.ui.graphics.Color
 import com.stemaker.nibsync.document.DocumentSession
 import com.stemaker.nibsync.library.NodeId
 import com.stemaker.nibsync.library.OpenTodo
+import com.stemaker.nibsync.text.DocumentHeader
+import com.stemaker.nibsync.text.DocumentPath
 import com.stemaker.nibsync.library.TodoCollector
 import androidx.compose.runtime.mutableIntStateOf
 import kotlinx.coroutines.flow.debounce
@@ -86,7 +88,9 @@ fun App(
             var newBook by remember { mutableStateOf(false) }
             var libraryAction by remember { mutableStateOf<LibraryAction?>(null) }
             // Dialogs get the keys (pasting into a field must not paste into the document).
-            SideEffect { keys.blocked = (showSettings && sync != null) || newBook || libraryAction != null }
+            SideEffect { keys.blocked = showSettings || newBook || libraryAction != null }
+            var showTitle by remember { mutableStateOf(settings.showTitle) }
+            var showCreated by remember { mutableStateOf(settings.showCreated) }
             val appScope = rememberCoroutineScope()
             val accounts = sync?.accounts?.collectAsState()?.value.orEmpty()
             val bookAccounts = sync?.books?.map?.collectAsState()?.value.orEmpty()
@@ -102,8 +106,14 @@ fun App(
                     }
                 }
             }
-            if (showSettings && sync != null) {
-                SettingsDialog(sync, strings, openBrowser, cloudLogin = cloudLogin, onClose = { showSettings = false })
+            if (showSettings) {
+                val display = DisplaySettings(
+                    showTitle = showTitle,
+                    onShowTitle = { showTitle = it; settings.showTitle = it },
+                    showCreated = showCreated,
+                    onShowCreated = { showCreated = it; settings.showCreated = it },
+                )
+                SettingsDialog(sync, display, strings, openBrowser, cloudLogin = cloudLogin, onClose = { showSettings = false })
             }
             // One clipboard for the window, so elements can be copied between documents.
             val clipboard = remember { DesktopClipboard() }
@@ -192,7 +202,7 @@ fun App(
                     onExpandedChange = { expanded = it },
                     onAction = { libraryAction = it },
                     footer = { if (sync != null) SyncStatusLine(sync, strings) },
-                    onSettings = if (sync != null) ({ showSettings = true }) else null,
+                    onSettings = { showSettings = true },
                     onNewBook = { newBook = true },
                     bookAccounts = sync?.let { BookAccountsUi(accounts, { id -> bookAccounts[id] }, it::assignBook) },
                     onTodos = { showTodos = true },
@@ -228,7 +238,17 @@ fun App(
                             onUndoGone = { ticked = null },
                         )
                         id == null -> if (ready) Text(strings.noDocument) else CircularProgressIndicator()
-                        else -> DocumentPane(container, id, strings, keys, sync, clipboard, reveal?.takeIf { it.first == id }?.second) { reveal = null }
+                        else -> {
+                            val node = tree[NodeId(id.value)]
+                            val header = HeaderInfo(
+                                path = tree.pathTo(NodeId(id.value)).map { it.title },
+                                title = node?.title,
+                                showTitle = showTitle,
+                                showCreated = showCreated,
+                                onRename = node?.let { n -> { title: String -> appScope.launch { container.library.rename(n.id, title) }; Unit } },
+                            )
+                            DocumentPane(container, id, strings, keys, sync, clipboard, header, reveal?.takeIf { it.first == id }?.second) { reveal = null }
+                        }
                     }
                 }
             }
@@ -245,6 +265,7 @@ private fun DocumentPane(
     keys: KeyRouter,
     sync: SyncController?,
     clipboard: DesktopClipboard,
+    header: HeaderInfo,
     /** Scroll so this height (mm) is in view, e.g. a to-do opened from the list. */
     revealYMm: Float? = null,
     onRevealed: () -> Unit = {},
@@ -267,6 +288,7 @@ private fun DocumentPane(
         }
     }
     val editing by controller.text.editing.collectAsState()
+    val titleEditing = remember(id) { mutableStateOf(false) }
     val todoEdit by controller.todo.editing.collectAsState()
     val tools by controller.tools.collectAsState()
     val selection by controller.selection.collectAsState()
@@ -316,7 +338,8 @@ private fun DocumentPane(
         }
     }
     DisposableEffect(controller) {
-        keys.handler = { event -> handleKey(event, controller, ::pasteHere) }
+        // While the title is typed, keys belong to it.
+        keys.handler = { event -> !titleEditing.value && handleKey(event, controller, ::pasteHere) }
         onDispose { keys.handler = { false } }
     }
 
@@ -393,6 +416,18 @@ private fun DocumentPane(
                 todoEdit?.let { e ->
                     if (viewport.hasSize) TodoOverlay(e, viewport, strings, controller)
                 }
+                if (viewport.hasSize) {
+                    DocumentHeader(
+                        title = header.title ?: doc.meta.title,
+                        created = strings.created(doc.meta.createdAtEpochMs),
+                        showTitle = header.showTitle,
+                        showDate = header.showCreated,
+                        viewport = viewport,
+                        onRename = header.onRename,
+                        onEditingChange = { titleEditing.value = it },
+                    )
+                }
+                DocumentPath(header.path, Modifier.align(Alignment.BottomEnd))
                 message?.let { text ->
                     LaunchedEffect(text) {
                         kotlinx.coroutines.delay(4000)
@@ -412,6 +447,17 @@ private fun DocumentPane(
         }
     }
 }
+
+/** What the page shows about the document itself: title and creation time on top, path below. */
+class HeaderInfo(
+    val path: List<String>,
+    /** The library title; null for a document outside the library (then the stored title). */
+    val title: String?,
+    val showTitle: Boolean,
+    val showCreated: Boolean,
+    /** Renames the document; null: the title is read-only. */
+    val onRename: ((String) -> Unit)?,
+)
 
 /** Space above a to-do revealed from the list. */
 private const val REVEAL_MARGIN_MM = 15f

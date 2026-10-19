@@ -26,6 +26,22 @@ class Settings(private val fs: FileSystem, private val file: Path) {
             save()
         }
 
+    /** Show the document title at the top of the page. */
+    var showTitle: Boolean
+        get() = props.getProperty(SHOW_TITLE)?.toBoolean() ?: true
+        set(value) {
+            props.setProperty(SHOW_TITLE, value.toString())
+            save()
+        }
+
+    /** Show when the document was created, below the title. */
+    var showCreated: Boolean
+        get() = props.getProperty(SHOW_CREATED)?.toBoolean() ?: true
+        set(value) {
+            props.setProperty(SHOW_CREATED, value.toString())
+            save()
+        }
+
     private fun save() {
         file.parent?.let(fs::createDirectories)
         fs.write(file) { props.store(outputStream(), "NibSync") }
@@ -34,5 +50,7 @@ class Settings(private val fs: FileSystem, private val file: Path) {
     private companion object {
         const val LAST_DOCUMENT = "lastDocument"
         const val LAST_BOOK_ACCOUNT = "lastBookAccount"
+        const val SHOW_TITLE = "showTitle"
+        const val SHOW_CREATED = "showCreated"
     }
 }

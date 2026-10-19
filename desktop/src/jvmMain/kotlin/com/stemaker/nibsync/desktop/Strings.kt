@@ -95,6 +95,13 @@ class Strings(private val german: Boolean = Locale.getDefault().language == "de"
     val noOpenTodos = if (german) "Keine offenen ToDos." else "No open to-dos."
     val todoDone = if (german) "Erledigt" else "Done"
     val undoShort = if (german) "Rückgängig" else "Undo"
+    val settingsDisplay = if (german) "Anzeige" else "Display"
+    val showTitle = if (german) "Dokumenttitel oben auf der Seite" else "Document title at the top of the page"
+    val showCreated = if (german) "Erstellungsdatum und -uhrzeit darunter" else "Date and time created below it"
+    /** Creation time of a document, e.g. "19.10.2026, 14:05". */
+    fun created(epochMs: Long): String =
+        java.text.DateFormat.getDateTimeInstance(java.text.DateFormat.MEDIUM, java.text.DateFormat.SHORT, if (german) Locale.GERMAN else Locale.ENGLISH)
+            .format(java.util.Date(epochMs))
     val penBallpoint = if (german) "Kugelschreiber" else "Ballpoint pen"
     val penFountain = if (german) "Füller (drucksensitiv)" else "Fountain pen (pressure)"
     val penHighlighter = if (german) "Textmarker" else "Highlighter"

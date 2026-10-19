@@ -111,6 +111,15 @@ versions side by side, nothing is lost.
   after typing stops, on "Done", on tool change and when the app goes to the background.
   An emptied box is removed. Erasers ignore text; the lasso selects, moves and copies it.
 
+## Document title on the page
+
+- The title and creation time at the top of the page and the path (book › chapter › document)
+  at the bottom right are not page elements: `DocumentHeader`/`DocumentPath` (`shared/text`)
+  draw them over the page from the library entry and `DocumentMeta.createdAtEpochMs`, so they
+  cannot be moved, erased or selected. The header scrolls and zooms with the page.
+- Typing in the title renames the library entry (`Library.rename`), which is synced like any
+  rename. Title and date can be hidden separately in the settings (device-local).
+
 ## To-dos
 
 - `TodoItem` (`core/model`) is a page element on its own top layer `Layer.TODO`: a card with a

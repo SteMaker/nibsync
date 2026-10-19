@@ -154,6 +154,8 @@ fun NoteScreen(
     /** Inserts a picture or PDF from the system clipboard, if there is one; null disables it. */
     onInsertFromClipboard: (() -> Unit)? = null,
     onCanvasCreated: (NoteCanvasView) -> Unit = {},
+    /** Extra content over the page, placed with its viewport (e.g. the document title). */
+    pageOverlay: @Composable androidx.compose.foundation.layout.BoxScope.(Viewport) -> Unit = {},
 ) {
     val document by viewModel.document.collectAsStateWithLifecycle()
     val tools by viewModel.tools.collectAsStateWithLifecycle()
@@ -284,6 +286,7 @@ fun NoteScreen(
                 if (todo != null && v != null && v.hasSize) {
                     TodoOverlay(todo, v, onMove = viewModel::moveTodo, onResize = viewModel::resizeTodo, onGestureEnd = viewModel::saveTodo)
                 }
+                if (v != null && v.hasSize) pageOverlay(v)
             }
             ToolSettingsBar(tools, onColor = viewModel::selectColor, onSize = viewModel::selectSize, onEraserSize = viewModel::selectEraserSize, onTodoInk = viewModel::selectTodoInk)
         }

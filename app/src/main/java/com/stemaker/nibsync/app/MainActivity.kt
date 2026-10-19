@@ -58,6 +58,8 @@ import com.stemaker.nibsync.app.sync.SyncStatusIcon
 import com.stemaker.nibsync.canvas.CanvasViewModel
 import com.stemaker.nibsync.canvas.NoteCanvasView
 import com.stemaker.nibsync.canvas.NoteScreen
+import com.stemaker.nibsync.text.DocumentHeader
+import com.stemaker.nibsync.text.DocumentPath
 import com.stemaker.nibsync.canvas.TickedTodo
 import com.stemaker.nibsync.canvas.TodoListScreen
 import com.stemaker.nibsync.library.OpenTodo
@@ -176,6 +178,8 @@ class MainActivity : ComponentActivity() {
                 var showPageBreaks by remember { mutableStateOf(settings.showPageBreaks) }
                 var drawWithFinger by remember { mutableStateOf(settings.drawWithFinger) }
                 var showSettings by remember { mutableStateOf(false) }
+                var showTitle by remember { mutableStateOf(settings.showTitle) }
+                var showCreated by remember { mutableStateOf(settings.showCreated) }
                 if (showSettings) {
                     SettingsScreen(
                         sync = sync,
@@ -189,6 +193,16 @@ class MainActivity : ComponentActivity() {
                         onDrawWithFinger = {
                             drawWithFinger = it
                             settings.drawWithFinger = it
+                        },
+                        showTitle = showTitle,
+                        onShowTitle = {
+                            showTitle = it
+                            settings.showTitle = it
+                        },
+                        showCreated = showCreated,
+                        onShowCreated = {
+                            showCreated = it
+                            settings.showCreated = it
                         },
                         onClose = { showSettings = false },
                     )
@@ -326,7 +340,15 @@ class MainActivity : ComponentActivity() {
                                 }
                             }
                         } else {
-                            DocumentPane(docId, documentTitle, openLibrary, showPageBreaks, drawWithFinger)
+                            val node = tree[NodeId(docId.value)]
+                            val header = PageHeader(
+                                path = tree.pathTo(NodeId(docId.value)).map { it.title },
+                                title = node?.title,
+                                showTitle = showTitle,
+                                showCreated = showCreated,
+                                onRename = node?.let { n -> { title: String -> scope.launch { container.library.rename(n.id, title) }; Unit } },
+                            )
+                            DocumentPane(docId, documentTitle, openLibrary, showPageBreaks, drawWithFinger, header)
                         }
                     }
                 }
@@ -341,6 +363,7 @@ class MainActivity : ComponentActivity() {
         onMenu: () -> Unit,
         showPageBreaks: Boolean,
         drawWithFinger: Boolean,
+        header: PageHeader,
     ) {
         var openSession by remember(docId) { mutableStateOf<DocumentSession?>(null) }
         LaunchedEffect(docId) {
@@ -376,6 +399,20 @@ class MainActivity : ComponentActivity() {
                 assetFile = { media.assetFile(docId, it) },
                 onInsertFile = { pickFile.launch(media.mimeTypes) },
                 onInsertFromClipboard = { scope.launch { media.insertFromClipboard(vm, docId, canvasView?.viewport) } },
+                pageOverlay = { viewport ->
+                    val state by current.state.collectAsStateWithLifecycle()
+                    DocumentHeader(
+                        title = header.title ?: state.meta.title,
+                        created = remember(state.meta.createdAtEpochMs) {
+                            java.text.DateFormat.getDateTimeInstance(java.text.DateFormat.MEDIUM, java.text.DateFormat.SHORT).format(java.util.Date(state.meta.createdAtEpochMs))
+                        },
+                        showTitle = header.showTitle,
+                        showDate = header.showCreated,
+                        viewport = viewport,
+                        onRename = header.onRename,
+                    )
+                    DocumentPath(header.path, Modifier.align(Alignment.BottomEnd))
+                },
                 onCanvasCreated = { view ->
                     canvasView = view
                     // Opened from the list of to-dos: show the to-do.
@@ -436,6 +473,17 @@ class MainActivity : ComponentActivity() {
         val s = session ?: return
         container.appScope.launch { s.flush() }
     }
+
+    /** What the page shows about the document itself: title and creation time on top, path below. */
+    class PageHeader(
+        val path: List<String>,
+        /** The library title; null for a document outside the library (then the stored title). */
+        val title: String?,
+        val showTitle: Boolean,
+        val showCreated: Boolean,
+        /** Renames the document; null: the title is read-only. */
+        val onRename: ((String) -> Unit)?,
+    )
 
     companion object {
         /** Edits are collected this long before the list of open to-dos is rebuilt. */

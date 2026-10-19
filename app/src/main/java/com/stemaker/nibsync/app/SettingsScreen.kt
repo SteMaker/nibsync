@@ -36,6 +36,8 @@ object SettingsTags {
     const val CLOSE = "settings-close"
     const val PAGE_BREAKS = "settings-page-breaks"
     const val DRAW_WITH_FINGER = "settings-draw-with-finger"
+    const val SHOW_TITLE = "settings-show-title"
+    const val SHOW_CREATED = "settings-show-created"
 }
 
 /** App settings, grouped in sections; new settings get their own section or line here. */
@@ -48,6 +50,10 @@ fun SettingsScreen(
     onShowPageBreaks: (Boolean) -> Unit,
     drawWithFinger: Boolean,
     onDrawWithFinger: (Boolean) -> Unit,
+    showTitle: Boolean,
+    onShowTitle: (Boolean) -> Unit,
+    showCreated: Boolean,
+    onShowCreated: (Boolean) -> Unit,
     onClose: () -> Unit,
 ) {
     Dialog(onDismissRequest = onClose, properties = DialogProperties(usePlatformDefaultWidth = false)) {
@@ -74,6 +80,8 @@ fun SettingsScreen(
                     Section(stringResource(R.string.settings_display)) {
                         SwitchLine(stringResource(R.string.page_breaks), showPageBreaks, onShowPageBreaks, SettingsTags.PAGE_BREAKS)
                         SwitchLine(stringResource(R.string.draw_with_finger), drawWithFinger, onDrawWithFinger, SettingsTags.DRAW_WITH_FINGER)
+                        SwitchLine(stringResource(R.string.show_title), showTitle, onShowTitle, SettingsTags.SHOW_TITLE)
+                        SwitchLine(stringResource(R.string.show_created), showCreated, onShowCreated, SettingsTags.SHOW_CREATED)
                     }
                 }
             }

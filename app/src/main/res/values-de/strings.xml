@@ -47,4 +47,6 @@
     <string name="relogin">Neu anmelden</string>
     <string name="remove_account_question">Konto „%1$s“ entfernen?</string>
     <string name="remove_account_text">Seine Bücher bleiben auf diesem Gerät, werden aber nicht mehr synchronisiert. Auf dem Server und auf anderen Geräten ändert sich nichts.</string>
+    <string name="show_title">Dokumenttitel oben auf der Seite</string>
+    <string name="show_created">Erstellungsdatum und -uhrzeit darunter</string>
 </resources>

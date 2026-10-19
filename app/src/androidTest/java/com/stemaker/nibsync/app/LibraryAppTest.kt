@@ -15,6 +15,8 @@ import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performImeAction
+import androidx.compose.ui.test.assertTextContains
 import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.performTextReplacement
 import androidx.compose.ui.test.performScrollTo
@@ -347,5 +349,42 @@ class LibraryAppTest {
         compose.onNodeWithTag(tag).performTouchInput { click(androidx.compose.ui.geometry.Offset(width - 10f, 16.dp.toPx())) }
         waitUntil("document shown") { compose.onAllNodesWithTag(NoteScreenTags.CANVAS).fetchSemanticsNodes().isNotEmpty() }
         assertThat(activity { it.documentId }).isEqualTo(docId.asDocumentId)
+    }
+
+    @Test
+    fun titleOnThePageRenamesTheDocumentAndCanBeHidden() {
+        val savedTitle = settings.showTitle
+        val savedCreated = settings.showCreated
+        try {
+            val docId = createDocumentThroughTheDrawer()
+            val title = com.stemaker.nibsync.text.HeaderTags.TITLE
+            waitUntil("title shown") { compose.onAllNodesWithTag(title).fetchSemanticsNodes().isNotEmpty() }
+            compose.onNodeWithTag(title).assertTextContains("Seite A5")
+            compose.onNodeWithTag(com.stemaker.nibsync.text.HeaderTags.DATE).assertExists()
+            compose.onNodeWithTag(com.stemaker.nibsync.text.HeaderTags.PATH).assertTextContains("$bookTitle › Kapitel 1 › Seite A5")
+
+            compose.onNodeWithTag(title).performClick()
+            compose.onNodeWithTag(title).performTextReplacement("Protokoll")
+            compose.onNodeWithTag(title).performImeAction()
+            waitUntil("renamed") { tree()[docId]?.title == "Protokoll" }
+            waitUntil("path updated") {
+                runCatching { compose.onNodeWithTag(com.stemaker.nibsync.text.HeaderTags.PATH).assertTextContains("$bookTitle › Kapitel 1 › Protokoll") }.isSuccess
+            }
+
+            // Settings: the date off, then the title.
+            openDrawer()
+            compose.onNodeWithTag(LibraryTags.SETTINGS).performClick()
+            compose.onNodeWithTag(SettingsTags.SHOW_CREATED).performScrollTo().performClick()
+            compose.onNodeWithTag(SettingsTags.SHOW_TITLE).performScrollTo().performClick()
+            compose.onNodeWithTag(SettingsTags.CLOSE).performClick()
+            compose.waitForIdle()
+            compose.onNodeWithTag(title).assertDoesNotExist()
+            compose.onNodeWithTag(com.stemaker.nibsync.text.HeaderTags.DATE).assertDoesNotExist()
+            assertThat(settings.showTitle).isFalse()
+            assertThat(settings.showCreated).isFalse()
+        } finally {
+            settings.showTitle = savedTitle
+            settings.showCreated = savedCreated
+        }
     }
 }
