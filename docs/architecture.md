@@ -265,6 +265,9 @@ same paragraph layout as `RichTextLayout`. Plan: D1 viewing ✅, D2 text boxes �
 Nextcloud sync ✅, D4 drawing/erasing/lasso/pictures ✅, D5 packages (Linux .deb ✅, Windows
 .msi to be built on Windows/CI). Packages bundle a trimmed Java runtime (`modules(...)` in
 `desktop/build.gradle.kts`); the app icon is `desktop/icons/` (same artwork as the launcher).
+Crashes (uncaught exceptions on any thread, errors in the window) are appended with their
+stack trace, app version and system to `crash.log` in the data folder (`CrashLog`, rotated at
+1 MB to `crash.old.log`); Compose's error dialog then names that file.
 
 Tools on the PC (`NoteController`, `DesktopTool`): text (default), the three pens with the
 Android palette, both erasers (`EraseGesture`), lasso; holding the pen still recognises shapes

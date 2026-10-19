@@ -95,6 +95,8 @@ class Strings(private val german: Boolean = Locale.getDefault().language == "de"
     val noOpenTodos = if (german) "Keine offenen ToDos." else "No open to-dos."
     val todoDone = if (german) "Erledigt" else "Done"
     val undoShort = if (german) "Rückgängig" else "Undo"
+    fun crashLogged(path: String) =
+        if (german) "NibSync ist auf einen Fehler gestoßen. Die Details stehen in $path" else "NibSync ran into an error. The details are in $path"
     val settingsDisplay = if (german) "Anzeige" else "Display"
     val showTitle = if (german) "Dokumenttitel oben auf der Seite" else "Document title at the top of the page"
     val showCreated = if (german) "Erstellungsdatum und -uhrzeit darunter" else "Date and time created below it"
