@@ -33,6 +33,7 @@ android {
 
 dependencies {
     api(project(":core:document"))
+    api(project(":core:library"))
     implementation(project(":ink:android"))
     implementation(project(":core:shapes"))
     implementation(project(":ui:background"))

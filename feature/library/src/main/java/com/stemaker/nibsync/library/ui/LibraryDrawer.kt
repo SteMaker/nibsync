@@ -2,6 +2,8 @@ package com.stemaker.nibsync.library.ui
 
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.ui.graphics.Color
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.layout.Arrangement
@@ -30,6 +32,7 @@ import androidx.compose.material.icons.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.LibraryAdd
 import androidx.compose.material3.IconButton
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.TaskAlt
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -74,6 +77,7 @@ import kotlinx.coroutines.launch
 object LibraryTags {
     const val DRAWER = "library-drawer"
     const val SETTINGS = "library-settings"
+    const val TODOS = "library-todos"
     const val TREE = "library-tree"
     const val NEW_BOOK = "library-new-book"
     const val NEW_FOLDER = "library-new-folder"
@@ -131,6 +135,11 @@ fun LibraryDrawer(
     /** Opens the app settings; null hides the gear button. */
     onSettings: (() -> Unit)? = null,
     bookSync: BookSyncUi? = null,
+    /** Shows the generated page of open to-dos; null hides its entry. */
+    onOpenTodos: (() -> Unit)? = null,
+    /** Number of open to-dos, null while unknown. */
+    todoCount: Int? = null,
+    todosShown: Boolean = false,
 ) {
     val tree by viewModel.tree.collectAsStateWithLifecycle()
     val expanded by viewModel.expanded.collectAsStateWithLifecycle()
@@ -156,6 +165,23 @@ fun LibraryDrawer(
             }
         }
         HorizontalDivider()
+        if (onOpenTodos != null) {
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    .background(if (todosShown) MaterialTheme.colorScheme.secondaryContainer else Color.Transparent)
+                    .clickable(onClick = onOpenTodos)
+                    .padding(horizontal = 16.dp, vertical = 12.dp)
+                    .testTag(LibraryTags.TODOS),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Icon(Icons.Filled.TaskAlt, contentDescription = null, tint = Color(0xffd32f2f))
+                Spacer(Modifier.width(12.dp))
+                Text(stringResource(R.string.open_todos), style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
+                if (todoCount != null) Text(todoCount.toString(), style = MaterialTheme.typography.labelLarge)
+            }
+            HorizontalDivider()
+        }
         LazyColumn(Modifier.weight(1f).testTag(LibraryTags.TREE)) {
             items(viewModel.rows(tree, expanded), key = { it.node.id.value }) { row ->
                 val node = row.node

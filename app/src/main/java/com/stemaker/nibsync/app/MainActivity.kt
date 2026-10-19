@@ -58,6 +58,12 @@ import com.stemaker.nibsync.app.sync.SyncStatusIcon
 import com.stemaker.nibsync.canvas.CanvasViewModel
 import com.stemaker.nibsync.canvas.NoteCanvasView
 import com.stemaker.nibsync.canvas.NoteScreen
+import com.stemaker.nibsync.canvas.TickedTodo
+import com.stemaker.nibsync.canvas.TodoListScreen
+import com.stemaker.nibsync.library.OpenTodo
+import com.stemaker.nibsync.library.TodoCollector
+import androidx.compose.runtime.mutableIntStateOf
+import kotlinx.coroutines.flow.debounce
 import com.stemaker.nibsync.document.DocumentSession
 import com.stemaker.nibsync.library.NodeId
 import com.stemaker.nibsync.library.ui.AccountChoice
@@ -123,6 +129,9 @@ class MainActivity : ComponentActivity() {
         }
         SyncService.NEXTCLOUD -> error("Nextcloud has its own dialog")
     }
+
+    /** A to-do opened from the list (document, height in mm), shown once its page is there. */
+    private var revealTodo: Pair<DocumentId, Float>? = null
 
     /** A picture or PDF shared from another app, inserted once the document is open. */
     private var pendingShare: Uri? by mutableStateOf(null)
@@ -205,10 +214,32 @@ class MainActivity : ComponentActivity() {
                     }
                 }
 
+                var showTodos by remember { mutableStateOf(false) }
                 fun open(id: DocumentId) {
+                    showTodos = false
                     documentId = id
                     settings.lastDocument = id
                     scope.launch { drawerState.close() }
+                }
+
+                // The generated page of open to-dos: derived from the documents, never stored.
+                val todoCollector = remember {
+                    TodoCollector({ container.openSessionOrNull(it)?.state?.value }, { container.repository.load(it) })
+                }
+                var todos by remember { mutableStateOf<List<OpenTodo>?>(null) }
+                var todoRefresh by remember { mutableIntStateOf(0) }
+                var ticked by remember { mutableStateOf<TickedTodo?>(null) }
+                val syncStatuses by sync.statuses.collectAsStateWithLifecycle()
+                LaunchedEffect(syncStatuses) {
+                    // The sync may have changed stored documents.
+                    todoCollector.invalidate()
+                    todoRefresh++
+                }
+                LaunchedEffect(Unit) {
+                    container.localChanges.debounce(TODO_REFRESH_MS).collect { todoRefresh++ }
+                }
+                LaunchedEffect(libraryReady, tree, todoRefresh) {
+                    if (libraryReady) todos = todoCollector.collect(tree)
                 }
 
                 val accounts by sync.accounts.collectAsStateWithLifecycle()
@@ -238,6 +269,12 @@ class MainActivity : ComponentActivity() {
                                 footer = { SyncStatusLine(sync) },
                                 onSettings = { showSettings = true },
                                 bookSync = bookSync,
+                                onOpenTodos = {
+                                    showTodos = true
+                                    scope.launch { drawerState.close() }
+                                },
+                                todoCount = todos?.size,
+                                todosShown = showTodos,
                             )
                         }
                     },
@@ -251,7 +288,33 @@ class MainActivity : ComponentActivity() {
                             scope.launch { drawerState.open() }
                         }
                         val docId = documentId
-                        if (docId == null) {
+                        if (showTodos) {
+                            TodoListScreen(
+                                todos = todos,
+                                onMenu = { scope.launch { drawerState.open() } },
+                                onTick = { t ->
+                                    scope.launch {
+                                        container.openSession(t.document, documentTitle).setTodoDone(t.item.taskId, true)
+                                        ticked = TickedTodo(t)
+                                        todoRefresh++
+                                    }
+                                },
+                                onOpen = { t ->
+                                    revealTodo = t.document to t.item.y
+                                    open(t.document)
+                                },
+                                ticked = ticked,
+                                onUndo = { t ->
+                                    ticked = null
+                                    scope.launch {
+                                        container.openSession(t.todo.document, documentTitle).setTodoDone(t.todo.item.taskId, false)
+                                        todoRefresh++
+                                    }
+                                },
+                                onUndoGone = { ticked = null },
+                                modifier = Modifier.safeDrawingPadding(),
+                            )
+                        } else if (docId == null) {
                             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                                 if (!libraryReady) {
                                     CircularProgressIndicator()
@@ -313,7 +376,12 @@ class MainActivity : ComponentActivity() {
                 assetFile = { media.assetFile(docId, it) },
                 onInsertFile = { pickFile.launch(media.mimeTypes) },
                 onInsertFromClipboard = { scope.launch { media.insertFromClipboard(vm, docId, canvasView?.viewport) } },
-                onCanvasCreated = { canvasView = it },
+                onCanvasCreated = { view ->
+                    canvasView = view
+                    // Opened from the list of to-dos: show the to-do.
+                    revealTodo?.takeIf { it.first == docId }?.let { view.revealY(it.second) }
+                    revealTodo = null
+                },
             )
         }
     }
@@ -328,8 +396,8 @@ class MainActivity : ComponentActivity() {
     @SuppressLint("RestrictedApi")
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
         val s = session
-        // While a text box is edited, the editor handles its own undo and redo.
-        if (canvasViewModel?.textEditing?.value != null) return super.dispatchKeyEvent(event)
+        // While a text box or a typed to-do is edited, the editor handles its own undo and redo.
+        if (canvasViewModel?.textEditing?.value != null || canvasViewModel?.todoEditing?.value?.text != null) return super.dispatchKeyEvent(event)
         // Ctrl+V: a picture or PDF from the system clipboard, else copied strokes.
         if (event.isCtrlPressed && event.keyCode == KeyEvent.KEYCODE_V) {
             val vm = canvasViewModel
@@ -363,12 +431,16 @@ class MainActivity : ComponentActivity() {
         super.onStop()
         sync.stop()
         canvasViewModel?.saveText()
+        canvasViewModel?.saveTodo()
         // Make sure everything written so far reaches the disk while the app is in background.
         val s = session ?: return
         container.appScope.launch { s.flush() }
     }
 
     companion object {
+        /** Edits are collected this long before the list of open to-dos is rebuilt. */
+        private const val TODO_REFRESH_MS = 800L
+
         const val EXTRA_DOCUMENT_ID = "com.stemaker.nibsync.extra.DOCUMENT_ID"
     }
 }

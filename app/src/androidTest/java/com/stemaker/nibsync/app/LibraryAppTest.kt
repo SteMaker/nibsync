@@ -10,6 +10,9 @@ import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.junit4.createEmptyComposeRule
 import androidx.compose.ui.test.longClick
+import androidx.compose.ui.test.click
+import androidx.compose.ui.test.onAllNodesWithTag
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTextInput
@@ -310,5 +313,39 @@ class LibraryAppTest {
             app.sync.removeAccount(account.id)
             settings.lastBookAccount = previousChoice
         }
+    }
+
+    @Test
+    fun openTodosPageTicksOffInTheDocument() {
+        val docId = createDocumentThroughTheDrawer()
+        // A typed to-do in the new document.
+        val vm = activity { it.canvasViewModel!! }
+        scenario.onActivity {
+            vm.selectTodo(ink = false)
+            vm.tapAt(30f, 30f)
+            vm.todoEditing.value!!.text!!.setContent(com.stemaker.nibsync.model.RichText.plain("Testaufgabe"))
+            vm.finishText()
+        }
+        val session = activity { it.session!! }
+        val item = session.state.value.todos.single()
+
+        openDrawer()
+        compose.onNodeWithTag(LibraryTags.TODOS).performClick()
+        val tag = com.stemaker.nibsync.canvas.TodoListTags.item(item.taskId)
+        waitUntil("listed") { compose.onAllNodesWithTag(com.stemaker.nibsync.canvas.TodoListTags.LIST).fetchSemanticsNodes().isNotEmpty() }
+        compose.onNodeWithTag(com.stemaker.nibsync.canvas.TodoListTags.LIST).performScrollToNode(hasTestTag(tag))
+        // Its circle: 5 mm from the top left at 3.2 dp per mm.
+        compose.onNodeWithTag(tag).performTouchInput { click(androidx.compose.ui.geometry.Offset(16.dp.toPx(), 16.dp.toPx())) }
+        waitUntil("done in the document") { session.state.value.isDone(item.taskId) }
+        waitUntil("gone from the list") { compose.onAllNodesWithTag(tag).fetchSemanticsNodes().isEmpty() }
+        compose.onNodeWithTag(com.stemaker.nibsync.canvas.TodoListTags.UNDO).performClick()
+        waitUntil("open again") { !session.state.value.isDone(item.taskId) }
+
+        // Tapping the entry opens its document.
+        waitUntil("listed again") { compose.onAllNodesWithTag(tag).fetchSemanticsNodes().isNotEmpty() }
+        compose.onNodeWithTag(com.stemaker.nibsync.canvas.TodoListTags.LIST).performScrollToNode(hasTestTag(tag))
+        compose.onNodeWithTag(tag).performTouchInput { click(androidx.compose.ui.geometry.Offset(width - 10f, 16.dp.toPx())) }
+        waitUntil("document shown") { compose.onAllNodesWithTag(NoteScreenTags.CANVAS).fetchSemanticsNodes().isNotEmpty() }
+        assertThat(activity { it.documentId }).isEqualTo(docId.asDocumentId)
     }
 }

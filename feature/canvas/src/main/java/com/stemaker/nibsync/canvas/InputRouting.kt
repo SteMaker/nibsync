@@ -8,7 +8,7 @@ import android.view.MotionEvent
  * Writing with a finger can be enabled for devices without a pen.
  */
 object InputRouting {
-    enum class Action { DRAW, ERASE, SELECT, TEXT, NAVIGATE, IGNORE }
+    enum class Action { DRAW, ERASE, SELECT, TEXT, TODO, NAVIGATE, IGNORE }
 
     /**
      * @param tool the selected tool: with the eraser, lasso or text tool, everything that would
@@ -20,6 +20,7 @@ object InputRouting {
             Tool.ERASER -> Action.ERASE
             Tool.LASSO -> Action.SELECT
             Tool.TEXT -> Action.TEXT
+            Tool.TODO -> Action.TODO
         }
         return when (toolType) {
             MotionEvent.TOOL_TYPE_STYLUS -> write

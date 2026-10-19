@@ -10,6 +10,8 @@ import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.OpenWith
 import androidx.compose.material.icons.filled.TextFields
+import androidx.compose.material.icons.filled.Keyboard
+import androidx.compose.material.icons.filled.TaskAlt
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.snapshotFlow
@@ -125,6 +127,12 @@ object NoteScreenTags {
     const val COPY_SELECTION = "copy-selection"
     const val PASTE = "paste"
     const val REDO = "redo"
+    const val TODO = "todo-tool"
+    const val TODO_KEYBOARD = "todo-keyboard"
+    const val TODO_INK = "todo-ink"
+    const val MOVE_TODO = "move-todo"
+    const val RESIZE_TODO = "resize-todo"
+    const val DELETE_TODO = "delete-todo"
     fun eraserMode(mode: EraserMode) = "eraser-${mode.name}"
     fun eraserSize(index: Int) = "eraser-size-$index"
 }
@@ -156,7 +164,16 @@ fun NoteScreen(
     var canvasView by remember { mutableStateOf<NoteCanvasView?>(null) }
     var choosingBackground by remember { mutableStateOf(false) }
     val textEditing by viewModel.textEditing.collectAsStateWithLifecycle()
+    val todoEditing by viewModel.todoEditing.collectAsStateWithLifecycle()
     var viewport by remember { mutableStateOf<Viewport?>(null) }
+    val doneTasks = remember(document) { document.todos.filter { document.isDone(it.taskId) }.mapTo(HashSet()) { it.taskId } }
+
+    // Store a typed to-do while typing, too.
+    todoEditing?.text?.let { controller ->
+        LaunchedEffect(todoEditing?.key) {
+            snapshotFlow { controller.contentVersion }.drop(1).debounce(TEXT_SAVE_DELAY_MS).collect { viewModel.saveTodo() }
+        }
+    }
 
     // Store the text while typing, so nothing is lost if the app goes away.
     textEditing?.let { editing ->
@@ -200,10 +217,13 @@ fun NoteScreen(
                 }
             },
             onText = viewModel::selectText,
+            onTodo = viewModel::selectTodo,
             onInsertFile = onInsertFile,
             onInsertFromClipboard = onInsertFromClipboard,
-            textEditing = textEditing,
-            onTextDelete = viewModel::deleteText,
+            textEditing = textEditing?.controller ?: todoEditing?.text,
+            onTextDelete = { if (todoEditing != null) viewModel.deleteTodo() else viewModel.deleteText() },
+            inkTodoOpen = todoEditing?.isInk == true,
+            onDeleteTodo = viewModel::deleteTodo,
         )
         Row(Modifier.fillMaxSize()) {
             Box(Modifier.weight(1f).fillMaxHeight().clipToBounds()) {
@@ -224,6 +244,8 @@ fun NoteScreen(
                             it.onLassoFinished = viewModel::selectByLasso
                             it.onSelectionMoved = viewModel::moveSelection
                             it.onSelectionCleared = viewModel::clearSelection
+                            it.onTodoChecked = viewModel::toggleTodo
+                            it.onTodoInk = viewModel::commitTodoInk
                             canvasView = it
                             onCanvasCreated(it)
                         }
@@ -242,6 +264,9 @@ fun NoteScreen(
                         view.setTextBoxes(document.textBoxes)
                         view.setFiles(document.files)
                         view.editingTextBox = textEditing?.boxId
+                        view.setTodos(document.todos, doneTasks)
+                        view.openTodo = todoEditing?.preview(PREVIEW_AUTHOR)
+                        view.openTodoTyped = todoEditing?.text != null
                     },
                 )
                 val editing = textEditing
@@ -255,8 +280,12 @@ fun NoteScreen(
                         onGestureEnd = viewModel::saveText,
                     )
                 }
+                val todo = todoEditing
+                if (todo != null && v != null && v.hasSize) {
+                    TodoOverlay(todo, v, onMove = viewModel::moveTodo, onResize = viewModel::resizeTodo, onGestureEnd = viewModel::saveTodo)
+                }
             }
-            ToolSettingsBar(tools, onColor = viewModel::selectColor, onSize = viewModel::selectSize, onEraserSize = viewModel::selectEraserSize)
+            ToolSettingsBar(tools, onColor = viewModel::selectColor, onSize = viewModel::selectSize, onEraserSize = viewModel::selectEraserSize, onTodoInk = viewModel::selectTodoInk)
         }
     }
 }
@@ -266,7 +295,7 @@ fun NoteScreen(
  * pixel eraser's sizes. Always the same width, so the page keeps its zoom when the tool changes.
  */
 @Composable
-private fun ToolSettingsBar(tools: ToolState, onColor: (Int) -> Unit, onSize: (Float) -> Unit, onEraserSize: (Float) -> Unit) {
+private fun ToolSettingsBar(tools: ToolState, onColor: (Int) -> Unit, onSize: (Float) -> Unit, onEraserSize: (Float) -> Unit, onTodoInk: (Boolean) -> Unit) {
     Surface(tonalElevation = 3.dp, modifier = Modifier.fillMaxHeight().width(TOOL_SETTINGS_WIDTH).testTag(NoteScreenTags.TOOL_SETTINGS)) {
         Column(
             Modifier.verticalScroll(rememberScrollState()).padding(vertical = 8.dp),
@@ -276,6 +305,15 @@ private fun ToolSettingsBar(tools: ToolState, onColor: (Int) -> Unit, onSize: (F
             when (tools.tool) {
                 Tool.PEN -> PenOptions(tools, onColor, onSize)
                 Tool.ERASER -> EraserOptions(tools, onEraserSize)
+                Tool.TODO -> {
+                    // Typed or handwritten new to-dos; handwriting with the pen's colour and width.
+                    SettingsToggle(R.string.todo_keyboard, Icons.Filled.Keyboard, !tools.todoInk, NoteScreenTags.TODO_KEYBOARD) { onTodoInk(false) }
+                    SettingsToggle(R.string.todo_ink, Icons.Filled.Draw, tools.todoInk, NoteScreenTags.TODO_INK) { onTodoInk(true) }
+                    if (tools.todoInk) {
+                        HorizontalDivider(Modifier.width(36.dp).padding(vertical = 4.dp))
+                        PenOptions(tools, onColor, onSize)
+                    }
+                }
                 Tool.LASSO, Tool.TEXT -> Unit
             }
         }
@@ -283,6 +321,85 @@ private fun ToolSettingsBar(tools: ToolState, onColor: (Int) -> Unit, onSize: (F
 }
 
 private val TOOL_SETTINGS_WIDTH = 60.dp
+
+/** Author of the preview of the to-do being edited (never stored). */
+private val PREVIEW_AUTHOR = com.stemaker.nibsync.model.DeviceId("preview")
+
+@Composable
+private fun SettingsToggle(labelRes: Int, icon: ImageVector, checked: Boolean, tag: String, onClick: () -> Unit) {
+    val label = stringResource(labelRes)
+    WithTooltip(label) {
+        FilledIconToggleButton(checked = checked, onCheckedChange = { onClick() }, modifier = Modifier.testTag(tag)) {
+            Icon(icon, contentDescription = label)
+        }
+    }
+}
+
+/**
+ * Over the open to-do (the page draws its frame and circle): a handle to move it (top left), one
+ * to resize it (bottom right corner) and, for a typed to-do, the text editor. Handwriting goes
+ * through to the page, so the rest of the frame lets the pen through.
+ */
+@Composable
+private fun TodoOverlay(
+    edit: com.stemaker.nibsync.text.TodoEdit,
+    viewport: Viewport,
+    onMove: (Float, Float) -> Unit,
+    onResize: (Float, Float) -> Unit,
+    onGestureEnd: () -> Unit,
+) {
+    val t = viewport.documentToView
+    val scale by rememberUpdatedState(viewport.scale)
+    val accent = MaterialTheme.colorScheme.primary
+    val density = androidx.compose.ui.platform.LocalDensity.current
+    fun dp(mm: Float) = with(density) { (mm * viewport.scale).toDp() }
+    edit.text?.let { controller ->
+        val focus = remember(edit.key) { FocusRequester() }
+        LaunchedEffect(edit.key) { focus.requestFocus() }
+        Box(Modifier.offset { IntOffset(t.mapX(edit.x + com.stemaker.nibsync.model.TodoItem.CONTENT_OFFSET_MM).roundToInt(), t.mapY(edit.y + com.stemaker.nibsync.model.TodoItem.PADDING_MM).roundToInt()) }) {
+            TextBoxEditor(
+                controller = controller,
+                widthMm = edit.widthMm - com.stemaker.nibsync.model.TodoItem.CONTENT_OFFSET_MM - com.stemaker.nibsync.model.TodoItem.PADDING_MM,
+                pxPerMm = viewport.scale,
+                modifier = Modifier.focusRequester(focus),
+            )
+        }
+    }
+    val resizeLabel = stringResource(R.string.resize_todo)
+    Box(Modifier.offset { IntOffset(t.mapX(edit.x).roundToInt(), t.mapY(edit.y).roundToInt()) }) {
+        Icon(
+            Icons.Filled.OpenWith,
+            contentDescription = stringResource(R.string.move_todo),
+            tint = MaterialTheme.colorScheme.onPrimary,
+            modifier = Modifier
+                .offset(x = (-14).dp, y = (-34).dp)
+                .size(28.dp)
+                .background(accent, CircleShape)
+                .padding(4.dp)
+                .testTag(NoteScreenTags.MOVE_TODO)
+                .pointerInput(edit.key) {
+                    detectDragGestures(onDragEnd = onGestureEnd) { change, drag ->
+                        change.consume()
+                        onMove(drag.x / scale, drag.y / scale)
+                    }
+                },
+        )
+        Box(
+            Modifier
+                .offset(x = dp(edit.widthMm) - 12.dp, y = dp(edit.heightMm) - 12.dp)
+                .size(24.dp)
+                .background(accent, CircleShape)
+                .semantics { contentDescription = resizeLabel }
+                .testTag(NoteScreenTags.RESIZE_TODO)
+                .pointerInput(edit.key) {
+                    detectDragGestures(onDragEnd = onGestureEnd) { change, drag ->
+                        change.consume()
+                        onResize(drag.x / scale, drag.y / scale)
+                    }
+                },
+        )
+    }
+}
 
 /**
  * The editor over the edited box, at the page zoom, with handles to move it (top left) and
@@ -366,10 +483,13 @@ private fun Toolbar(
     onCopySelection: () -> Unit,
     onPaste: () -> Unit,
     onText: () -> Unit,
+    onTodo: (ink: Boolean) -> Unit,
     onInsertFile: (() -> Unit)?,
     onInsertFromClipboard: (() -> Unit)?,
-    textEditing: TextEditing?,
+    textEditing: com.stemaker.nibsync.text.TextEditController?,
     onTextDelete: () -> Unit,
+    inkTodoOpen: Boolean,
+    onDeleteTodo: () -> Unit,
 ) {
     Surface(tonalElevation = 3.dp, modifier = Modifier.fillMaxWidth().testTag(NoteScreenTags.TOOLBAR)) {
         // Tools stay in place; only the middle part (pen options, text formatting) scrolls when
@@ -381,7 +501,7 @@ private fun Toolbar(
         ) {
             if (textEditing != null) {
                 ScrollingRow(Modifier.weight(1f)) {
-                    TextFormatActions(textEditing.controller, onDelete = onTextDelete)
+                    TextFormatActions(textEditing, onDelete = onTextDelete)
                 }
             } else {
                 if (onMenu != null) {
@@ -410,7 +530,7 @@ private fun Toolbar(
                     val label = stringResource(penLabel(family))
                     WithTooltip(label) {
                         FilledIconToggleButton(
-                            checked = !tools.eraserActive && tools.activePen == family,
+                            checked = !tools.eraserActive && !tools.todoActive && tools.activePen == family,
                             onCheckedChange = { onPen(family) },
                             modifier = Modifier.testTag(NoteScreenTags.pen(family)),
                         ) {
@@ -450,11 +570,42 @@ private fun Toolbar(
                         Icon(Icons.Filled.TextFields, contentDescription = textLabel)
                     }
                 }
+                // Tapped with the pen, the to-do is handwritten; with a finger, it is typed.
+                val todoLabel = stringResource(R.string.todo_tool)
+                var pressedWithPen by remember { mutableStateOf(false) }
+                WithTooltip(todoLabel) {
+                    FilledIconToggleButton(
+                        checked = tools.todoActive,
+                        onCheckedChange = { onTodo(pressedWithPen) },
+                        modifier = Modifier
+                            .testTag(NoteScreenTags.TODO)
+                            .pointerInput(Unit) {
+                                awaitPointerEventScope {
+                                    while (true) {
+                                        val e = awaitPointerEvent(androidx.compose.ui.input.pointer.PointerEventPass.Initial)
+                                        if (e.type == androidx.compose.ui.input.pointer.PointerEventType.Press) {
+                                            pressedWithPen = e.changes.any { it.type == androidx.compose.ui.input.pointer.PointerType.Stylus }
+                                        }
+                                    }
+                                }
+                            },
+                    ) {
+                        Icon(Icons.Filled.TaskAlt, contentDescription = todoLabel)
+                    }
+                }
                 if (onInsertFile != null) InsertMenu(onInsertFile, onInsertFromClipboard)
                 Divider()
                 // Colours and widths are in the tool settings bar on the right.
                 ScrollingRow(Modifier.weight(1f)) {
                     if (tools.tool == Tool.LASSO) SelectionActions(hasSelection, canPaste, onDeleteSelection, onCopySelection, onPaste)
+                    if (inkTodoOpen) {
+                        val label = stringResource(R.string.delete_todo)
+                        WithTooltip(label) {
+                            IconButton(onClick = onDeleteTodo, modifier = Modifier.testTag(NoteScreenTags.DELETE_TODO)) {
+                                Icon(Icons.Filled.Delete, contentDescription = label)
+                            }
+                        }
+                    }
                 }
                 Divider()
                 val backgroundLabel = stringResource(BackgroundR.string.background_paper)

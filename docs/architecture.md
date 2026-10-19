@@ -74,7 +74,7 @@ versions (`default`) was adopted into a first book on upgrade.
 ## Layers
 
 `BACKGROUND` (pattern) -> `IMAGE` (pictures) -> `MARKER` (highlighter) -> `TEXT` (text boxes,
-file links) -> `INK`. Highlighter strokes are placed on
+file links) -> `INK` -> `TODO` (to-dos). Highlighter strokes are placed on
 `MARKER` and therefore always appear behind the ink. While being drawn, the in-progress
 highlighter is shown on top (Ink overlay limitation) and drops behind once finished.
 
@@ -110,6 +110,26 @@ versions side by side, nothing is lost.
   width. The tool bar switches to formatting while a box is open; the text is saved 1.5 s
   after typing stops, on "Done", on tool change and when the app goes to the background.
   An emptied box is removed. Erasers ignore text; the lasso selects, moves and copies it.
+
+## To-dos
+
+- `TodoItem` (`core/model`) is a page element on its own top layer `Layer.TODO`: a card with a
+  red check circle on the left and either typed text (`TodoContent.Text`) or handwriting
+  (`TodoContent.Ink`, stroke points relative to the content area, so moving needs no rewrite).
+- Whether a task is done is not part of the element but a last-writer-wins register per
+  `taskId` in `DocumentState` (`DocumentOp.SetTodoDone`, op type 7; `AddTodos` is type 6).
+  Moving, resizing or editing a to-do is remove + add with a fresh element id but the same
+  `taskId`, so ticking off on one device and moving on another merge. Copies (paste) are new
+  tasks. Undo of a tick is `Edit.TodoDone`.
+- Editing is shared by both apps: `TodoEditing` (`shared/text`), like `TextBoxEditing`. The
+  frame never gets smaller than its content (text wraps, handwriting keeps its size).
+- Tool: tapped with the pen, new to-dos are handwritten; with a finger or the mouse, typed. The
+  tool settings bar on the right switches. A tap on a check circle ticks off with every tool but
+  the eraser. Strokes starting in the open handwritten to-do go into it, not onto the page.
+- "Open to-dos" (top of the library) is generated: `TodoIndex`/`TodoCollector`
+  (`core/library`) collect the open to-dos of all library documents (open sessions live, stored
+  documents cached until the sync reports). Nothing of it is stored or synced; ticking off there
+  writes `SetTodoDone` into the to-do's document.
 
 ## Pictures and PDFs
 
@@ -276,4 +296,5 @@ boxes the same way.
 | M ✅ | Pictures (PNG, JPEG, SVG) with scaling, PDFs as links | `FileElement`, assets, `feature/media`, insert menu |
 | T ✅ | Text boxes with formatting (bold, italic, font, size, lists) | `TextBox`, `feature/text`, text tool in `NoteScreen` |
 | S ✅ | Several sync accounts (Nextcloud, OneDrive, Google Drive), one per book | `sync/client` (`SyncAccount`, `BookAccounts`), `BookScope` in `SyncEngine`; settings "Accounts" |
+| Q ✅ | To-dos (typed or handwritten), tick off on the page or in the generated "Open to-dos" page | `TodoItem`, `TodoEditing`, `TodoIndex`; to-do tool in both apps |
 | I ✅ | Lined/grid/dotted backgrounds | `BackgroundPattern`, `DocumentOp.SetBackground`, `ui/background`, `NoteCanvasView.drawPattern` |

@@ -39,6 +39,7 @@ import com.stemaker.nibsync.model.ImageElement
 import com.stemaker.nibsync.model.Layer
 import com.stemaker.nibsync.model.PageElement
 import com.stemaker.nibsync.model.TextBox
+import com.stemaker.nibsync.model.TodoItem
 import com.stemaker.nibsync.media.MediaRenderer
 import com.stemaker.nibsync.text.TextBoxRenderer
 import com.stemaker.nibsync.model.InputTool
@@ -102,6 +103,12 @@ class NoteCanvasView(context: Context) : FrameLayout(context) {
     /** The selected picture or link was scaled by the given factor; returns what was stored. */
     var onSelectionResized: (Float) -> CommittedEdit? = { null }
 
+    /** The check circle of the to-do with this task was tapped (any tool but the eraser). */
+    var onTodoChecked: (StrokeId) -> Unit = {}
+
+    /** A stroke was written into the open handwritten to-do ([openTodo]); page coordinates. */
+    var onTodoInk: (StrokeDraft) -> Unit = {}
+
     /** Draws pictures and file links; the screen tells it where the document's files are. */
     val mediaRenderer = MediaRenderer(onLoaded = { invalidate() })
 
@@ -123,6 +130,33 @@ class NoteCanvasView(context: Context) : FrameLayout(context) {
     /** Text boxes currently shown, back to front. */
     var textBoxes: List<TextBox> = emptyList()
         private set
+
+    /** Draws to-dos; shares the text layout with the text boxes. */
+    private val todoRenderer = TodoRenderer(textRenderer)
+
+    /** To-dos currently shown, back to front, and the tasks among them that are done. */
+    var todos: List<TodoItem> = emptyList()
+        private set
+    private var doneTasks: Set<StrokeId> = emptySet()
+
+    /**
+     * The to-do being edited, drawn as it is now (its stored version is hidden); null if none.
+     * Handwriting in its frame goes to [onTodoInk] while it is not typed ([openTodoTyped]).
+     */
+    var openTodo: TodoItem? = null
+        set(value) {
+            if (value == field) return
+            field = value
+            invalidate()
+        }
+
+    /** The open to-do is typed: an editor over the page shows its text. */
+    var openTodoTyped: Boolean = false
+        set(value) {
+            if (value == field) return
+            field = value
+            invalidate()
+        }
 
     /** Ids of the selected elements, framed on the page and draggable. */
     var selection: Set<StrokeId> = emptySet()
@@ -247,7 +281,17 @@ class NoteCanvasView(context: Context) : FrameLayout(context) {
     private var resizeFactor = 1f
     private val handlePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = 0xff1a3fa8.toInt() }
 
+    // A tap on a to-do's check circle.
+    private var checkPointerId = NO_POINTER
+    private var checkTask: StrokeId? = null
+    private var checkDownX = 0f
+    private var checkDownY = 0f
+
+    /** Strokes being written into the open to-do instead of onto the page. */
+    private val todoStrokes = HashSet<InProgressStrokeId>()
+
     // Text tool gesture: where it started (mm) and the frame dragged so far.
+    private var textPointerIsTodo = false
     private var textPointerId = NO_POINTER
     private var textPointerIsFinger = false
     private var textStartX = 0f
@@ -334,6 +378,16 @@ class NoteCanvasView(context: Context) : FrameLayout(context) {
         invalidate()
     }
 
+    /** Shows the given to-dos (back to front) and which tasks are done. Cheap if nothing changed. */
+    fun setTodos(items: List<TodoItem>, done: Set<StrokeId>) {
+        if (items === todos && done == doneTasks) return
+        todos = items
+        doneTasks = done
+        todoRenderer.retainOnly(items + listOfNotNull(openTodo))
+        updateContentBottom()
+        invalidate()
+    }
+
     /** Shows the given document strokes (back to front). Cheap if nothing changed. */
     fun setStrokes(newStrokes: List<Stroke>) {
         if (newStrokes === strokes) return
@@ -348,6 +402,7 @@ class NoteCanvasView(context: Context) : FrameLayout(context) {
             strokes.maxOfOrNull { it.bounds.bottom } ?: 0f,
             textBoxes.maxOfOrNull { it.bounds.bottom } ?: 0f,
             files.maxOfOrNull { it.bounds.bottom } ?: 0f,
+            todos.maxOfOrNull { it.bounds.bottom } ?: 0f,
         )
         if (bottom != viewport.contentBottomMm) setViewport(viewport.withContentBottom(bottom))
     }
@@ -362,6 +417,20 @@ class NoteCanvasView(context: Context) : FrameLayout(context) {
     override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
         super.onSizeChanged(w, h, oldw, oldh)
         setViewport(viewport.withViewSize(w.toFloat(), h.toFloat()))
+        pendingReveal?.let { revealY(it) }
+    }
+
+    /** Height (mm) to scroll to once the view has a size. */
+    private var pendingReveal: Float? = null
+
+    /** Scrolls so that [yMm] is near the top of the view, e.g. a to-do opened from the list. */
+    fun revealY(yMm: Float) {
+        if (!viewport.hasSize) {
+            pendingReveal = yMm
+            return
+        }
+        pendingReveal = null
+        setViewport(viewport.copy(scrollYMm = maxOf(0f, yMm - REVEAL_MARGIN_MM)).clamped())
     }
 
     override fun onDraw(canvas: Canvas) {
@@ -405,6 +474,7 @@ class NoteCanvasView(context: Context) : FrameLayout(context) {
                 drawFiles(this, Layer.TEXT, visible, moving)
                 drawTextBoxes(this, visible, moving)
             }
+            drawTodos(this, visible, moving)
         }
         textFrame?.let { f ->
             canvas.drawRect(transform.mapX(f.left), transform.mapY(f.top), transform.mapX(f.right), transform.mapY(f.bottom), selectionPaint)
@@ -458,6 +528,35 @@ class NoteCanvasView(context: Context) : FrameLayout(context) {
             } else if (box.bounds.intersects(visible)) {
                 textRenderer.draw(canvas, box)
             }
+        }
+    }
+
+    /** To-dos on top of everything; the open one as it is being edited. */
+    private fun drawTodos(canvas: Canvas, visible: com.stemaker.nibsync.model.geometry.Rect, moving: Boolean) {
+        val open = openTodo
+        for (item in todos) {
+            if (item.id == open?.id) continue
+            val done = item.taskId in doneTasks
+            if (moving && item.id in selection) {
+                canvas.withTranslation(moveDx, moveDy) { todoRenderer.draw(this, item, done, documentToView.withTranslation(moveDx, moveDy)) }
+            } else if (item.bounds.intersects(visible)) {
+                todoRenderer.draw(canvas, item, done, documentToView)
+            }
+        }
+        if (open != null) todoRenderer.draw(canvas, open, open.taskId in doneTasks, documentToView, content = !openTodoTyped, editing = true)
+    }
+
+    private fun Matrix.withTranslation(dx: Float, dy: Float) = Matrix(this).apply { preTranslate(dx, dy) }
+
+    /** The to-do whose check circle is at view pixel ([x], [y]) (a little generous), or null. */
+    private fun todoCheckAt(x: Float, y: Float): TodoItem? {
+        val toDoc = viewport.viewToDocument
+        val dx = toDoc.mapX(x)
+        val dy = toDoc.mapY(y)
+        val reach = CHECK_REACH_DP * resources.displayMetrics.density / viewport.scale
+        return (todos + listOfNotNull(openTodo)).lastOrNull { t ->
+            val c = t.checkBounds
+            dx >= c.left - reach && dx <= c.right + reach && dy >= c.top - reach && dy <= c.bottom + reach
         }
     }
 
@@ -557,7 +656,17 @@ class NoteCanvasView(context: Context) : FrameLayout(context) {
         }
         val busy = drawingPointerId != NO_POINTER || erasingPointerId != NO_POINTER ||
             lassoPointerId != NO_POINTER || movePointerId != NO_POINTER || textPointerId != NO_POINTER ||
-            resizePointerId != NO_POINTER
+            resizePointerId != NO_POINTER || checkPointerId != NO_POINTER
+        // A to-do's check circle reacts to every tool but the eraser.
+        if (!busy && event.actionMasked == MotionEvent.ACTION_DOWN && tool != Tool.ERASER && toolType != MotionEvent.TOOL_TYPE_ERASER) {
+            todoCheckAt(event.getX(index), event.getY(index))?.let { hit ->
+                checkPointerId = event.getPointerId(index)
+                checkTask = hit.taskId
+                checkDownX = event.getX(index)
+                checkDownY = event.getY(index)
+                return
+            }
+        }
         // Stylus or finger on the corner handle scales a selected picture or link.
         if (!busy && event.actionMasked == MotionEvent.ACTION_DOWN && toolType != MotionEvent.TOOL_TYPE_ERASER &&
             hitsResizeHandle(event.getX(index), event.getY(index))
@@ -572,7 +681,22 @@ class NoteCanvasView(context: Context) : FrameLayout(context) {
             startMove(event, index)
             return
         }
-        if (action == InputRouting.Action.TEXT && !busy) {
+        if (action == InputRouting.Action.TODO && !busy) {
+            if (navigating) {
+                navigating = false
+                scroller.forceFinished(true)
+            }
+            val toDoc = viewport.viewToDocument
+            val open = openTodo
+            if (open != null && !openTodoTyped && open.bounds.contains(toDoc.mapX(event.getX(index)), toDoc.mapY(event.getY(index)))) {
+                // Handwriting into the open to-do.
+                startStroke(event, index)
+                drawingStrokeId?.let { todoStrokes += it }
+            } else {
+                // A tap: open a to-do or start a new one (see onPageTapped).
+                startTextFrame(event, index, todo = true)
+            }
+        } else if (action == InputRouting.Action.TEXT && !busy) {
             if (navigating) {
                 navigating = false
                 scroller.forceFinished(true)
@@ -655,6 +779,8 @@ class NoteCanvasView(context: Context) : FrameLayout(context) {
     private fun checkHold() {
         val id = drawingStrokeId ?: return
         val detector = holdDetector ?: return
+        // No shapes or long presses while writing a to-do.
+        if (id in todoStrokes) return
         if (!detector.consumeHold(SystemClock.uptimeMillis())) return
         // Pen held still on a text box, picture or link: a long press, not a shape.
         val pressed = pressedElement()
@@ -682,7 +808,7 @@ class NoteCanvasView(context: Context) : FrameLayout(context) {
     private fun selectionBounds(): com.stemaker.nibsync.model.geometry.Rect? {
         if (selection.isEmpty()) return null
         val selected = strokes.filter { it.id in selection } + textBoxes.filter { it.id in selection } +
-            files.filter { it.id in selection }.map { f ->
+            todos.filter { it.id in selection } + files.filter { it.id in selection }.map { f ->
                 if (resizePointerId != NO_POINTER) scaledForPreview(f) else f
             }
         val b = boundsOf(selected) ?: return null
@@ -747,8 +873,9 @@ class NoteCanvasView(context: Context) : FrameLayout(context) {
         return b.contains(toDoc.mapX(x), toDoc.mapY(y))
     }
 
-    private fun startTextFrame(event: MotionEvent, pointerIndex: Int) {
+    private fun startTextFrame(event: MotionEvent, pointerIndex: Int, todo: Boolean = false) {
         val toDoc = viewport.viewToDocument
+        textPointerIsTodo = todo
         textPointerId = event.getPointerId(pointerIndex)
         textPointerIsFinger = event.getToolType(pointerIndex) == MotionEvent.TOOL_TYPE_FINGER
         textStartX = toDoc.mapX(event.getX(pointerIndex))
@@ -757,6 +884,8 @@ class NoteCanvasView(context: Context) : FrameLayout(context) {
     }
 
     private fun updateTextFrame(event: MotionEvent, pointerIndex: Int) {
+        // The to-do tool only taps; it draws no frame.
+        if (textPointerIsTodo) return
         val toDoc = viewport.viewToDocument
         val x = toDoc.mapX(event.getX(pointerIndex))
         val y = toDoc.mapY(event.getY(pointerIndex))
@@ -781,6 +910,11 @@ class NoteCanvasView(context: Context) : FrameLayout(context) {
         textFrame = null
         invalidate()
         if (!commit) return
+        if (textPointerIsTodo) {
+            textPointerIsTodo = false
+            onPageTapped(textStartX, textStartY)
+            return
+        }
         if (frame == null) onPageTapped(textStartX, textStartY) else onTextFrame(frame.left, frame.top, frame.width)
     }
 
@@ -880,6 +1014,7 @@ class NoteCanvasView(context: Context) : FrameLayout(context) {
     }
 
     private fun onMove(event: MotionEvent) {
+        if (checkPointerId != NO_POINTER) return
         if (resizePointerId != NO_POINTER) {
             val index = event.findPointerIndex(resizePointerId)
             if (index >= 0) updateResize(event, index)
@@ -918,6 +1053,18 @@ class NoteCanvasView(context: Context) : FrameLayout(context) {
 
     private fun onPointerUp(event: MotionEvent) {
         val pointerId = event.getPointerId(event.actionIndex)
+        if (pointerId == checkPointerId) {
+            val task = checkTask
+            checkPointerId = NO_POINTER
+            checkTask = null
+            val reach = CHECK_REACH_DP * resources.displayMetrics.density
+            val stayed = abs(event.getX(event.actionIndex) - checkDownX) <= reach && abs(event.getY(event.actionIndex) - checkDownY) <= reach
+            if (task != null && stayed && !InputRouting.isCanceled(event)) {
+                performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)
+                onTodoChecked(task)
+            }
+            return
+        }
         if (pointerId == resizePointerId) {
             finishResize(event, commit = !InputRouting.isCanceled(event))
             return
@@ -940,7 +1087,7 @@ class NoteCanvasView(context: Context) : FrameLayout(context) {
         val id = drawingStrokeId ?: return
         if (event.getPointerId(event.actionIndex) != drawingPointerId) return
         // A short tap of the pen on a text box, picture or link acts on it instead of leaving a dot.
-        val tapped = tappedElement(event)
+        val tapped = if (id in todoStrokes) null else tappedElement(event)
         if (tapped != null) {
             inProgressStrokesView.cancelStroke(id, event)
             brushesInProgress.remove(id)
@@ -958,6 +1105,8 @@ class NoteCanvasView(context: Context) : FrameLayout(context) {
     }
 
     private fun onCancel(event: MotionEvent) {
+        checkPointerId = NO_POINTER
+        checkTask = null
         finishResize(null, commit = false)
         finishTextFrame(null, commit = false)
         finishErase(commit = false)
@@ -965,6 +1114,7 @@ class NoteCanvasView(context: Context) : FrameLayout(context) {
         drawingStrokeId?.let {
             inProgressStrokesView.cancelStroke(it, event)
             brushesInProgress.remove(it)
+            todoStrokes.remove(it)
         }
         clearDrawingPointer()
     }
@@ -983,7 +1133,8 @@ class NoteCanvasView(context: Context) : FrameLayout(context) {
         val first = capturedPoints.firstOrNull() ?: return null
         val tolerance = TEXT_TAP_TOLERANCE_DP * resources.displayMetrics.density / viewport.scale
         if (capturedPoints.any { abs(it.x - first.x) > tolerance || abs(it.y - first.y) > tolerance }) return null
-        val onElement = textBoxes.any { it.bounds.contains(first.x, first.y) } || files.any { it.bounds.contains(first.x, first.y) }
+        val onElement = textBoxes.any { it.bounds.contains(first.x, first.y) } || files.any { it.bounds.contains(first.x, first.y) } ||
+            todos.any { it.bounds.contains(first.x, first.y) }
         return if (onElement) first.x to first.y else null
     }
 
@@ -1001,6 +1152,11 @@ class NoteCanvasView(context: Context) : FrameLayout(context) {
         val added = ArrayList<Stroke>(strokes.size)
         for ((id, ink) in strokes) {
             val spec = brushesInProgress.remove(id) ?: continue
+            if (todoStrokes.remove(id)) {
+                // Into the open to-do: it is redrawn from its new content.
+                onTodoInk(StrokeConverter.toDraft(ink, spec))
+                continue
+            }
             val stroke = onStrokeDrafted(StrokeConverter.toDraft(ink, spec)) ?: continue
             inkCache.put(stroke.id, ink)
             added += stroke
@@ -1023,6 +1179,8 @@ class NoteCanvasView(context: Context) : FrameLayout(context) {
         textBoxes = textBoxes.filter { it.id !in removed } + added.filterIsInstance<TextBox>().filter { it.id !in knownBoxes }
         val knownFiles = files.mapTo(HashSet()) { it.id }
         files = files.filter { it.id !in removed } + added.filterIsInstance<FileElement>().filter { it.id !in knownFiles }
+        val knownTodos = todos.mapTo(HashSet()) { it.id }
+        todos = todos.filter { it.id !in removed } + added.filterIsInstance<TodoItem>().filter { it.id !in knownTodos }
         updateContentBottom()
         invalidate()
     }
@@ -1057,6 +1215,12 @@ class NoteCanvasView(context: Context) : FrameLayout(context) {
 
         /** A text tool gesture shorter than this (dp on screen) is a tap. */
         const val TEXT_TAP_TOLERANCE_DP = 8f
+
+        /** Space above a revealed spot, mm. */
+        const val REVEAL_MARGIN_MM = 15f
+
+        /** How far beside a to-do's check circle a tap still hits it, dp. */
+        const val CHECK_REACH_DP = 6f
 
         /** Radius of the scale handle of a selected picture, dp. */
         const val HANDLE_RADIUS_DP = 10f

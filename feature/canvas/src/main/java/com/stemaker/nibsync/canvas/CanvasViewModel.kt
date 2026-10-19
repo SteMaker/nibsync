@@ -26,6 +26,9 @@ import com.stemaker.nibsync.model.TextBoxDraft
 import com.stemaker.nibsync.model.toDraft
 import com.stemaker.nibsync.text.TextBoxEditing
 import com.stemaker.nibsync.text.TextEditing
+import com.stemaker.nibsync.text.TodoEdit
+import com.stemaker.nibsync.text.TodoEditing
+import com.stemaker.nibsync.model.TodoItem
 import com.stemaker.nibsync.model.BrushFamily
 import com.stemaker.nibsync.model.ShapeRecognizer
 import com.stemaker.nibsync.model.Stroke
@@ -72,6 +75,7 @@ class CanvasViewModel(
     fun selectLasso() {
         finishText()
         lassoByTap = false
+        todoByTap = false
         _tools.update { it.withLasso() }
     }
 
@@ -167,6 +171,7 @@ class CanvasViewModel(
     fun selectPen(pen: BrushFamily) {
         finishText()
         lassoByTap = false
+        todoByTap = false
         _tools.update { it.withPen(pen) }
         clearSelection()
     }
@@ -200,6 +205,7 @@ class CanvasViewModel(
     fun selectEraser(mode: EraserMode) {
         finishText()
         lassoByTap = false
+        todoByTap = false
         _tools.update { it.withEraser(mode) }
         clearSelection()
     }
@@ -220,12 +226,63 @@ class CanvasViewModel(
     /** The text box being edited, or null. While set, the tool bar shows text formatting. */
     val textEditing: StateFlow<TextEditing?> = text.editing
 
+    private val todo = TodoEditing(session)
+
+    /** The to-do being written or typed, or null. */
+    val todoEditing: StateFlow<TodoEdit?> = todo.editing
+
     /** Height in mm of a text in a box of the given width; the screen sets the real layout. */
     var measureText: (RichText, Float) -> Float
         get() = text.measureText
         set(value) {
             text.measureText = value
+            todo.measureText = value
         }
+
+    /** The to-do tool; new to-dos are handwritten with [ink] (chosen with the pen), else typed. */
+    fun selectTodo(ink: Boolean) {
+        finishText()
+        lassoByTap = false
+        todoByTap = false
+        _tools.update { it.withTodo(ink) }
+        clearSelection()
+    }
+
+    /** Switches between handwritten and typed new to-dos (an open one keeps its kind). */
+    fun selectTodoInk(ink: Boolean) = _tools.update { it.copy(todoInk = ink) }
+
+    /** Ticks the task off or reopens it (one undo step). */
+    fun toggleTodo(taskId: StrokeId) {
+        session.setTodoDone(taskId, !session.state.value.isDone(taskId))
+    }
+
+    /** A stroke written into the open handwritten to-do. */
+    fun commitTodoInk(draft: StrokeDraft) = todo.addInk(draft)
+
+    /** Stores the open to-do if it changed (while typing, after moving or resizing). */
+    fun saveTodo() = todo.save()
+
+    fun moveTodo(dx: Float, dy: Float) = todo.move(dx, dy)
+
+    fun resizeTodo(dw: Float, dh: Float) = todo.resize(dw, dh)
+
+    /** Deletes the open to-do. */
+    fun deleteTodo() {
+        if (todo.delete()) leaveTemporaryMode()
+    }
+
+    /** True if the to-do tool was switched on by tapping a to-do, not by the user. */
+    private var todoByTap = false
+
+    private fun openTodo(item: TodoItem) {
+        rememberToolBeforeTemporary()
+        val tool = _tools.value.tool
+        if (tool != Tool.TODO) todoByTap = true
+        lassoByTap = false
+        clearSelection()
+        _tools.update { it.copy(tool = Tool.TODO) }
+        todo.open(item)
+    }
 
     // Text mode, and the lasso when it was entered by tapping a picture, are temporary: a tap
     // on an empty spot of the page goes back to the tool used before.
@@ -246,13 +303,14 @@ class CanvasViewModel(
 
     private fun rememberToolBeforeTemporary() {
         val current = _tools.value.tool
-        val temporary = current == Tool.TEXT || (current == Tool.LASSO && lassoByTap)
+        val temporary = current == Tool.TEXT || (current == Tool.LASSO && lassoByTap) || (current == Tool.TODO && todoByTap)
         if (!temporary) toolBeforeTemporary = current
     }
 
     private fun enterTextMode() {
         rememberToolBeforeTemporary()
         lassoByTap = false
+        todoByTap = false
         _tools.update { it.withText() }
     }
 
@@ -268,8 +326,9 @@ class CanvasViewModel(
 
     private fun leaveTemporaryMode() {
         val tool = _tools.value.tool
-        if (tool == Tool.TEXT || (tool == Tool.LASSO && lassoByTap)) {
+        if (tool == Tool.TEXT || (tool == Tool.LASSO && lassoByTap) || (tool == Tool.TODO && todoByTap)) {
             lassoByTap = false
+            todoByTap = false
             _tools.update { it.copy(tool = toolBeforeTemporary) }
         }
     }
@@ -288,8 +347,13 @@ class CanvasViewModel(
      * an empty spot ends text mode or a picture selection and goes back to the previous tool.
      */
     fun tapAt(x: Float, y: Float) {
+        val hit = tappableAt(x, y)
+        val open = todo.editing.value
+        // A tap into the open to-do keeps it open.
+        if (open != null && hit is TodoItem && hit.id == open.itemId) return
         finishText()
-        when (val hit = tappableAt(x, y)) {
+        when (hit) {
+            is TodoItem -> if (_tools.value.tool == Tool.LASSO && !lassoByTap) selectTemporarily(setOf(hit.id)) else openTodo(hit)
             is TextBox -> {
                 enterTextMode()
                 clearSelection()
@@ -299,7 +363,13 @@ class CanvasViewModel(
             is ImageElement -> selectTemporarily(setOf(hit.id))
             else -> {
                 clearSelection()
-                leaveTemporaryMode()
+                if (_tools.value.tool == Tool.TODO && open == null && !todoByTap) {
+                    // A new to-do with its check circle at the tap.
+                    val pageWidth = session.state.value.meta.format.widthMm
+                    todo.startNew(x - TodoItem.PADDING_MM - TodoItem.CHECK_SIZE_MM / 2, y - TodoItem.MIN_HEIGHT_MM / 2, _tools.value.todoInk, pageWidth)
+                } else {
+                    leaveTemporaryMode()
+                }
             }
         }
     }
@@ -337,6 +407,7 @@ class CanvasViewModel(
     /** Ends editing; a box left empty is removed. */
     fun finishText() {
         text.finish()
+        todo.finish()
     }
 
     /** Deletes the edited box and leaves text mode. */

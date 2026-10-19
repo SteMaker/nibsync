@@ -21,4 +21,13 @@
     <string name="insert">Insert picture or PDF</string>
     <string name="insert_file">Choose file…</string>
     <string name="insert_clipboard">From clipboard</string>
+    <string name="todo_tool">To-do (tap with the pen to write it, with a finger to type it)</string>
+    <string name="todo_keyboard">Type the to-do</string>
+    <string name="todo_ink">Write the to-do with the pen</string>
+    <string name="move_todo">Move to-do</string>
+    <string name="resize_todo">Change size</string>
+    <string name="delete_todo">Delete to-do</string>
+    <string name="open_todos">Open to-dos</string>
+    <string name="no_open_todos">No open to-dos.</string>
+    <string name="todo_done">Done</string>
 </resources>

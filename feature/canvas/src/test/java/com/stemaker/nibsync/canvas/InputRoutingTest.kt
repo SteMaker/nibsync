@@ -63,4 +63,10 @@ class InputRoutingTest {
         assertThat(InputRouting.isCanceled(palm)).isTrue()
         listOf(cancel, up, palm).forEach { it.recycle() }
     }
+
+    @Test
+    fun todoToolTapsWithThePenAndScrollsWithAFinger() {
+        assertThat(InputRouting.actionFor(MotionEvent.TOOL_TYPE_STYLUS, drawWithFinger = false, tool = Tool.TODO)).isEqualTo(Action.TODO)
+        assertThat(InputRouting.actionFor(MotionEvent.TOOL_TYPE_FINGER, drawWithFinger = false, tool = Tool.TODO)).isEqualTo(Action.NAVIGATE)
+    }
 }

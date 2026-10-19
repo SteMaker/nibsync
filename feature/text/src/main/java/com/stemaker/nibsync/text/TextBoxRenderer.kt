@@ -48,9 +48,30 @@ class TextBoxRenderer(context: Context) {
         canvas.restoreToCount(save)
     }
 
+    private val textCache = HashMap<StrokeId, Triple<RichText, Float, TextLayoutResult>>()
+
+    /**
+     * Draws [text] wrapped to [widthMm] with its top left at ([x], [y]) mm, e.g. a to-do's text;
+     * the layout is cached under [id] like a box's.
+     */
+    fun drawText(canvas: android.graphics.Canvas, id: StrokeId, text: RichText, x: Float, y: Float, widthMm: Float) {
+        val cached = textCache[id]?.takeIf { it.first == text && it.second == widthMm }?.third
+        val result = cached ?: layout(text, widthMm).also { textCache[id] = Triple(text, widthMm, it) }
+        val save = canvas.save()
+        canvas.translate(x, y)
+        canvas.scale(1f / LAYOUT_PX_PER_MM, 1f / LAYOUT_PX_PER_MM)
+        TextPainter.paint(Canvas(canvas), result)
+        canvas.restoreToCount(save)
+    }
+
     /** Drops cached layouts of boxes no longer shown. */
     fun retainOnly(ids: Set<StrokeId>) {
         cache.keys.retainAll(ids)
+    }
+
+    /** Drops cached layouts of to-do texts no longer shown. */
+    fun retainTextsOnly(ids: Set<StrokeId>) {
+        textCache.keys.retainAll(ids)
     }
 
     private fun layoutOf(box: TextBox): TextLayoutResult {

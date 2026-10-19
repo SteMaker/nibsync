@@ -21,4 +21,13 @@
     <string name="insert">Bild oder PDF einfügen</string>
     <string name="insert_file">Datei auswählen…</string>
     <string name="insert_clipboard">Aus Zwischenablage</string>
+    <string name="todo_tool">ToDo (mit dem Stift antippen: handschriftlich, mit dem Finger: Tastatur)</string>
+    <string name="todo_keyboard">ToDo tippen</string>
+    <string name="todo_ink">ToDo mit dem Stift schreiben</string>
+    <string name="move_todo">ToDo verschieben</string>
+    <string name="resize_todo">Größe ändern</string>
+    <string name="delete_todo">ToDo löschen</string>
+    <string name="open_todos">Offene ToDos</string>
+    <string name="no_open_todos">Keine offenen ToDos.</string>
+    <string name="todo_done">Erledigt</string>
 </resources>

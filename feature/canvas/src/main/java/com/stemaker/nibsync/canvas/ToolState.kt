@@ -45,7 +45,7 @@ object PenPalette {
 data class PenSettings(val colorArgb: Int, val sizeMm: Float)
 
 /** What the pen does on the page. */
-enum class Tool { PEN, ERASER, LASSO, TEXT }
+enum class Tool { PEN, ERASER, LASSO, TEXT, TODO }
 
 /** Tool bar state. Every pen type remembers its own colour and width. */
 data class ToolState(
@@ -57,6 +57,8 @@ data class ToolState(
     val tool: Tool = Tool.PEN,
     val eraserMode: EraserMode = EraserMode.OBJECT,
     val eraserSizeMm: Float = PenPalette.eraserSizes[1],
+    /** New to-dos are handwritten (true) or typed. */
+    val todoInk: Boolean = true,
 ) {
     val eraserRadiusMm: Float
         get() = (if (eraserMode == EraserMode.OBJECT) PenPalette.OBJECT_ERASER_DIAMETER_MM else eraserSizeMm) / 2
@@ -64,12 +66,17 @@ data class ToolState(
     val eraserActive: Boolean get() = tool == Tool.ERASER
     val lassoActive: Boolean get() = tool == Tool.LASSO
     val textActive: Boolean get() = tool == Tool.TEXT
+    val todoActive: Boolean get() = tool == Tool.TODO
 
     fun withEraser(mode: EraserMode = eraserMode) = copy(tool = Tool.ERASER, eraserMode = mode)
 
     fun withLasso() = copy(tool = Tool.LASSO)
 
     fun withText() = copy(tool = Tool.TEXT)
+
+    /** The to-do tool; to-dos are written with a pen, so the highlighter gives way to the ballpoint. */
+    fun withTodo(ink: Boolean = todoInk) =
+        copy(tool = Tool.TODO, todoInk = ink, activePen = if (activePen == BrushFamily.HIGHLIGHTER) BrushFamily.BALLPOINT else activePen)
 
     fun withEraserSize(mm: Float) = copy(eraserSizeMm = mm)
 

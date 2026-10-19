@@ -16,6 +16,7 @@ import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.click
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performTouchInput
+import androidx.compose.ui.test.swipe
 import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.performClick
@@ -988,5 +989,75 @@ class NoteAppTest {
         assertThat(opened).isEmpty()
         assertThat(strokes()).isEmpty()
         assertThat(viewModel().tools.value.tool).isEqualTo(com.stemaker.nibsync.canvas.Tool.LASSO)
+    }
+
+    // ---- to-dos ---------------------------------------------------------------------------
+
+    private fun todoEdit(): com.stemaker.nibsync.text.TodoEdit? {
+        var e: com.stemaker.nibsync.text.TodoEdit? = null
+        scenario.onActivity { e = it.canvasViewModel?.todoEditing?.value }
+        return e
+    }
+
+    private fun todos() = session().state.value.todos
+
+    @Test
+    fun handwrittenTodoLiesAboveInkAndIsTickedOffByATap() {
+        // A thick black line first; the to-do goes over it.
+        compose.onNodeWithTag(NoteScreenTags.pen(BrushFamily.BALLPOINT)).performClick()
+        compose.onNodeWithTag(NoteScreenTags.size(2)).performClick()
+        val view = checkNotNull(canvas())
+        val t = view.viewport.documentToView
+        drag(line(t.mapX(20f), t.mapY(32f), t.mapX(150f), t.mapY(32f)))
+        waitForStrokes(1)
+
+        // A finger on the tool button picks the keyboard; the settings bar switches to the pen.
+        compose.onNodeWithTag(NoteScreenTags.TODO).performClick()
+        compose.onNode(hasTestTag(NoteScreenTags.TODO_INK) and hasAnyAncestor(hasTestTag(NoteScreenTags.TOOL_SETTINGS))).performClick()
+        waitUntil("pen mode") { viewModel().tools.value.todoInk }
+        tap(t.mapX(25f), t.mapY(30f))
+        waitUntil("new handwritten to-do") { todoEdit()?.isInk == true }
+        val e = checkNotNull(todoEdit())
+        val cx = e.x + com.stemaker.nibsync.model.TodoItem.CONTENT_OFFSET_MM
+        drag(line(t.mapX(cx + 3f), t.mapY(e.y + 5f), t.mapX(cx + 40f), t.mapY(e.y + 7f)))
+        waitUntil("stored with its ink") { todos().singleOrNull()?.content.let { it is com.stemaker.nibsync.model.TodoContent.Ink && it.strokes.size == 1 } }
+        // Only the black line is on the page itself.
+        assertThat(strokes()).hasSize(1)
+        tap(2600f, 500f)
+        waitUntil("to-do closed") { todoEdit() == null }
+        val item = todos().single()
+
+        // The card covers the line where there is no handwriting.
+        waitUntil("drawn") { view.todos.isNotEmpty() }
+        val covered = pixelAt(item.x + item.widthMm - 5f, 32f)
+        assertThat(Color.red(covered)).isGreaterThan(200)
+
+        // A pen tap on the circle ticks it off; it turns red.
+        val c = item.checkBounds
+        tap(t.mapX((c.left + c.right) / 2), t.mapY((c.top + c.bottom) / 2))
+        waitUntil("done") { session().state.value.isDone(item.taskId) }
+        assertThat(strokes()).hasSize(1)
+        // Inside the circle, away from the white tick and the rim (red even when open).
+        waitUntil("drawn red") { pixelAt((c.left + c.right) / 2 - 1f, (c.top + c.bottom) / 2 - 0.8f).let { Color.red(it) > 180 && Color.green(it) < 100 } }
+    }
+
+    @Test
+    fun typedTodoWithAFingerAndResized() {
+        compose.onNodeWithTag(NoteScreenTags.TODO).performClick()
+        waitUntil("keyboard mode") { viewModel().tools.value.let { it.tool == com.stemaker.nibsync.canvas.Tool.TODO && !it.todoInk } }
+        val t = checkNotNull(canvas()).viewport.documentToView
+        drag(listOf(t.mapX(30f) to t.mapY(30f), t.mapX(30f) to t.mapY(30f)), toolType = MotionEvent.TOOL_TYPE_FINGER)
+        waitUntil("new typed to-do") { todoEdit()?.text != null }
+        compose.onNodeWithTag(TextTags.EDITOR).performTextInput("Rechnung bezahlen")
+        val before = checkNotNull(todoEdit()).widthMm
+        compose.onNodeWithTag(NoteScreenTags.RESIZE_TODO).performTouchInput { swipe(center, center + androidx.compose.ui.geometry.Offset(200f, 80f), 300) }
+        waitUntil("wider") { checkNotNull(todoEdit()).widthMm > before + 10f }
+        tap(2600f, 500f)
+        waitUntil("to-do closed") { todoEdit() == null }
+        val item = todos().single()
+        assertThat((item.content as com.stemaker.nibsync.model.TodoContent.Text).text.plainText).isEqualTo("Rechnung bezahlen")
+        assertThat(item.widthMm).isGreaterThan(before + 10f)
+        assertThat(item.heightMm).isGreaterThan(com.stemaker.nibsync.model.TodoItem.DEFAULT_HEIGHT_MM)
+        assertThat(strokes()).isEmpty()
     }
 }
