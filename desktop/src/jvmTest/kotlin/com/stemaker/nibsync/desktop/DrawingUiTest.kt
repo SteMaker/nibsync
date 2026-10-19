@@ -7,6 +7,8 @@ import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.captureToImage
 import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.test.hasTestTag
+import androidx.compose.ui.test.hasAnyAncestor
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performMouseInput
@@ -38,6 +40,9 @@ class DrawingUiTest {
         val session = runBlocking { container.openSession(docId) }
 
         onNodeWithTag(ToolbarTags.pen(BrushFamily.BALLPOINT)).performClick()
+        // Colours and widths are in the settings bar right of the page.
+        onNode(hasTestTag(ToolbarTags.color(2)) and hasAnyAncestor(hasTestTag(ToolbarTags.TOOL_SETTINGS))).assertExists()
+        assert(onNodeWithTag(ToolbarTags.TOOL_SETTINGS).fetchSemanticsNode().boundsInRoot.left >= onNodeWithTag("page").fetchSemanticsNode().boundsInRoot.right - 1f)
         onNodeWithTag(ToolbarTags.color(2)).performClick()
         onNodeWithTag("page").performMouseInput {
             moveTo(Offset(300f, 300f))

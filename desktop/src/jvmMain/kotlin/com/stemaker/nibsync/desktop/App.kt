@@ -16,6 +16,7 @@ import kotlinx.coroutines.launch
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
@@ -251,6 +252,22 @@ private fun DocumentPane(container: DesktopContainer, id: DocumentId, strings: S
     }
 
     Column(Modifier.fillMaxSize()) {
+        val toolbarTools = ToolbarTools(
+            state = tools,
+            hasSelection = selection.isNotEmpty(),
+            canPaste = clip != null,
+            onTool = controller::selectTool,
+            onPen = controller::selectPen,
+            onEraser = controller::selectEraser,
+            onColor = controller::selectColor,
+            onSize = controller::selectSize,
+            onEraserSize = controller::selectEraserSize,
+            onInsert = { DesktopMedia.chooseFile(null, strings.insert)?.let { insertFile(DesktopMedia.read(it)) } },
+            onDeleteSelection = { controller.deleteSelection() },
+            onCopySelection = { controller.copySelection() },
+            onCutSelection = { controller.cutSelection() },
+            onPaste = ::pasteHere,
+        )
         NoteToolbar(
             strings = strings,
             canUndo = canUndo || editing != null,
@@ -259,74 +276,63 @@ private fun DocumentPane(container: DesktopContainer, id: DocumentId, strings: S
             onRedo = { controller.redo() },
             editing = editing?.controller,
             onDeleteText = { controller.text.delete() },
-            tools = ToolbarTools(
-                state = tools,
-                hasSelection = selection.isNotEmpty(),
-                canPaste = clip != null,
-                onTool = controller::selectTool,
-                onPen = controller::selectPen,
-                onEraser = controller::selectEraser,
-                onColor = controller::selectColor,
-                onSize = controller::selectSize,
-                onEraserSize = controller::selectEraserSize,
-                onInsert = { DesktopMedia.chooseFile(null, strings.insert)?.let { insertFile(DesktopMedia.read(it)) } },
-                onDeleteSelection = { controller.deleteSelection() },
-                onCopySelection = { controller.copySelection() },
-                onCutSelection = { controller.cutSelection() },
-                onPaste = ::pasteHere,
-            ),
+            tools = toolbarTools,
             end = { if (sync != null) SyncStatusIcon(sync, strings) },
         )
-        Box(
-            Modifier
-                .weight(1f)
-                .fillMaxWidth()
-                .clipToBounds()
-                .dragAndDropTarget(
-                    shouldStartDragAndDrop = { true },
-                    target = remember(controller) {
-                        object : DragAndDropTarget {
-                            override fun onDrop(event: DragAndDropEvent): Boolean {
-                                val files = (event.dragData() as? DragData.FilesList)?.readFiles().orEmpty()
-                                val file = files.firstNotNullOfOrNull { uri -> runCatching { DesktopMedia.read(File(java.net.URI(uri))) }.getOrNull() }
-                                if (files.isEmpty()) return false
-                                insertFile(file)
-                                return true
+        Row(Modifier.weight(1f).fillMaxWidth()) {
+            Box(
+                Modifier
+                    .weight(1f)
+                    .fillMaxHeight()
+                    .clipToBounds()
+                    .dragAndDropTarget(
+                        shouldStartDragAndDrop = { true },
+                        target = remember(controller) {
+                            object : DragAndDropTarget {
+                                override fun onDrop(event: DragAndDropEvent): Boolean {
+                                    val files = (event.dragData() as? DragData.FilesList)?.readFiles().orEmpty()
+                                    val file = files.firstNotNullOfOrNull { uri -> runCatching { DesktopMedia.read(File(java.net.URI(uri))) }.getOrNull() }
+                                    if (files.isEmpty()) return false
+                                    insertFile(file)
+                                    return true
+                                }
                             }
-                        }
-                    },
-                ),
-        ) {
-            PageView(
-                doc,
-                painter,
-                viewport,
-                onViewportChange = { viewport = it },
-                hiddenTextBox = editing?.boxId,
-                controller = controller,
-                overlay = PagePainter.Overlay(
-                    gesture = gesture,
-                    selection = selection,
-                    selectionFrame = if (selection.isEmpty()) null else controller.selectionFrame(),
-                    resizable = controller.resizable() != null,
-                ),
-            )
-            editing?.let { e ->
-                if (viewport.hasSize) TextBoxOverlay(e, viewport, strings, controller)
-            }
-            message?.let { text ->
-                LaunchedEffect(text) {
-                    kotlinx.coroutines.delay(4000)
-                    message = null
+                        },
+                    ),
+            ) {
+                PageView(
+                    doc,
+                    painter,
+                    viewport,
+                    onViewportChange = { viewport = it },
+                    hiddenTextBox = editing?.boxId,
+                    controller = controller,
+                    overlay = PagePainter.Overlay(
+                        gesture = gesture,
+                        selection = selection,
+                        selectionFrame = if (selection.isEmpty()) null else controller.selectionFrame(),
+                        resizable = controller.resizable() != null,
+                    ),
+                )
+                editing?.let { e ->
+                    if (viewport.hasSize) TextBoxOverlay(e, viewport, strings, controller)
                 }
-                Surface(
-                    Modifier.align(Alignment.BottomCenter).padding(16.dp),
-                    color = MaterialTheme.colorScheme.inverseSurface,
-                    shape = MaterialTheme.shapes.small,
-                ) {
-                    Text(text, Modifier.padding(12.dp), color = MaterialTheme.colorScheme.inverseOnSurface)
+                message?.let { text ->
+                    LaunchedEffect(text) {
+                        kotlinx.coroutines.delay(4000)
+                        message = null
+                    }
+                    Surface(
+                        Modifier.align(Alignment.BottomCenter).padding(16.dp),
+                        color = MaterialTheme.colorScheme.inverseSurface,
+                        shape = MaterialTheme.shapes.small,
+                    ) {
+                        Text(text, Modifier.padding(12.dp), color = MaterialTheme.colorScheme.inverseOnSurface)
+                    }
                 }
             }
+            // The text tool shows its formatting in the tool bar; settings only for drawing tools.
+            ToolSettingsBar(strings, toolbarTools)
         }
     }
 }

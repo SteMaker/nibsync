@@ -25,6 +25,10 @@ import com.stemaker.nibsync.model.BrushFamily
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -95,6 +99,7 @@ object ToolbarTags {
     const val COPY_SELECTION = "copy-selection"
     const val CUT_SELECTION = "cut-selection"
     const val PASTE = "paste"
+    const val TOOL_SETTINGS = "tool-settings"
 }
 
 /** Tools and their options; part of the tool bar while no text box is open. */
@@ -184,32 +189,48 @@ private fun ToolButtons(strings: Strings, t: ToolbarTools) {
     Action(strings.insert, Icons.Filled.AddPhotoAlternate, true, ToolbarTags.INSERT, t.onInsert)
 }
 
+/** Actions of the active tool in the tool bar (the lasso's); colours and widths are on the right. */
 @Composable
 private fun ToolOptions(strings: Strings, t: ToolbarTools) {
-    val s = t.state
+    if (t.state.tool != DesktopTool.LASSO) return
     Divider()
-    when (s.tool) {
-        DesktopTool.PEN -> {
-            DesktopPalette.colors(s.pen).forEachIndexed { i, argb ->
-                Swatch(argb, s.choice.colorArgb == argb, strings.color(i + 1), ToolbarTags.color(i)) { t.onColor(argb) }
-            }
-            Divider()
-            DesktopPalette.sizes(s.pen).forEachIndexed { i, mm ->
-                Dot((8 + i * 5).dp, s.choice.sizeMm == mm, strings.width(mm), ToolbarTags.size(i)) { t.onSize(mm) }
+    Action(strings.deleteSelection, Icons.Filled.Delete, t.hasSelection, ToolbarTags.DELETE_SELECTION, t.onDeleteSelection)
+    Action(strings.copySelection, Icons.Filled.ContentCopy, t.hasSelection, ToolbarTags.COPY_SELECTION, t.onCopySelection)
+    Action(strings.cutSelection, Icons.Filled.ContentCut, t.hasSelection, ToolbarTags.CUT_SELECTION, t.onCutSelection)
+    Action(strings.paste, Icons.Filled.ContentPaste, t.canPaste, ToolbarTags.PASTE, t.onPaste)
+}
+
+/**
+ * Settings of the active tool on the right of the page: colours and widths of the pen or
+ * highlighter, the pixel eraser's sizes. Always the same width, so the page does not move.
+ */
+@Composable
+fun ToolSettingsBar(strings: Strings, t: ToolbarTools) {
+    val s = t.state
+    Surface(tonalElevation = 2.dp, modifier = Modifier.fillMaxHeight().width(52.dp).testTag(ToolbarTags.TOOL_SETTINGS)) {
+        Column(
+            Modifier.verticalScroll(rememberScrollState()).padding(vertical = 8.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            when (s.tool) {
+                DesktopTool.PEN -> {
+                    DesktopPalette.colors(s.pen).forEachIndexed { i, argb ->
+                        Swatch(argb, s.choice.colorArgb == argb, strings.color(i + 1), ToolbarTags.color(i)) { t.onColor(argb) }
+                    }
+                    HorizontalDivider(Modifier.width(30.dp).padding(vertical = 4.dp))
+                    DesktopPalette.sizes(s.pen).forEachIndexed { i, mm ->
+                        Dot((8 + i * 5).dp, s.choice.sizeMm == mm, strings.width(mm), ToolbarTags.size(i)) { t.onSize(mm) }
+                    }
+                }
+                DesktopTool.ERASER -> if (s.eraserMode == EraserMode.PIXEL) {
+                    DesktopPalette.eraserSizes.forEachIndexed { i, mm ->
+                        Dot((8 + i * 5).dp, s.eraserSizeMm == mm, strings.width(mm), ToolbarTags.eraserSize(i)) { t.onEraserSize(mm) }
+                    }
+                }
+                DesktopTool.LASSO, DesktopTool.TEXT -> Unit
             }
         }
-        DesktopTool.ERASER -> if (s.eraserMode == EraserMode.PIXEL) {
-            DesktopPalette.eraserSizes.forEachIndexed { i, mm ->
-                Dot((8 + i * 5).dp, s.eraserSizeMm == mm, strings.width(mm), ToolbarTags.eraserSize(i)) { t.onEraserSize(mm) }
-            }
-        }
-        DesktopTool.LASSO -> {
-            Action(strings.deleteSelection, Icons.Filled.Delete, t.hasSelection, ToolbarTags.DELETE_SELECTION, t.onDeleteSelection)
-            Action(strings.copySelection, Icons.Filled.ContentCopy, t.hasSelection, ToolbarTags.COPY_SELECTION, t.onCopySelection)
-            Action(strings.cutSelection, Icons.Filled.ContentCut, t.hasSelection, ToolbarTags.CUT_SELECTION, t.onCutSelection)
-            Action(strings.paste, Icons.Filled.ContentPaste, t.canPaste, ToolbarTags.PASTE, t.onPaste)
-        }
-        DesktopTool.TEXT -> Unit
     }
 }
 

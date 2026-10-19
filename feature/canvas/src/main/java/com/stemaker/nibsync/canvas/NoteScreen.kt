@@ -30,6 +30,9 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -101,6 +104,7 @@ import com.stemaker.nibsync.background.ui.R as BackgroundR
 
 /** Test tags used by UI tests. */
 object NoteScreenTags {
+    const val TOOL_SETTINGS = "tool-settings"
     const val CANVAS = "note-canvas"
     const val TOOLBAR = "note-toolbar"
     fun pen(family: BrushFamily) = "pen-${family.name}"
@@ -180,10 +184,7 @@ fun NoteScreen(
             onUndo = { viewModel.undo() },
             onRedo = { viewModel.redo() },
             onPen = viewModel::selectPen,
-            onColor = viewModel::selectColor,
-            onSize = viewModel::selectSize,
             onEraser = viewModel::selectEraser,
-            onEraserSize = viewModel::selectEraserSize,
             hasSelection = selection.isNotEmpty(),
             canPaste = clip != null,
             onLasso = viewModel::selectLasso,
@@ -204,58 +205,84 @@ fun NoteScreen(
             textEditing = textEditing,
             onTextDelete = viewModel::deleteText,
         )
-        Box(Modifier.fillMaxSize().clipToBounds()) {
-            AndroidView(
-                modifier = Modifier.fillMaxSize().testTag(NoteScreenTags.CANVAS),
-                factory = { context ->
-                    NoteCanvasView(context).also {
-                        it.onTextFrame = { x, y, width -> viewModel.requestText(x, y, width, it.viewport.pageWidthMm) }
-                        it.onPageTapped = viewModel::tapAt
-                        it.onPageLongPressed = viewModel::longPressAt
-                        it.onSelectionResized = viewModel::resizeSelection
-                        it.mediaRenderer.assetFile = assetFile
-                        it.onViewportChanged = { v -> viewport = v }
-                        viewModel.measureText = it.textRenderer::heightMm
-                        it.onStrokeDrafted = viewModel::commitStroke
-                        it.onShapeRequested = viewModel::commitShape
-                        it.onEraseFinished = viewModel::commitErase
-                        it.onLassoFinished = viewModel::selectByLasso
-                        it.onSelectionMoved = viewModel::moveSelection
-                        it.onSelectionCleared = viewModel::clearSelection
-                        canvasView = it
-                        onCanvasCreated(it)
-                    }
-                },
-                update = { view ->
-                    view.pageFormat = document.meta.format
-                    view.pageBackground = document.background
-                    view.brush = tools.activeBrush
-                    view.drawWithFinger = drawWithFinger
-                    view.showPageBreaks = showPageBreaks
-                    view.tool = tools.tool
-                    view.selection = selection
-                    view.eraserMode = tools.eraserMode
-                    view.eraserRadiusMm = tools.eraserRadiusMm
-                    view.setStrokes(document.strokes)
-                    view.setTextBoxes(document.textBoxes)
-                    view.setFiles(document.files)
-                    view.editingTextBox = textEditing?.boxId
-                },
-            )
-            val editing = textEditing
-            val v = viewport ?: canvasView?.viewport
-            if (editing != null && v != null && v.hasSize) {
-                TextBoxOverlay(
-                    editing = editing,
-                    viewport = v,
-                    onMove = viewModel::moveText,
-                    onResize = viewModel::resizeText,
-                    onGestureEnd = viewModel::saveText,
+        Row(Modifier.fillMaxSize()) {
+            Box(Modifier.weight(1f).fillMaxHeight().clipToBounds()) {
+                AndroidView(
+                    modifier = Modifier.fillMaxSize().testTag(NoteScreenTags.CANVAS),
+                    factory = { context ->
+                        NoteCanvasView(context).also {
+                            it.onTextFrame = { x, y, width -> viewModel.requestText(x, y, width, it.viewport.pageWidthMm) }
+                            it.onPageTapped = viewModel::tapAt
+                            it.onPageLongPressed = viewModel::longPressAt
+                            it.onSelectionResized = viewModel::resizeSelection
+                            it.mediaRenderer.assetFile = assetFile
+                            it.onViewportChanged = { v -> viewport = v }
+                            viewModel.measureText = it.textRenderer::heightMm
+                            it.onStrokeDrafted = viewModel::commitStroke
+                            it.onShapeRequested = viewModel::commitShape
+                            it.onEraseFinished = viewModel::commitErase
+                            it.onLassoFinished = viewModel::selectByLasso
+                            it.onSelectionMoved = viewModel::moveSelection
+                            it.onSelectionCleared = viewModel::clearSelection
+                            canvasView = it
+                            onCanvasCreated(it)
+                        }
+                    },
+                    update = { view ->
+                        view.pageFormat = document.meta.format
+                        view.pageBackground = document.background
+                        view.brush = tools.activeBrush
+                        view.drawWithFinger = drawWithFinger
+                        view.showPageBreaks = showPageBreaks
+                        view.tool = tools.tool
+                        view.selection = selection
+                        view.eraserMode = tools.eraserMode
+                        view.eraserRadiusMm = tools.eraserRadiusMm
+                        view.setStrokes(document.strokes)
+                        view.setTextBoxes(document.textBoxes)
+                        view.setFiles(document.files)
+                        view.editingTextBox = textEditing?.boxId
+                    },
                 )
+                val editing = textEditing
+                val v = viewport ?: canvasView?.viewport
+                if (editing != null && v != null && v.hasSize) {
+                    TextBoxOverlay(
+                        editing = editing,
+                        viewport = v,
+                        onMove = viewModel::moveText,
+                        onResize = viewModel::resizeText,
+                        onGestureEnd = viewModel::saveText,
+                    )
+                }
+            }
+            ToolSettingsBar(tools, onColor = viewModel::selectColor, onSize = viewModel::selectSize, onEraserSize = viewModel::selectEraserSize)
+        }
+    }
+}
+
+/**
+ * Settings of the active tool on the right: colours and widths of the pen or highlighter, the
+ * pixel eraser's sizes. Always the same width, so the page keeps its zoom when the tool changes.
+ */
+@Composable
+private fun ToolSettingsBar(tools: ToolState, onColor: (Int) -> Unit, onSize: (Float) -> Unit, onEraserSize: (Float) -> Unit) {
+    Surface(tonalElevation = 3.dp, modifier = Modifier.fillMaxHeight().width(TOOL_SETTINGS_WIDTH).testTag(NoteScreenTags.TOOL_SETTINGS)) {
+        Column(
+            Modifier.verticalScroll(rememberScrollState()).padding(vertical = 8.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            when (tools.tool) {
+                Tool.PEN -> PenOptions(tools, onColor, onSize)
+                Tool.ERASER -> EraserOptions(tools, onEraserSize)
+                Tool.LASSO, Tool.TEXT -> Unit
             }
         }
     }
 }
+
+private val TOOL_SETTINGS_WIDTH = 60.dp
 
 /**
  * The editor over the edited box, at the page zoom, with handles to move it (top left) and
@@ -331,10 +358,7 @@ private fun Toolbar(
     onUndo: () -> Unit,
     onRedo: () -> Unit,
     onPen: (BrushFamily) -> Unit,
-    onColor: (Int) -> Unit,
-    onSize: (Float) -> Unit,
     onEraser: (EraserMode) -> Unit,
-    onEraserSize: (Float) -> Unit,
     hasSelection: Boolean,
     canPaste: Boolean,
     onLasso: () -> Unit,
@@ -428,13 +452,9 @@ private fun Toolbar(
                 }
                 if (onInsertFile != null) InsertMenu(onInsertFile, onInsertFromClipboard)
                 Divider()
+                // Colours and widths are in the tool settings bar on the right.
                 ScrollingRow(Modifier.weight(1f)) {
-                    when (tools.tool) {
-                        Tool.ERASER -> EraserOptions(tools, onEraserSize)
-                        Tool.LASSO -> SelectionActions(hasSelection, canPaste, onDeleteSelection, onCopySelection, onPaste)
-                        Tool.PEN -> PenOptions(tools, onColor, onSize)
-                        Tool.TEXT -> Unit
-                    }
+                    if (tools.tool == Tool.LASSO) SelectionActions(hasSelection, canPaste, onDeleteSelection, onCopySelection, onPaste)
                 }
                 Divider()
                 val backgroundLabel = stringResource(BackgroundR.string.background_paper)
@@ -460,7 +480,7 @@ private fun PenOptions(tools: ToolState, onColor: (Int) -> Unit, onSize: (Float)
             onClick = { onColor(argb) },
         )
     }
-    Divider()
+    HorizontalDivider(Modifier.width(36.dp).padding(vertical = 4.dp))
     PenPalette.sizes(tools.activePen).forEachIndexed { index, mm ->
         SizeDot(
             diameter = (8 + index * 6).dp,

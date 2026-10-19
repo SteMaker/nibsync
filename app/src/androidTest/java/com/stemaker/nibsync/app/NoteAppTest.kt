@@ -8,6 +8,8 @@ import android.os.SystemClock
 import android.view.InputDevice
 import android.view.MotionEvent
 import androidx.compose.ui.test.junit4.createEmptyComposeRule
+import androidx.compose.ui.test.hasTestTag
+import androidx.compose.ui.test.hasAnyAncestor
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.onNodeWithTag
@@ -274,6 +276,14 @@ class NoteAppTest {
     @Test
     fun selectedPenColorAndWidthAreUsed() {
         compose.onNodeWithTag(NoteScreenTags.pen(BrushFamily.BALLPOINT)).performClick()
+        // Colours and widths are in the settings bar on the right, not in the tool bar.
+        val inSettings = hasAnyAncestor(hasTestTag(NoteScreenTags.TOOL_SETTINGS))
+        compose.onNode(hasTestTag(NoteScreenTags.color(2)) and inSettings).assertExists()
+        compose.onNode(hasTestTag(NoteScreenTags.size(2)) and inSettings).assertExists()
+        compose.onNode(hasTestTag(NoteScreenTags.color(0)) and hasAnyAncestor(hasTestTag(NoteScreenTags.TOOLBAR))).assertDoesNotExist()
+        val settings = compose.onNodeWithTag(NoteScreenTags.TOOL_SETTINGS).fetchSemanticsNode().boundsInRoot
+        val canvas = compose.onNodeWithTag(NoteScreenTags.CANVAS).fetchSemanticsNode().boundsInRoot
+        assertThat(settings.left).isAtLeast(canvas.right - 1f)
         compose.onNodeWithTag(NoteScreenTags.color(2)).performClick()
         compose.onNodeWithTag(NoteScreenTags.size(2)).performClick()
         drag(line(100f, 300f, 500f, 300f))
