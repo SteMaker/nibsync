@@ -97,6 +97,16 @@ class LibraryViewModel(
 
     suspend fun rename(id: NodeId, title: String) = library.rename(id, title)
 
+    /** Opens [id] in the tree (e.g. a folder held under a dragged entry). */
+    fun expand(id: NodeId) = _expanded.update { it + id }
+
+    /** Moves a chapter or document into [target]; the new place is shown open. */
+    suspend fun move(id: NodeId, target: NodeId): Boolean {
+        if (!library.move(id, target)) return false
+        _expanded.update { it + tree.value.pathTo(target).map { n -> n.id } }
+        return true
+    }
+
     suspend fun delete(id: NodeId) {
         val affected = tree.value.descendantsOf(id) + listOfNotNull(tree.value[id])
         val removed = affected.map { it.id }.toSet()

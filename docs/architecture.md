@@ -71,6 +71,15 @@ fight with writing at the edge). Tapping a folder selects it as the place for "N
 opened document and the page-break toggle are device settings. The single document of earlier
 versions (`default`) was adopted into a first book on upgrade.
 
+Moving (`Library.move`, `LibraryTree.canMove`/`dropTarget`): chapters and documents go into any
+folder, also of another book, never into themselves; books stay top level. It only changes the
+node's `parent`. In the UI it is drag and drop (tablet: long press and drag, long press alone
+opens the menu); holding the entry over a closed folder opens it, near the list edges it
+scrolls. Between books of different accounts the sync does two extra things (`SyncEngine`):
+the old account receives the node once more with its new place (its devices then hide it, the
+new book is unknown there), and when a document is new to an account, the logs of other devices
+present here are uploaded too, so it arrives complete.
+
 ## Layers
 
 `BACKGROUND` (pattern) -> `IMAGE` (pictures) -> `MARKER` (highlighter) -> `TEXT` (text boxes,

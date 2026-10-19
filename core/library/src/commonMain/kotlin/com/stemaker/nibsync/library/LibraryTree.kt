@@ -38,6 +38,27 @@ class LibraryTree(allNodes: Collection<LibraryNode>) {
     val documents: List<LibraryNode>
         get() = books.flatMap { b -> descendantsOf(b.id) }.filter { !it.isFolder }
 
+    /**
+     * Whether [id] (a chapter or document, not a book) may go into the folder [target]: not
+     * into itself or anything inside it.
+     */
+    fun canMove(id: NodeId, target: NodeId): Boolean {
+        val node = get(id) ?: return false
+        val folder = get(target) ?: return false
+        if (node.parent == null || !folder.isFolder || id == target) return false
+        return pathTo(target).none { it.id == id }
+    }
+
+    /**
+     * Where [dragged] goes when dropped on the entry [over] in a tree view: into a folder, or
+     * next to a document (into its folder). Null if it cannot go there.
+     */
+    fun dropTarget(dragged: NodeId, over: NodeId): NodeId? {
+        val node = get(over) ?: return null
+        val target = if (node.isFolder) node.id else node.parent ?: return null
+        return target.takeIf { canMove(dragged, it) }
+    }
+
     private fun isReachable(node: LibraryNode): Boolean = pathTo(node.id).isNotEmpty()
 
     companion object {

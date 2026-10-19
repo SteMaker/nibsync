@@ -47,6 +47,25 @@ import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.isSecondaryPressed
 import androidx.compose.ui.input.pointer.onPointerEvent
 import androidx.compose.ui.platform.testTag
+import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.scrollBy
+import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.material3.Surface
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.mutableStateMapOf
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.boundsInRoot
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInRoot
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.unit.round
+import kotlinx.coroutines.delay
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.stemaker.nibsync.library.LibraryNode
@@ -75,6 +94,7 @@ fun treeRows(tree: LibraryTree, expanded: Set<NodeId>): List<TreeRow> {
 object LibraryTags {
     const val SETTINGS = "library-settings"
     const val TODOS = "library-todos"
+    const val DRAGGED = "library-dragged"
     const val NEW_BOOK = "library-new-book"
     const val NEW_CHAPTER = "library-new-chapter"
     const val NEW_DOCUMENT = "library-new-document"
@@ -129,9 +149,40 @@ fun LibraryPane(
     todosShown: Boolean = false,
     /** Number of open to-dos, null while unknown. */
     todoCount: Int? = null,
+    /** Moves a chapter or document (dragged with the mouse) into a folder; null: no dragging. */
+    onMove: ((NodeId, NodeId) -> Unit)? = null,
 ) {
     var menuFor by remember { mutableStateOf<NodeId?>(null) }
-    Column(modifier.fillMaxHeight().width(280.dp).background(MaterialTheme.colorScheme.surfaceContainerLow)) {
+    // Dragging: the entry, the pointer (root coordinates) and where each visible row is.
+    var drag by remember { mutableStateOf<TreeDrag?>(null) }
+    val rowBounds = remember { mutableStateMapOf<NodeId, Rect>() }
+    // The drag handlers live as long as their row: they read the current tree through this.
+    val currentTree by rememberUpdatedState(tree)
+    val currentOnMove by rememberUpdatedState(onMove)
+    var listBounds by remember { mutableStateOf(Rect.Zero) }
+    var paneOrigin by remember { mutableStateOf(Offset.Zero) }
+    val listState = rememberLazyListState()
+    val over = drag?.let { d -> rowBounds.entries.firstOrNull { it.value.contains(d.pointer) }?.key }
+    val dropTarget = drag?.let { d -> over?.let { tree.dropTarget(d.id, it) } }
+    // Held over a closed folder, it opens, so chapters inside become targets too.
+    LaunchedEffect(over) {
+        val folder = over?.takeIf { tree[it]?.isFolder == true && it !in expanded } ?: return@LaunchedEffect
+        delay(HOVER_OPEN_MS)
+        onExpandedChange(expanded + folder)
+    }
+    // Near the top or bottom edge, the list scrolls.
+    LaunchedEffect(drag != null) {
+        while (drag != null) {
+            val y = drag?.pointer?.y ?: break
+            when {
+                y < listBounds.top + EDGE_PX -> listState.scrollBy(-SCROLL_STEP_PX)
+                y > listBounds.bottom - EDGE_PX -> listState.scrollBy(SCROLL_STEP_PX)
+            }
+            delay(16)
+        }
+    }
+    Box(modifier) {
+    Column(Modifier.fillMaxHeight().width(280.dp).background(MaterialTheme.colorScheme.surfaceContainerLow).onGloballyPositioned { paneOrigin = it.positionInRoot() }) {
         Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 4.dp, top = 4.dp, bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
             Text(strings.library, style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
             if (onNewBook != null) {
@@ -163,15 +214,48 @@ fun LibraryPane(
             }
             HorizontalDivider()
         }
-        LazyColumn(Modifier.fillMaxWidth().weight(1f)) {
+        LazyColumn(Modifier.fillMaxWidth().weight(1f).onGloballyPositioned { listBounds = it.boundsInRoot() }, state = listState) {
             items(treeRows(tree, expanded), key = { it.node.id.value }) { row ->
                 val node = row.node
                 val selected = node.id == current
+                DisposableEffect(node.id) { onDispose { rowBounds.remove(node.id) } }
                 Box {
                     Row(
                         Modifier
                             .fillMaxWidth()
-                            .background(if (selected) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surfaceContainerLow)
+                            .onGloballyPositioned { rowBounds[node.id] = it.boundsInRoot() }
+                            .background(
+                                when {
+                                    node.id == dropTarget -> MaterialTheme.colorScheme.primaryContainer
+                                    selected -> MaterialTheme.colorScheme.secondaryContainer
+                                    else -> MaterialTheme.colorScheme.surfaceContainerLow
+                                },
+                            )
+                            .then(
+                                if (onMove != null && node.parent != null) {
+                                    Modifier.pointerInput(node.id) {
+                                        detectDragGestures(
+                                            onDragStart = { start ->
+                                                val origin = rowBounds[node.id]?.topLeft ?: Offset.Zero
+                                                drag = TreeDrag(node.id, node.title, origin + start)
+                                            },
+                                            onDrag = { change, amount ->
+                                                change.consume()
+                                                drag = drag?.let { it.copy(pointer = it.pointer + amount) }
+                                            },
+                                            onDragEnd = {
+                                                val d = drag
+                                                val target = d?.let { rowBounds.entries.firstOrNull { e -> e.value.contains(it.pointer) }?.key }?.let { currentTree.dropTarget(d.id, it) }
+                                                drag = null
+                                                if (d != null && target != null) currentOnMove?.invoke(d.id, target)
+                                            },
+                                            onDragCancel = { drag = null },
+                                        )
+                                    }
+                                } else {
+                                    Modifier
+                                },
+                            )
                             .onPointerEvent(PointerEventType.Press) { event ->
                                 if (onAction != null && event.buttons.isSecondaryPressed) menuFor = node.id
                             }
@@ -183,7 +267,8 @@ fun LibraryPane(
                                 }
                             }
                             .padding(start = (12 + row.depth * 18).dp, end = 12.dp, top = 6.dp, bottom = 6.dp)
-                            .testTag(LibraryTags.row(node.title)),
+                            .testTag(LibraryTags.row(node.title))
+                            .semantics { if (node.id == dropTarget) this.selected = true },
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(6.dp),
                     ) {
@@ -225,7 +310,32 @@ fun LibraryPane(
         }
         footer()
     }
+    // The dragged entry follows the pointer.
+    drag?.let { d ->
+        Surface(
+            shape = MaterialTheme.shapes.small,
+            tonalElevation = 6.dp,
+            shadowElevation = 4.dp,
+            modifier = Modifier.offset { (d.pointer - paneOrigin + Offset(12f, 8f)).round() }.testTag(LibraryTags.DRAGGED),
+        ) {
+            Row(Modifier.padding(horizontal = 10.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                Icon(if (tree[d.id]?.isFolder == true) Icons.Filled.Folder else Icons.Filled.Description, null, Modifier.size(16.dp))
+                Text(d.title, style = MaterialTheme.typography.bodyMedium, maxLines = 1)
+            }
+        }
+    }
+    }
 }
+
+/** An entry being dragged in the library, and the pointer position in root coordinates. */
+private data class TreeDrag(val id: NodeId, val title: String, val pointer: Offset)
+
+/** How long the dragged entry is held over a closed folder before it opens. */
+private const val HOVER_OPEN_MS = 700L
+
+/** Distance from the list's top or bottom edge where dragging scrolls, and the step. */
+private const val EDGE_PX = 40f
+private const val SCROLL_STEP_PX = 12f
 
 /** The book's account (small), or for a book only on this PC a menu to sync it with an account. */
 @Composable

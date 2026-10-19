@@ -15,6 +15,7 @@ import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performImeAction
 import androidx.compose.ui.test.assertTextContains
 import androidx.compose.ui.test.assertIsNotFocused
@@ -398,5 +399,38 @@ class LibraryAppTest {
             settings.showTitle = savedTitle
             settings.showCreated = savedCreated
         }
+    }
+
+    @Test
+    fun longPressAndDragMovesADocumentIntoAnotherBook() {
+        val docId = createDocumentThroughTheDrawer()
+        // A second book of this test, empty and closed.
+        openDrawer()
+        compose.onNodeWithTag(LibraryTags.NEW_BOOK).performClick()
+        enterName("$bookTitle-B")
+        waitUntil("second book") { tree().books.any { it.title == "$bookTitle-B" } }
+        val target = tree().books.first { it.title == "$bookTitle-B" }
+        fun center(title: String): androidx.compose.ui.geometry.Offset {
+            row(title)
+            return compose.onNodeWithTag(LibraryTags.row(title)).fetchSemanticsNode().boundsInRoot.center
+        }
+        val from = center("Seite A5")
+        val to = center("$bookTitle-B")
+        compose.onRoot().performTouchInput {
+            down(from)
+            advanceEventTime(viewConfiguration.longPressTimeoutMillis + 200)
+            moveBy(androidx.compose.ui.geometry.Offset(0f, 30f))
+            for (i in 1..10) moveTo(from + (to - from) * (i / 10f))
+        }
+        compose.onNodeWithTag(LibraryTags.DRAGGED).assertExists()
+        compose.onRoot().performTouchInput { up() }
+        waitUntil("moved") { tree()[docId]?.parent == target.id }
+        compose.onNodeWithTag(LibraryTags.DRAGGED).assertDoesNotExist()
+        // It is still the open document, now in its new place.
+        assertThat(activity { it.documentId }).isEqualTo(docId.asDocumentId)
+        row("Seite A5").assertExists()
+        // A long press without moving still opens the menu.
+        row("Seite A5").performTouchInput { longClick() }
+        compose.onNodeWithTag(LibraryTags.RENAME).assertExists()
     }
 }

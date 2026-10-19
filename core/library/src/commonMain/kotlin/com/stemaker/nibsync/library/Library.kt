@@ -76,6 +76,20 @@ class Library(
         publish()
     }
 
+    /**
+     * Moves a chapter or document (with everything inside) into the folder [target], also into
+     * another book. Books stay top level. Does nothing if [LibraryTree.canMove] says no.
+     */
+    suspend fun move(id: NodeId, target: NodeId): Boolean = lock.withLock {
+        val tree = _tree.value
+        if (!tree.canMove(id, target)) return@withLock false
+        val node = tree[id] ?: return@withLock false
+        if (node.parent == target) return@withLock false
+        store(node.copy(parent = target, modifiedAtEpochMs = clock()))
+        publish()
+        true
+    }
+
     /** Deletes the entry and, for folders, everything inside, including stored documents. */
     suspend fun delete(id: NodeId) = lock.withLock {
         val tree = _tree.value

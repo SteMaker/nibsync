@@ -208,6 +208,12 @@ fun App(
                     onNewBook = { newBook = true },
                     bookAccounts = sync?.let { BookAccountsUi(accounts, { id -> bookAccounts[id] }, it::assignBook) },
                     onTodos = { showTodos = true },
+                    onMove = { id, target ->
+                        appScope.launch {
+                            // The new place is shown open.
+                            if (container.library.move(id, target)) expanded = expanded + tree.pathTo(target).map { it.id } + target
+                        }
+                    },
                     todosShown = showTodos,
                     todoCount = todos?.size,
                 )

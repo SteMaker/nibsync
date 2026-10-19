@@ -213,6 +213,34 @@ class LibraryTest {
         again.load("x", "y")
         assertEquals(listOf("Book"), again.tree.value.titles)
     }
+
+    @Test
+    fun documentsAndChaptersMoveBetweenFoldersAndBooksButNotIntoThemselves() = runTest {
+        val lib = library()
+        lib.load("Notizen", "Seite")
+        val book = lib.tree.value.books.single()
+        val other = lib.createBook("Arbeit")
+        val chapter = lib.createFolder(book.id, "Kapitel")
+        val inner = lib.createFolder(chapter.id, "Unterkapitel")
+        val doc = lib.createDocument(book.id, "Protokoll", com.stemaker.nibsync.model.PageFormat())
+
+        assertTrue(lib.move(doc.id, inner.id))
+        assertEquals(listOf("Notizen", "Kapitel", "Unterkapitel", "Protokoll"), lib.tree.value.pathTo(doc.id).map { it.title })
+        // A chapter takes its content along, also into another book.
+        assertTrue(lib.move(chapter.id, other.id))
+        assertEquals(listOf("Arbeit", "Kapitel", "Unterkapitel", "Protokoll"), lib.tree.value.pathTo(doc.id).map { it.title })
+        // Not into itself or below itself, not into a document, books stay books.
+        assertFalse(lib.move(chapter.id, inner.id))
+        assertFalse(lib.move(chapter.id, chapter.id))
+        assertFalse(lib.move(inner.id, doc.id))
+        assertFalse(lib.move(other.id, book.id))
+        // The document's content is untouched.
+        assertTrue(documents().exists(doc.id.asDocumentId))
+        // Kept after reloading.
+        val again = library()
+        again.load("Notizen", "Seite")
+        assertEquals(inner.id, again.tree.value[doc.id]?.parent)
+    }
 }
 
 class LibraryMergeTest {
@@ -245,4 +273,5 @@ class LibraryMergeTest {
         val other = base.copy(title = "X", modifiedAtEpochMs = 99)
         assertEquals(base.mergedWith(other), base.mergedWith(other).mergedWith(other))
     }
+
 }

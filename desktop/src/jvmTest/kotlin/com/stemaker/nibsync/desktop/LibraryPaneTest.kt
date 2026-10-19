@@ -2,6 +2,8 @@ package com.stemaker.nibsync.desktop
 
 import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performMouseInput
@@ -112,6 +114,60 @@ class LibraryPaneTest {
         assertThat(runBlocking { container.repository.exists(doc.id.asDocumentId) }).isFalse()
         waitUntil(timeoutMillis = 5000) { settings.lastDocument != doc.id.asDocumentId || onAllNodesWithTag(LibraryTags.row("Sitzung")).fetchSemanticsNodes().isEmpty() }
         onNodeWithTag(LibraryTags.row("Sitzung")).assertDoesNotExist()
+        runBlocking { container.closeAll() }
+    }
+
+    @Test
+    fun dragADocumentIntoAChapterOfAnotherBookHoldingOpensFolders() = runComposeUiTest {
+        val root = tmp.root.toOkioPath()
+        val container = DesktopContainer(root)
+        val settings = Settings(container.fs, root / "settings.properties")
+        val lib = container.library
+        val (doc, chapter) = runBlocking {
+            lib.load("Buch", "Seite 1")
+            val other = lib.createBook("Arbeit")
+            val chapter = lib.createFolder(other.id, "Projekte")
+            lib.createDocument(chapter.id, "Alt", PageFormat())
+            lib.tree.value.documents.first { it.title == "Seite 1" } to chapter
+        }
+        settings.lastDocument = doc.id.asDocumentId
+        setContent { App(container, settings, Strings(german = true)) }
+        waitUntil(timeoutMillis = 5000) { onAllNodesWithTag(LibraryTags.row("Seite 1")).fetchSemanticsNodes().isNotEmpty() }
+        // "Arbeit" is closed: its chapter is not visible yet.
+        onNodeWithTag(LibraryTags.row("Projekte")).assertDoesNotExist()
+        fun center(tag: String) = onNodeWithTag(tag).fetchSemanticsNode().boundsInRoot.center
+
+        onRoot().performMouseInput {
+            moveTo(center(LibraryTags.row("Seite 1")))
+            press()
+            moveBy(Offset(0f, 12f))
+            moveTo(center(LibraryTags.row("Arbeit")))
+        }
+        onNodeWithTag(LibraryTags.DRAGGED).assertExists()
+        // Held over the closed book, it opens.
+        mainClock.advanceTimeBy(1000)
+        waitUntil(timeoutMillis = 5000) { onAllNodesWithTag(LibraryTags.row("Projekte")).fetchSemanticsNodes().isNotEmpty() }
+        onRoot().performMouseInput {
+            moveTo(center(LibraryTags.row("Projekte")))
+        }
+        // A document row as target means its folder: dropping on "Alt" would do the same.
+        onRoot().performMouseInput { release() }
+        waitUntil(timeoutMillis = 5000) { lib.tree.value[doc.id]?.parent == chapter.id }
+        assertThat(lib.tree.value.pathTo(doc.id).map { it.title }).containsExactly("Arbeit", "Projekte", "Seite 1").inOrder()
+        onNodeWithTag(LibraryTags.DRAGGED).assertDoesNotExist()
+        // The document stays usable and shown in its new place.
+        waitUntil(timeoutMillis = 5000) { onAllNodesWithTag(LibraryTags.row("Seite 1")).fetchSemanticsNodes().isNotEmpty() }
+
+        // A chapter cannot go into itself; nothing happens.
+        onRoot().performMouseInput {
+            moveTo(center(LibraryTags.row("Projekte")))
+            press()
+            moveBy(Offset(0f, 12f))
+            moveTo(center(LibraryTags.row("Alt")))
+            release()
+        }
+        waitForIdle()
+        assertThat(lib.tree.value[chapter.id]?.parent).isEqualTo(lib.tree.value.books.first { it.title == "Arbeit" }.id)
         runBlocking { container.closeAll() }
     }
 }

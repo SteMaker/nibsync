@@ -101,10 +101,13 @@ class SyncEngine(
         val nodes = mine(library.allNodes())
         val nodeHash = nodes.associate { it.id.value to library.encode(it).contentHashCode() }
         val pendingNodes = nodes.filter { state.nodeHashes[it.id.value] != nodeHash[it.id.value] }
+        // Entries this account knows that now belong elsewhere (moved to another account's book).
+        val ownIds = nodes.mapTo(HashSet()) { it.id.value }
+        val movedAway = library.allNodes().any { it.id.value !in ownIds && it.id.value in state.nodeHashes }
         val syncedDocs = nodes.filter { !it.isFolder && !it.deleted }.map { it.id.asDocumentId }
         val pendingLogs = syncedDocs.filter { localValidLength(it, ownLog) > (state.uploadedLog[it.value] ?: 0L) || it.value !in state.metaUploaded }
         val pendingAssets = syncedDocs.any { doc -> localAssets(doc).any { "${doc.value}/$it" !in state.uploadedAssets } }
-        if (root.etag == state.rootEtag && pendingNodes.isEmpty() && pendingLogs.isEmpty() && !pendingAssets) {
+        if (root.etag == state.rootEtag && pendingNodes.isEmpty() && !movedAway && pendingLogs.isEmpty() && !pendingAssets) {
             return SyncReport(upToDate = true)
         }
 
@@ -146,6 +149,20 @@ class SyncEngine(
             nodeHashes[node.id.value] = encoded.contentHashCode()
             libraryEtags.remove("${node.id.value}.json") // re-read our own version once; harmless
         }
+        // Entries this account had that moved into a book of another account (or only on this
+        // device): its other devices get the new place once and stop showing them.
+        val mineNow = mine(library.allNodes()).mapTo(HashSet()) { it.id.value }
+        for (node in library.allNodes()) {
+            val key = node.id.value
+            if (key in mineNow || key !in nodeHashes) continue
+            val encoded = library.encode(node)
+            if (nodeHashes[key] != encoded.contentHashCode()) {
+                remote.write("$LIBRARY/$key.json", encoded)
+                uploads++
+            }
+            nodeHashes.remove(key)
+            libraryEtags.remove("$key.json")
+        }
         state = state.copy(libraryEtags = libraryEtags, nodeHashes = nodeHashes)
 
         // 2. Documents.
@@ -182,6 +199,9 @@ class SyncEngine(
                     remote.write("$dir/${FileDocumentRepository.META_FILE}", withContext(io) { fs.read(localDir / FileDocumentRepository.META_FILE) { readByteArray() } })
                     uploads++
                 }
+                // New to this account (moved here from another one): bring the other devices'
+                // logs along, else devices of this account would see only this device's edits.
+                uploads += uploadForeignLogs(doc, dir)
                 metaUploaded += doc.value
             }
             // New assets before the log that refers to them.
@@ -257,6 +277,23 @@ class SyncEngine(
             uploads = uploads,
             downloads = downloads,
         )
+    }
+
+    /** Uploads the logs of other devices that this device has but the remote lacks (or has shorter). */
+    private suspend fun uploadForeignLogs(doc: DocumentId, dir: String): Int {
+        val opsDir = documentsRoot / doc.value / FileDocumentRepository.OPS_DIR
+        val local = withContext(io) { if (fs.exists(opsDir)) fs.list(opsDir).map { it.name } else emptyList() }
+            .filter { it != ownLog && it.endsWith(FileDocumentRepository.LOG_SUFFIX) }
+        if (local.isEmpty()) return 0
+        val onRemote = remote.list("$dir/$OPS")?.entries.orEmpty().associate { it.name to it.size }
+        var count = 0
+        for (name in local) {
+            val length = localValidLength(doc, name)
+            if (length <= (onRemote[name] ?: 0L)) continue
+            remote.write("$dir/$OPS/$name", withContext(io) { fs.read(opsDir / name) { readByteArray(length) } })
+            count++
+        }
+        return count
     }
 
     /** The nodes of the books this engine syncs. */

@@ -2,6 +2,25 @@ package com.stemaker.nibsync.library.ui
 
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.awaitLongPressOrCancellation
+import androidx.compose.ui.input.pointer.positionChange
+import androidx.compose.foundation.gestures.scrollBy
+import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.material3.Surface
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.mutableStateMapOf
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.boundsInRoot
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInRoot
+import androidx.compose.ui.unit.round
+import kotlinx.coroutines.delay
 import androidx.compose.ui.graphics.Color
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
@@ -78,6 +97,7 @@ object LibraryTags {
     const val DRAWER = "library-drawer"
     const val SETTINGS = "library-settings"
     const val TODOS = "library-todos"
+    const val DRAGGED = "library-dragged"
     const val TREE = "library-tree"
     const val NEW_BOOK = "library-new-book"
     const val NEW_FOLDER = "library-new-folder"
@@ -93,6 +113,16 @@ object LibraryTags {
     fun paper(size: PaperSize) = "library-paper-${size.name}"
     fun orientation(o: Orientation) = "library-orientation-${o.name}"
 }
+
+/** An entry being dragged in the library ([moved] once the finger moved), pointer in root coordinates. */
+private data class TreeDrag(val id: NodeId, val title: String, val pointer: Offset, val moved: Boolean = false)
+
+/** How long the dragged entry is held over a closed folder before it opens. */
+private const val HOVER_OPEN_MS = 700L
+
+/** Distance from the list's top or bottom edge where dragging scrolls, and the step. */
+private const val EDGE_PX = 80f
+private const val SCROLL_STEP_PX = 16f
 
 /** A sync account a book can belong to, as the app names it. */
 data class AccountChoice(val key: String, val label: String)
@@ -148,8 +178,36 @@ fun LibraryDrawer(
     val scope = rememberCoroutineScope()
     var dialog by remember { mutableStateOf<Dialog?>(null) }
     var menuFor by remember { mutableStateOf<NodeId?>(null) }
+    // Long press and drag moves a chapter or document; long press alone opens its menu.
+    var drag by remember { mutableStateOf<TreeDrag?>(null) }
+    val rowBounds = remember { mutableStateMapOf<NodeId, Rect>() }
+    // The drag handlers live as long as their row: they read the current tree through this.
+    val currentTree by rememberUpdatedState(tree)
+    var listBounds by remember { mutableStateOf(Rect.Zero) }
+    var drawerOrigin by remember { mutableStateOf(Offset.Zero) }
+    val listState = rememberLazyListState()
+    val over = drag?.takeIf { it.moved }?.let { d -> rowBounds.entries.firstOrNull { it.value.contains(d.pointer) }?.key }
+    val dropTarget = drag?.let { d -> over?.let { tree.dropTarget(d.id, it) } }
+    // Held over a closed folder, it opens, so chapters inside become targets too.
+    LaunchedEffect(over) {
+        val folder = over?.takeIf { tree[it]?.isFolder == true && it !in expanded } ?: return@LaunchedEffect
+        delay(HOVER_OPEN_MS)
+        viewModel.expand(folder)
+    }
+    // Near the top or bottom edge, the list scrolls.
+    LaunchedEffect(drag?.moved == true) {
+        while (drag?.moved == true) {
+            val y = drag?.pointer?.y ?: break
+            when {
+                y < listBounds.top + EDGE_PX -> listState.scrollBy(-SCROLL_STEP_PX)
+                y > listBounds.bottom - EDGE_PX -> listState.scrollBy(SCROLL_STEP_PX)
+            }
+            delay(16)
+        }
+    }
 
-    Column(modifier.fillMaxHeight().testTag(LibraryTags.DRAWER)) {
+    Box(modifier.onGloballyPositioned { drawerOrigin = it.positionInRoot() }) {
+    Column(Modifier.fillMaxHeight().testTag(LibraryTags.DRAWER)) {
         Row(Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
             Text(stringResource(R.string.library), style = MaterialTheme.typography.titleLarge, modifier = Modifier.weight(1f))
             if (onSettings != null) {
@@ -182,26 +240,63 @@ fun LibraryDrawer(
             }
             HorizontalDivider()
         }
-        LazyColumn(Modifier.weight(1f).testTag(LibraryTags.TREE)) {
+        LazyColumn(Modifier.weight(1f).onGloballyPositioned { listBounds = it.boundsInRoot() }.testTag(LibraryTags.TREE), state = listState) {
             items(viewModel.rows(tree, expanded), key = { it.node.id.value }) { row ->
                 val node = row.node
                 val highlighted = node.id == highlightedId
+                DisposableEffect(node.id) { onDispose { rowBounds.remove(node.id) } }
                 Box {
                     Row(
                         Modifier
                             .fillMaxWidth()
-                            .background(if (highlighted) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surface)
-                            .combinedClickable(
-                                onClick = {
-                                    if (node.isFolder) {
-                                        viewModel.onFolderTapped(node.id)
-                                    } else {
-                                        viewModel.onDocumentOpened(node.id)
-                                        onOpenDocument(node.id)
-                                    }
+                            .onGloballyPositioned { rowBounds[node.id] = it.boundsInRoot() }
+                            .background(
+                                when {
+                                    node.id == dropTarget -> MaterialTheme.colorScheme.primaryContainer
+                                    highlighted -> MaterialTheme.colorScheme.secondaryContainer
+                                    else -> MaterialTheme.colorScheme.surface
                                 },
-                                onLongClick = { menuFor = node.id },
                             )
+                            .pointerInput(node.id) {
+                                // Long press, then: lift without moving opens the menu, moving drags.
+                                awaitEachGesture {
+                                    val down = awaitFirstDown(requireUnconsumed = false)
+                                    val press = awaitLongPressOrCancellation(down.id) ?: return@awaitEachGesture
+                                    val origin = rowBounds[node.id]?.topLeft ?: Offset.Zero
+                                    drag = TreeDrag(node.id, node.title, origin + press.position)
+                                    var travelled = 0f
+                                    while (true) {
+                                        val event = awaitPointerEvent()
+                                        val change = event.changes.firstOrNull { it.id == press.id } ?: break
+                                        if (!change.pressed) break
+                                        val delta = change.positionChange()
+                                        travelled += delta.getDistance()
+                                        change.consume()
+                                        // Books stay where they are; their long press only opens the menu.
+                                        if (node.parent != null && travelled > viewConfiguration.touchSlop) {
+                                            drag = drag?.let { it.copy(pointer = it.pointer + delta, moved = true) }
+                                        } else {
+                                            drag = drag?.let { it.copy(pointer = it.pointer + delta) }
+                                        }
+                                    }
+                                    val d = drag
+                                    drag = null
+                                    if (d == null || !d.moved) {
+                                        menuFor = node.id
+                                    } else {
+                                        val target = rowBounds.entries.firstOrNull { it.value.contains(d.pointer) }?.key?.let { currentTree.dropTarget(d.id, it) }
+                                        if (target != null) scope.launch { viewModel.move(d.id, target) }
+                                    }
+                                }
+                            }
+                            .clickable {
+                                if (node.isFolder) {
+                                    viewModel.onFolderTapped(node.id)
+                                } else {
+                                    viewModel.onDocumentOpened(node.id)
+                                    onOpenDocument(node.id)
+                                }
+                            }
                             .padding(start = (8 + row.depth * 24).dp, end = 16.dp, top = 10.dp, bottom = 10.dp)
                             .testTag(LibraryTags.row(node.title)),
                         verticalAlignment = Alignment.CenterVertically,
@@ -286,6 +381,22 @@ fun LibraryDrawer(
             }
         }
         footer()
+    }
+    // The dragged entry follows the finger.
+    drag?.takeIf { it.moved }?.let { d ->
+        Surface(
+            shape = MaterialTheme.shapes.small,
+            tonalElevation = 6.dp,
+            shadowElevation = 6.dp,
+            modifier = Modifier.offset { (d.pointer - drawerOrigin + Offset(24f, -48f)).round() }.testTag(LibraryTags.DRAGGED),
+        ) {
+            Row(Modifier.padding(horizontal = 12.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                Icon(if (tree[d.id]?.isFolder == true) Icons.Filled.Folder else Icons.Filled.Description, contentDescription = null)
+                Spacer(Modifier.width(8.dp))
+                Text(d.title, maxLines = 1)
+            }
+        }
+    }
     }
 
     when (val d = dialog) {
