@@ -56,6 +56,32 @@ data class TextParagraph(
     }
 }
 
+/**
+ * Line and page breaks that must not be inside a paragraph's text: pasting can bring them in
+ * (Windows copies "\r\n", some pages U+2028). Paragraphs are already separate lines.
+ */
+private fun isStrayBreak(c: Char) =
+    c == '\r' || c == '\n' || c == '\u000B' || c == '\u000C' || c == '\u0085' || c == '\u2028' || c == '\u2029'
+
+/** The paragraph without stray line breaks; its marks keep covering the same characters. */
+fun TextParagraph.withoutStrayBreaks(): TextParagraph {
+    if (text.none(::isStrayBreak)) return this
+    // New position of every old position (and of the end).
+    val newIndex = IntArray(text.length + 1)
+    val out = StringBuilder(text.length)
+    for (i in text.indices) {
+        newIndex[i] = out.length
+        if (!isStrayBreak(text[i])) out.append(text[i])
+    }
+    newIndex[text.length] = out.length
+    val marks = marks.map { TextMark(newIndex[it.start], newIndex[it.end], it.style) }.filter { it.start < it.end }
+    return copy(text = out.toString(), marks = marks)
+}
+
+/** The text without stray line breaks inside its paragraphs, see [withoutStrayBreaks]. */
+fun RichText.withoutStrayBreaks(): RichText =
+    if (paragraphs.none { p -> p.text.any(::isStrayBreak) }) this else RichText(paragraphs.map { it.withoutStrayBreaks() })
+
 /** Style [style] applies to characters [start] (inclusive) to [end] (exclusive). */
 data class TextMark(val start: Int, val end: Int, val style: MarkStyle)
 

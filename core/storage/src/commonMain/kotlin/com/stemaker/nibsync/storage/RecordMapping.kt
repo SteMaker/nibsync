@@ -31,6 +31,7 @@ import com.stemaker.nibsync.model.TextMark
 import com.stemaker.nibsync.model.TextParagraph
 import com.stemaker.nibsync.model.TodoContent
 import com.stemaker.nibsync.model.TodoItem
+import com.stemaker.nibsync.model.withoutStrayBreaks
 
 internal const val FORMAT_VERSION = 1
 
@@ -175,7 +176,8 @@ private fun List<ParagraphRecord>.toRichText(): RichText {
     val paragraphs = map { p ->
         TextParagraph(p.text, enumOr(p.list, ListKind.NONE), p.indent.coerceAtLeast(0), p.marks.mapNotNull { it.toDomain(p.text.length) })
     }
-    return if (paragraphs.isEmpty()) RichText.EMPTY else RichText(paragraphs)
+    // Texts stored before pasted line breaks were removed may still hold some.
+    return if (paragraphs.isEmpty()) RichText.EMPTY else RichText(paragraphs).withoutStrayBreaks()
 }
 
 internal fun TodoItem.toRecord(): TodoRecord {

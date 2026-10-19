@@ -111,4 +111,43 @@ class RichTextConversionTest {
         val bold = annotated.spanStyles.single()
         assertThat(annotated.text.substring(bold.start, bold.end)).isEqualTo("fett")
     }
+
+    @Test
+    fun pastedLineBreaksAndOverlongSpansDoNotBreakTheText() {
+        // As after pasting from a web page on Windows: "\r" at the paragraph end, inside bold.
+        @OptIn(com.mohamedrejeb.richeditor.annotation.ExperimentalRichTextApi::class)
+        val document = com.mohamedrejeb.richeditor.document.RichTextDocument(
+            listOf(
+                com.mohamedrejeb.richeditor.document.RichTextBlock(
+                    text = "Fett normal\r",
+                    type = com.mohamedrejeb.richeditor.document.RichTextBlockType.ListItem(ordered = false, indent = 0),
+                    spans = listOf(com.mohamedrejeb.richeditor.document.RichTextSpanMark.Bold(0 until 12)),
+                ),
+                com.mohamedrejeb.richeditor.document.RichTextBlock(text = "Ende", type = com.mohamedrejeb.richeditor.document.RichTextBlockType.Paragraph, spans = emptyList()),
+            ),
+        )
+        val text = RichTextConversion.fromDocument(document)
+        assertThat(text.paragraphs.map { it.text }).containsExactly("Fett normal", "Ende").inOrder()
+        assertThat(text.paragraphs.first().marks).containsExactly(TextMark(0, 11, MarkStyle.Bold))
+        assertThat(text.paragraphs.first().list).isEqualTo(ListKind.BULLET)
+    }
+
+    @Test
+    fun selectAllAndBoldTwiceAfterAPaste() {
+        val controller = TextEditController.create(
+            RichText(
+                listOf(
+                    TextParagraph("Fett normal\r", ListKind.BULLET, marks = listOf(TextMark(0, 4, MarkStyle.Bold))),
+                    TextParagraph("Zwei stark\r", ListKind.BULLET, marks = listOf(TextMark(5, 10, MarkStyle.Bold))),
+                    TextParagraph("Ende"),
+                ),
+            ),
+        )
+        controller.state.selection = TextRange(0, controller.state.annotatedString.text.length)
+        controller.toggleBold()
+        controller.toggleBold()
+        val text = controller.text
+        assertThat(text.plainText).isEqualTo("Fett normal\nZwei stark\nEnde")
+        assertThat(text.paragraphs.none { p -> '\r' in p.text }).isTrue()
+    }
 }

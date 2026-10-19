@@ -164,4 +164,17 @@ class QuantizationTest {
     fun pressureIsClampedToOne() {
         assertEquals(1f, Quantization.quantize(StrokePoint(0f, 0f, 0, pressure = 1.7f)).pressure)
     }
+
+    @Test
+    fun strayBreaksFromPastingAreRemovedAndMarksFollow() {
+        val p = TextParagraph("Fett\r\n und\u2028 mehr\r", ListKind.BULLET, marks = listOf(TextMark(0, 5, MarkStyle.Bold), TextMark(6, 15, MarkStyle.Italic), TextMark(16, 17, MarkStyle.Bold)))
+        val clean = p.withoutStrayBreaks()
+        assertEquals("Fett und mehr", clean.text)
+        // A mark only over a removed break disappears.
+        assertEquals(listOf(TextMark(0, 4, MarkStyle.Bold), TextMark(4, 12, MarkStyle.Italic)), clean.marks)
+        assertEquals(ListKind.BULLET, clean.list)
+        // Unchanged text stays the same object.
+        val plain = RichText.plain("ohne")
+        assertTrue(plain.withoutStrayBreaks() === plain)
+    }
 }

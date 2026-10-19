@@ -12,6 +12,7 @@ import com.stemaker.nibsync.model.MarkStyle
 import com.stemaker.nibsync.model.RichText
 import com.stemaker.nibsync.model.TextMark
 import com.stemaker.nibsync.model.TextParagraph
+import com.stemaker.nibsync.model.withoutStrayBreaks
 
 /**
  * Converts between the stored [RichText] and the editor library's document model. Formatting
@@ -21,7 +22,7 @@ import com.stemaker.nibsync.model.TextParagraph
 internal object RichTextConversion {
 
     fun toDocument(text: RichText): RichTextDocument = RichTextDocument(
-        text.paragraphs.map { p ->
+        text.withoutStrayBreaks().paragraphs.map { p ->
             RichTextBlock(
                 text = p.text,
                 type = when (p.list) {
@@ -44,9 +45,15 @@ internal object RichTextConversion {
         }
     }
 
+    /**
+     * The editor's content in the stored format. Marks are kept inside their paragraph (the
+     * editor can report a span reaching past the text, e.g. over a pasted "\r") and stray line
+     * breaks from pasting are removed.
+     */
     fun fromDocument(document: RichTextDocument): RichText = RichText(
         document.blocks.map { block ->
             val type = block.type
+            val length = block.text.length
             TextParagraph(
                 text = block.text,
                 list = when {
@@ -55,10 +62,16 @@ internal object RichTextConversion {
                     else -> ListKind.BULLET
                 },
                 indent = (type as? RichTextBlockType.ListItem)?.indent ?: 0,
-                marks = normalized(block.spans.mapNotNull { it.toTextMark() }),
-            )
-        },
+                marks = normalized(block.spans.mapNotNull { it.toTextMark()?.clampedTo(length) }),
+            ).withoutStrayBreaks()
+        }.ifEmpty { listOf(TextParagraph("")) },
     )
+
+    private fun TextMark.clampedTo(length: Int): TextMark? {
+        val s = start.coerceIn(0, length)
+        val e = end.coerceIn(0, length)
+        return if (s < e) TextMark(s, e, style) else null
+    }
 
     private fun RichTextSpanMark.toTextMark(): TextMark? {
         val style = when (this) {

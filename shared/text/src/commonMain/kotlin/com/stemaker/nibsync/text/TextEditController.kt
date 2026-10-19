@@ -15,6 +15,7 @@ import com.mohamedrejeb.richeditor.annotation.ExperimentalRichTextApi
 import com.mohamedrejeb.richeditor.model.RichTextState
 import com.mohamedrejeb.richeditor.paragraph.type.OrderedListStyleType
 import com.stemaker.nibsync.model.RichText
+import com.stemaker.nibsync.model.withoutStrayBreaks
 import com.stemaker.nibsync.model.TextFont
 
 /**
@@ -80,8 +81,18 @@ class TextEditController internal constructor(internal val state: RichTextState)
         state.setRichTextDocument(RichTextConversion.toDocument(text))
     }
 
-    /** The current content in the stored format. */
-    val text: RichText get() = RichTextConversion.fromDocument(state.toRichTextDocument())
+    /**
+     * The current content in the stored format. Should the editor's model ever be inconsistent
+     * (e.g. after an unusual paste), the text is kept without formatting rather than crashing.
+     */
+    val text: RichText
+        get() = try {
+            RichTextConversion.fromDocument(state.toRichTextDocument())
+        } catch (e: IllegalArgumentException) {
+            RichText.plain(state.annotatedString.text.replace("\r\n", "\n")).withoutStrayBreaks()
+        } catch (e: IndexOutOfBoundsException) {
+            RichText.plain(state.annotatedString.text.replace("\r\n", "\n")).withoutStrayBreaks()
+        }
 
     /** Changes whenever the content changes; read it in a snapshot flow to save while typing. */
     val contentVersion: Any get() = state.annotatedString
