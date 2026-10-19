@@ -36,6 +36,7 @@ fun main(args: Array<String>) {
                 exitApplication()
             },
             title = strings.appName,
+            icon = androidx.compose.ui.res.painterResource("nibsync-icon.png"),
             state = rememberWindowState(width = 1400.dp, height = 900.dp),
             onPreviewKeyEvent = keys::onKey,
         ) {

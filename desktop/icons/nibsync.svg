@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="18 18 72 72">
+  <!-- Same artwork as the Android launcher icon (app/src/main/res/drawable/ic_launcher_foreground.xml). -->
+  <rect x="18" y="18" width="72" height="72" rx="14" fill="#1A3FA8"/>
+  <path fill="#FFFFFF" d="M54,26 C62,34 70,46 70,58 L62,74 L46,74 L38,58 C38,46 46,34 54,26 Z"/>
+  <path fill="#1A3FA8" d="M53,30 L55,30 L55,56 L53,56 Z"/>
+  <circle fill="#1A3FA8" cx="54" cy="56" r="4"/>
+  <path fill="#FFEB3B" d="M45,76 L63,76 L63,84 L45,84 Z"/>
+</svg>

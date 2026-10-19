@@ -20,6 +20,10 @@ feature roadmap and where each feature lives.
 - `./gradlew :desktop:createDistributable` – build the PC app; run it with
   `desktop/build/compose/binaries/main/app/nibsync/bin/nibsync [--data-dir <dir>]` (preferred
   over `:desktop:run`, which keeps a Gradle daemon busy); its tests run with `./gradlew test`
+- `./gradlew :desktop:packageDeb` – Linux package (`desktop/build/compose/binaries/main/deb/`,
+  installs to `/opt/nibsync` with a menu entry); `.rpm` needs `rpmbuild`, `.msi` must be built
+  on Windows. The bundled Java runtime only has the modules listed in `desktop/build.gradle.kts`:
+  after adding a JDK API (e.g. `com.sun.net.httpserver`), check `:desktop:suggestRuntimeModules`
 - Regenerate storage golden files only for an intentional format change:
   `NIBSYNC_UPDATE_GOLDEN=1 ./gradlew :core:storage:jvmTest` (keep old versions' files!)
 

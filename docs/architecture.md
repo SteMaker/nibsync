@@ -262,7 +262,9 @@ it. Ink is Android-only, so `StrokePainter` redraws strokes from their points (b
 highlighter constant width, fountain pen with BrushMapper's pressure curve and end taper).
 Text boxes use the same embedded fonts (loaded from `feature/text/src/main/res/font`) and the
 same paragraph layout as `RichTextLayout`. Plan: D1 viewing ✅, D2 text boxes ✅, D3
-Nextcloud sync ✅, D4 drawing/erasing/lasso/pictures ✅, D5 packages.
+Nextcloud sync ✅, D4 drawing/erasing/lasso/pictures ✅, D5 packages (Linux .deb ✅, Windows
+.msi to be built on Windows/CI). Packages bundle a trimmed Java runtime (`modules(...)` in
+`desktop/build.gradle.kts`); the app icon is `desktop/icons/` (same artwork as the launcher).
 
 Tools on the PC (`NoteController`, `DesktopTool`): text (default), the three pens with the
 Android palette, both erasers (`EraseGesture`), lasso; holding the pen still recognises shapes
