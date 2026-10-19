@@ -22,7 +22,8 @@ jobs:
         include:
           - os: windows-latest
             tasks: ":desktop:packageMsi :desktop:createDistributable"
-          - os: ubuntu-latest
+          # The oldest supported Ubuntu: a .deb only installs on systems at least as new.
+          - os: ubuntu-24.04
             tasks: ":desktop:packageDeb"
     runs-on: ${{ matrix.os }}
     steps:
