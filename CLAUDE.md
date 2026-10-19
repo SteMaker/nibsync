@@ -13,8 +13,8 @@ feature roadmap and where each feature lives.
 - Instrumented/app-level tests run on the emulator `nibsync_honor` (`scripts/emulator.sh
   start|stop|show`, modelled on the HONOR tablet: API 36, 1920x3000, 400 dpi, Play services),
   not on the user's tablet: `ANDROID_SERIAL=emulator-5580 ./gradlew connectedDebugAndroidTest`
-- `./gradlew installDebug` – install (on the tablet only when the user asks; pin `ANDROID_SERIAL`
-  when both are connected)
+- `./gradlew installDebug` – install; after a finished, tested feature install it on the tablet
+  (pin `ANDROID_SERIAL` to it when the emulator is running too)
 - `scripts/verify.sh` – everything, starting and stopping the emulator; `--tablet` runs the
   instrumented tests on the real tablet instead, `--no-device` skips them
 - `./gradlew :desktop:createDistributable` – build the PC app; run it with
