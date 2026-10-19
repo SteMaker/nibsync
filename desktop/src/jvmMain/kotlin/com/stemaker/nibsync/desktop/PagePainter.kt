@@ -106,7 +106,7 @@ class PagePainter(private val text: DesktopTextLayout, private val media: MediaC
 
     /**
      * A to-do: an almost opaque card (it lies above everything), a red check circle with a thick
-     * rim, filled with a tick once [done], and the faded content when done.
+     * rim, filled green with a tick once [done], and the faded content when done.
      */
     fun drawTodo(scope: DrawScope, item: TodoItem, done: Boolean, content: Boolean = true, editing: Boolean = false) = with(scope) {
         val topLeft = Offset(item.x, item.y)
@@ -119,7 +119,7 @@ class PagePainter(private val text: DesktopTextLayout, private val media: MediaC
         val rim = TodoItem.CHECK_SIZE_MM * 0.16f
         val r = TodoItem.CHECK_SIZE_MM / 2 - rim / 2
         if (done) {
-            drawCircle(TODO_RED, r + rim / 2, center)
+            drawCircle(TODO_GREEN, r + rim / 2, center)
             val tick = androidx.compose.ui.graphics.Path().apply {
                 moveTo(center.x - r * 0.5f, center.y + r * 0.02f)
                 lineTo(center.x - r * 0.12f, center.y + r * 0.42f)
@@ -268,6 +268,7 @@ class PagePainter(private val text: DesktopTextLayout, private val media: MediaC
         private val TODO_FILL = Color(0xf5fffdf7)
         private val TODO_FRAME = Color(0xffb0bec5)
         val TODO_RED = Color(0xffd32f2f)
+        private val TODO_GREEN = Color(0xff2e7d32)
         private const val DONE_ALPHA = 0.45f
     }
 }

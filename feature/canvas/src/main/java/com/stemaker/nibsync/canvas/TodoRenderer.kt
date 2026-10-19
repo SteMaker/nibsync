@@ -14,7 +14,7 @@ import com.stemaker.nibsync.text.TextBoxRenderer
 
 /**
  * Draws to-dos on a canvas in page millimetres: an almost opaque card (to-dos lie above
- * everything), a red check circle with a thick rim, filled with a tick once done, and the typed
+ * everything), a red check circle with a thick rim, green with a tick once done, and the typed
  * or handwritten content, faded when done. Used by the page and the list of open to-dos.
  */
 class TodoRenderer(private val text: TextBoxRenderer) {
@@ -27,6 +27,7 @@ class TodoRenderer(private val text: TextBoxRenderer) {
         color = FRAME
     }
     private val red = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = RED }
+    private val green = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = GREEN }
     private val tick = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Paint.Style.STROKE
         color = android.graphics.Color.WHITE
@@ -53,8 +54,7 @@ class TodoRenderer(private val text: TextBoxRenderer) {
         val rim = TodoItem.CHECK_SIZE_MM * 0.16f
         val r = TodoItem.CHECK_SIZE_MM / 2 - rim / 2
         if (done) {
-            red.style = Paint.Style.FILL
-            canvas.drawCircle(cx, cy, r + rim / 2, red)
+            canvas.drawCircle(cx, cy, r + rim / 2, green)
             tick.strokeWidth = rim * 0.9f
             tickPath.reset()
             tickPath.moveTo(cx - r * 0.5f, cy + r * 0.02f)
@@ -88,6 +88,7 @@ class TodoRenderer(private val text: TextBoxRenderer) {
 
     companion object {
         const val RED = 0xffd32f2f.toInt()
+        const val GREEN = 0xff2e7d32.toInt()
         private const val FILL = 0xf5fffdf7.toInt()
         private const val FRAME = 0xffb0bec5.toInt()
         private const val EDIT_FRAME = 0xff1a3fa8.toInt()

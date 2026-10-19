@@ -144,6 +144,10 @@ class DesktopSyncIntegrationTest {
         val sync = SyncController(container, MemoryStore(), scope)
         sync.addAccount("Arbeit", NextcloudConfig(account.copy(appPassword = "wrong"), folder))
         sync.runOnce()
+        // Adding the account started a sync of its own, which may still be running.
+        kotlinx.coroutines.withTimeout(30_000) {
+            while (sync.statusOf("Arbeit") is SyncStatus.Syncing) kotlinx.coroutines.delay(100)
+        }
         val status = sync.statusOf("Arbeit")
         assertThat(status).isInstanceOf(SyncStatus.Failed::class.java)
         assertThat((status as SyncStatus.Failed).loginInvalid).isTrue()

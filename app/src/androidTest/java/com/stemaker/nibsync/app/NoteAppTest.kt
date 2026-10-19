@@ -1032,13 +1032,13 @@ class NoteAppTest {
         val covered = pixelAt(item.x + item.widthMm - 5f, 32f)
         assertThat(Color.red(covered)).isGreaterThan(200)
 
-        // A pen tap on the circle ticks it off; it turns red.
+        // A pen tap on the circle ticks it off; it turns green.
         val c = item.checkBounds
         tap(t.mapX((c.left + c.right) / 2), t.mapY((c.top + c.bottom) / 2))
         waitUntil("done") { session().state.value.isDone(item.taskId) }
         assertThat(strokes()).hasSize(1)
         // Inside the circle, away from the white tick and the rim (red even when open).
-        waitUntil("drawn red") { pixelAt((c.left + c.right) / 2 - 1f, (c.top + c.bottom) / 2 - 0.8f).let { Color.red(it) > 180 && Color.green(it) < 100 } }
+        waitUntil("drawn green") { pixelAt((c.left + c.right) / 2 - 1f, (c.top + c.bottom) / 2 - 0.8f).let { Color.green(it) > 100 && Color.red(it) < 100 } }
     }
 
     @Test
