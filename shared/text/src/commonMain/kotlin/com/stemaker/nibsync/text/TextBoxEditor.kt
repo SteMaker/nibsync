@@ -61,6 +61,8 @@ object TextTags {
     fun font(font: TextFont) = "text-font-${font.name}"
     const val SIZE = "text-size"
     fun size(pt: Float) = "text-size-${pt.toInt()}"
+    const val GROW = "text-grow"
+    const val SHRINK = "text-shrink"
     const val BULLETS = "text-bullets"
     const val NUMBERS = "text-numbers"
     const val INDENT = "text-indent"

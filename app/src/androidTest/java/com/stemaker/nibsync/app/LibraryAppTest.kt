@@ -64,12 +64,14 @@ class LibraryAppTest {
     private lateinit var scenario: ActivityScenario<MainActivity>
     private var savedLastDocument: DocumentId? = null
     private var savedPageBreaks = false
+    private var savedPens = com.stemaker.nibsync.model.PenPreferences()
 
     @Before
     fun launch() {
         app.sync.paused = true // never sync test data with the account on the device
         savedLastDocument = settings.lastDocument
         savedPageBreaks = settings.showPageBreaks
+        savedPens = settings.pens
         scenario = ActivityScenario.launch(Intent(app, MainActivity::class.java))
         waitUntil("document shown") { activity { it.documentId } != null && activity { it.canvasView } != null }
     }
@@ -93,6 +95,7 @@ class LibraryAppTest {
         }
         settings.lastDocument = savedLastDocument
         settings.showPageBreaks = savedPageBreaks
+        settings.pens = savedPens
     }
 
     private fun <T> activity(get: (MainActivity) -> T): T {
@@ -235,6 +238,20 @@ class LibraryAppTest {
         assertThat(settings.showPageBreaks).isEqualTo(!before)
     }
 
+    @Test
+    fun penWidthsComeFromTheSettings() {
+        createDocumentThroughTheDrawer()
+        openDrawer()
+        compose.onNodeWithTag(LibraryTags.SETTINGS).performClick()
+        val field = compose.onNodeWithTag(SettingsTags.penWidth(com.stemaker.nibsync.model.BrushFamily.BALLPOINT, 2))
+        field.performScrollTo().performTextReplacement("1,5")
+        compose.onNodeWithTag(SettingsTags.CLOSE).performClick()
+        assertThat(settings.pens.widths.getValue(com.stemaker.nibsync.model.BrushFamily.BALLPOINT)[2]).isEqualTo(1.5f)
+        waitUntil("tool bar offers it") {
+            activity { it.canvasViewModel }?.tools?.value?.sizes(com.stemaker.nibsync.model.BrushFamily.BALLPOINT)?.get(2) == 1.5f
+        }
+    }
+
     private fun drawLine() {
         val view = checkNotNull(activity { it.canvasView })
         val origin = IntArray(2).also { loc -> scenario.onActivity { view.getLocationOnScreen(loc) } }
@@ -249,6 +266,55 @@ class LibraryAppTest {
             instrumentation.sendPointerSync(e)
             e.recycle()
         }
+    }
+
+    /** A pen tap at view pixel ([x], [y]) of the canvas. */
+    private fun stylusTap(x: Float, y: Float) {
+        val view = checkNotNull(activity { it.canvasView })
+        val origin = IntArray(2).also { loc -> scenario.onActivity { view.getLocationOnScreen(loc) } }
+        val down = SystemClock.uptimeMillis()
+        for ((i, action) in listOf(MotionEvent.ACTION_DOWN, MotionEvent.ACTION_UP).withIndex()) {
+            val props = MotionEvent.PointerProperties().apply { id = 0; toolType = MotionEvent.TOOL_TYPE_STYLUS }
+            val coords = MotionEvent.PointerCoords().apply { this.x = origin[0] + x; this.y = origin[1] + y; pressure = 0.3f; size = 0.1f }
+            val e = MotionEvent.obtain(down, down + i * 40L, action, 1, arrayOf(props), arrayOf(coords), 0, 0, 1f, 1f, 0, 0,
+                InputDevice.SOURCE_STYLUS or InputDevice.SOURCE_TOUCHSCREEN, 0)
+            instrumentation.sendPointerSync(e)
+            e.recycle()
+        }
+    }
+
+    @Test
+    fun anchorInOneDocumentAndALinkToItFromAnother() {
+        val target = createDocumentThroughTheDrawer()
+        compose.onNodeWithTag(NoteScreenTags.INSERT).performClick()
+        compose.onNodeWithTag(NoteScreenTags.INSERT_ANCHOR).performClick()
+        compose.onNodeWithTag(NoteLinkTags.ANCHOR_NAME).performTextReplacement("Ziel")
+        compose.onNodeWithTag(NoteLinkTags.ANCHOR_CONFIRM).performClick()
+        waitUntil("anchor set") { activity { it.session }?.state?.value?.anchors?.singleOrNull()?.name == "Ziel" }
+        val anchor = checkNotNull(activity { it.session }).state.value.anchors.single()
+
+        // A second document links to it.
+        openDrawer()
+        row("Kapitel 1").performClick()
+        compose.onNodeWithTag(LibraryTags.NEW_DOCUMENT).performClick()
+        enterName("Seite 2")
+        val second = tree().descendantsOf(tree().books.first { it.title == bookTitle }.id).first { it.title == "Seite 2" }.id
+        waitUntil("second open") { activity { it.documentId } == second.asDocumentId && activity { it.canvasView }?.viewport?.hasSize == true }
+        compose.onNodeWithTag(NoteScreenTags.INSERT).performClick()
+        compose.onNodeWithTag(NoteScreenTags.INSERT_NOTE_LINK).performClick()
+        compose.onNodeWithTag(NoteLinkTags.SEARCH).performTextInput("A5")
+        compose.onNodeWithTag(NoteLinkTags.document(target.asDocumentId)).performClick()
+        waitUntil("anchors listed") { compose.onAllNodesWithTag(NoteLinkTags.anchor("Ziel")).fetchSemanticsNodes().isNotEmpty() }
+        compose.onNodeWithTag(NoteLinkTags.anchor("Ziel")).performClick()
+        waitUntil("link added") { activity { it.session }?.state?.value?.elements?.any { it is com.stemaker.nibsync.model.NoteLink } == true }
+        val link = checkNotNull(activity { it.session }).state.value.elements.filterIsInstance<com.stemaker.nibsync.model.NoteLink>().single()
+        assertThat(link.anchorId).isEqualTo(anchor.anchorId)
+
+        // A pen tap on it (still selected after inserting) opens the first document.
+        compose.waitForIdle()
+        val t = checkNotNull(activity { it.canvasView }).viewport.documentToView
+        stylusTap(t.mapX(link.bounds.left + 4f), t.mapY(link.bounds.top + 4f))
+        waitUntil("link followed") { activity { it.documentId } == target.asDocumentId }
     }
 
     @Test

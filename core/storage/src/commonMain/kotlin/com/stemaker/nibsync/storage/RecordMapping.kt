@@ -2,7 +2,10 @@ package com.stemaker.nibsync.storage
 
 import com.stemaker.nibsync.document.DocumentOp
 import com.stemaker.nibsync.document.OpStamp
+import com.stemaker.nibsync.model.Anchor
 import com.stemaker.nibsync.model.Asset
+import com.stemaker.nibsync.model.LinkElement
+import com.stemaker.nibsync.model.NoteLink
 import com.stemaker.nibsync.model.BackgroundKind
 import com.stemaker.nibsync.model.BackgroundSpec
 import com.stemaker.nibsync.model.BrushFamily
@@ -87,6 +90,12 @@ internal fun DocumentOp.toRecord(): OpRecord = when (this) {
         type = OpRecord.TYPE_ADD_TODOS,
         todos = items.map { it.toRecord() },
     )
+    is DocumentOp.AddLinks -> OpRecord(
+        counter = stamp.counter,
+        device = stamp.device.value,
+        type = OpRecord.TYPE_ADD_LINKS,
+        links = elements.map { it.toRecord() },
+    )
     is DocumentOp.SetTodoDone -> OpRecord(
         counter = stamp.counter,
         device = stamp.device.value,
@@ -117,6 +126,7 @@ internal fun OpRecord.toDomain(): DocumentOp? {
         OpRecord.TYPE_ADD_FILES -> DocumentOp.AddFiles(stamp, files.mapNotNull { it.toDomain() })
         OpRecord.TYPE_ADD_TODOS -> DocumentOp.AddTodos(stamp, todos.mapNotNull { it.toDomain() })
         OpRecord.TYPE_TODO_DONE -> todoDone?.let { DocumentOp.SetTodoDone(stamp, StrokeId(it.task), it.done) }
+        OpRecord.TYPE_ADD_LINKS -> DocumentOp.AddLinks(stamp, links.mapNotNull { it.toDomain() })
         else -> null
     }
 }
@@ -263,6 +273,33 @@ internal fun FileElementRecord.toDomain(): FileElement? {
 
 private const val KIND_IMAGE = "image"
 private const val KIND_LINK = "link"
+
+internal fun LinkElement.toRecord(): LinkRecord {
+    val p = Quantization::positionToSteps
+    return when (this) {
+        is Anchor -> LinkRecord(KIND_ANCHOR, id.value, p(x), p(y), createdAtEpochMs, author.value, anchor = anchorId.value, name = name)
+        is NoteLink -> LinkRecord(
+            KIND_NOTE, id.value, p(x), p(y), createdAtEpochMs, author.value,
+            anchor = anchorId?.value, name = title, document = target.value, anchorName = anchorName,
+        )
+    }
+}
+
+/** Unknown kinds (from a newer app version) and incomplete records are skipped. */
+internal fun LinkRecord.toDomain(): LinkElement? {
+    val q = Quantization::stepsToPosition
+    return when (kind) {
+        KIND_ANCHOR -> Anchor(StrokeId(id), StrokeId(anchor ?: return null), q(x), q(y), name ?: "", createdAtEpochMs, DeviceId(author))
+        KIND_NOTE -> NoteLink(
+            StrokeId(id), q(x), q(y), runCatching { DocumentId(document ?: return null) }.getOrNull() ?: return null,
+            anchor?.let(::StrokeId), name ?: "", anchorName, createdAtEpochMs, DeviceId(author),
+        )
+        else -> null
+    }
+}
+
+private const val KIND_ANCHOR = "anchor"
+private const val KIND_NOTE = "note"
 
 internal fun encodePoints(points: List<StrokePoint>): PointsRecord {
     fun deltas(values: IntArray): IntArray {

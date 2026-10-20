@@ -15,7 +15,6 @@
     <string name="sync_waiting_for_login">Im Browser anmelden, dann hierher zurückkehren…</string>
     <string name="sync_login_in_browser">Im Browser anmelden</string>
     <string name="sync_login_timeout">Die Anmeldung wurde nicht rechtzeitig abgeschlossen.</string>
-    <string name="media_unsupported">Nur PNG-, JPEG-, SVG- und PDF-Dateien können eingefügt werden.</string>
     <string name="media_too_big">Die Datei ist zu groß (höchstens 50 MB).</string>
     <string name="media_unreadable">Die Datei konnte nicht gelesen werden.</string>
     <string name="media_clipboard_empty">In der Zwischenablage ist kein Bild und keine PDF.</string>
@@ -49,4 +48,25 @@
     <string name="remove_account_text">Seine Bücher bleiben auf diesem Gerät, werden aber nicht mehr synchronisiert. Auf dem Server und auf anderen Geräten ändert sich nichts.</string>
     <string name="show_title">Dokumenttitel oben auf der Seite</string>
     <string name="show_created">Erstellungsdatum und -uhrzeit darunter</string>
+    <string name="settings_pens">Stiftstärken</string>
+    <string name="pen_widths_hint">Feine, mittlere und breite Stärke in mm, wie in der Werkzeugleiste angeboten.</string>
+    <string name="pen_widths_ballpoint">Kugelschreiber</string>
+    <string name="pen_widths_fountain">Füller</string>
+    <string name="pen_widths_highlighter">Textmarker</string>
+    <string name="pen_widths_reset">Standardwerte</string>
+    <string name="pen_width_fine">Fein</string>
+    <string name="pen_width_medium">Mittel</string>
+    <string name="pen_width_broad">Breit</string>
+    <string name="cancel">Abbrechen</string>
+    <string name="back">Zurück</string>
+    <string name="new_anchor">Neuer Anker</string>
+    <string name="rename_anchor">Anker umbenennen</string>
+    <string name="anchor_name">Name</string>
+    <string name="anchor_placeholder">Anker</string>
+    <string name="link_to_note">Link zu Notiz</string>
+    <string name="search_notes">Notiz suchen</string>
+    <string name="no_notes_found">Keine passende Notiz.</string>
+    <string name="note_link_where">Wohin soll der Link führen?</string>
+    <string name="note_top">Anfang der Notiz</string>
+    <string name="note_not_found">Die verlinkte Notiz gibt es hier nicht (gelöscht oder noch nicht synchronisiert).</string>
 </resources>

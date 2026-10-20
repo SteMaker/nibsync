@@ -8,6 +8,8 @@
     <string name="text_outdent">Einzug verkleinern</string>
     <string name="text_delete">Textbox löschen</string>
     <string name="text_size_pt">%1$s pt</string>
+    <string name="text_grow">Schrift größer</string>
+    <string name="text_shrink">Schrift kleiner</string>
     <string name="font_sans">Serifenlos</string>
     <string name="font_serif">Serif</string>
     <string name="font_mono">Festbreite</string>

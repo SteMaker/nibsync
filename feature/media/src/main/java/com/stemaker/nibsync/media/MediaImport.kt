@@ -19,6 +19,10 @@ object MediaImport {
     fun detectType(bytes: ByteArray, declaredType: String?, fileName: String?): String? =
         MediaFiles.detectType(bytes, declaredType, fileName)
 
+    /** See [MediaFiles.fileType]: the type any file is stored with. */
+    fun fileType(bytes: ByteArray, declaredType: String?, fileName: String?): String =
+        MediaFiles.fileType(bytes, declaredType, fileName)
+
     /** Size a picture would naturally have on paper, or null if it cannot be read. */
     fun naturalSizeMm(bytes: ByteArray, mimeType: String): SizeMm? = when (mimeType) {
         Asset.PNG, Asset.JPEG -> {

@@ -16,7 +16,6 @@
     <string name="sync_waiting_for_login">Log in with the browser, then come back…</string>
     <string name="sync_login_in_browser">Log in with browser</string>
     <string name="sync_login_timeout">Login was not completed in time.</string>
-    <string name="media_unsupported">Only PNG, JPEG, SVG and PDF files can be inserted.</string>
     <string name="media_too_big">The file is too large (at most 50 MB).</string>
     <string name="media_unreadable">The file could not be read.</string>
     <string name="media_clipboard_empty">There is no picture or PDF in the clipboard.</string>
@@ -50,4 +49,25 @@
     <string name="remove_account_text">Its books stay on this device but are no longer synced. Nothing changes on the server or on other devices.</string>
     <string name="show_title">Document title at the top of the page</string>
     <string name="show_created">Date and time created below it</string>
+    <string name="settings_pens">Pen widths</string>
+    <string name="pen_widths_hint">Fine, medium and broad width in mm, as offered in the tool bar.</string>
+    <string name="pen_widths_ballpoint">Ballpoint pen</string>
+    <string name="pen_widths_fountain">Fountain pen</string>
+    <string name="pen_widths_highlighter">Highlighter</string>
+    <string name="pen_widths_reset">Reset to defaults</string>
+    <string name="pen_width_fine">Fine</string>
+    <string name="pen_width_medium">Medium</string>
+    <string name="pen_width_broad">Broad</string>
+    <string name="cancel">Cancel</string>
+    <string name="back">Back</string>
+    <string name="new_anchor">New anchor</string>
+    <string name="rename_anchor">Rename anchor</string>
+    <string name="anchor_name">Name</string>
+    <string name="anchor_placeholder">Anchor</string>
+    <string name="link_to_note">Link to note</string>
+    <string name="search_notes">Find note</string>
+    <string name="no_notes_found">No matching note.</string>
+    <string name="note_link_where">Where should the link lead?</string>
+    <string name="note_top">Top of the note</string>
+    <string name="note_not_found">The linked note is not here (deleted or not synced yet).</string>
 </resources>

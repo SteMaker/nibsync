@@ -5,7 +5,17 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import com.stemaker.nibsync.model.BrushFamily
+import com.stemaker.nibsync.model.PenWidths
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.MaterialTheme
@@ -27,6 +37,8 @@ object SettingsTags {
     const val CLOSE = "settings-close"
     const val SHOW_TITLE = "settings-show-title"
     const val SHOW_CREATED = "settings-show-created"
+    fun penWidth(family: BrushFamily, index: Int) = "settings-pen-width-${family.name}-$index"
+    const val PEN_WIDTHS_RESET = "settings-pen-widths-reset"
 }
 
 /** Display choices of the settings dialog. */
@@ -35,6 +47,8 @@ class DisplaySettings(
     val onShowTitle: (Boolean) -> Unit,
     val showCreated: Boolean,
     val onShowCreated: (Boolean) -> Unit,
+    val penWidths: Map<BrushFamily, List<Float>> = PenWidths.DEFAULTS,
+    val onPenWidths: (Map<BrushFamily, List<Float>>) -> Unit = {},
 )
 
 /** App settings, grouped in sections; new settings get their own section here. */
@@ -58,10 +72,50 @@ fun SettingsDialog(
                 Text(strings.settingsDisplay, style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary)
                 SwitchLine(strings.showTitle, display.showTitle, display.onShowTitle, SettingsTags.SHOW_TITLE)
                 SwitchLine(strings.showCreated, display.showCreated, display.onShowCreated, SettingsTags.SHOW_CREATED)
+                Text(strings.settingsPens, style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary)
+                PenWidthSettings(strings, display.penWidths, display.onPenWidths)
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End, verticalAlignment = Alignment.CenterVertically) {
                     TextButton(onClick = onClose, modifier = Modifier.testTag(SettingsTags.CLOSE)) { Text(strings.close) }
                 }
             }
+        }
+    }
+}
+
+/** Three widths per pen; a valid entry applies at once, an invalid one is marked and ignored. */
+@Composable
+private fun PenWidthSettings(strings: Strings, widths: Map<BrushFamily, List<Float>>, onChange: (Map<BrushFamily, List<Float>>) -> Unit) {
+    Text(strings.penWidthsHint, style = MaterialTheme.typography.bodyMedium)
+    // Reset recreates the fields, so they show the defaults.
+    var resets by remember { mutableIntStateOf(0) }
+    key(resets) {
+        for (family in BrushFamily.entries) {
+            val current = widths[family] ?: PenWidths.DEFAULTS.getValue(family)
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(strings.penName(family), Modifier.weight(1f))
+                for (index in 0 until PenWidths.COUNT) {
+                    var text by remember(family, index) { mutableStateOf(PenWidths.format(current[index])) }
+                    OutlinedTextField(
+                        value = text,
+                        onValueChange = { new ->
+                            text = new
+                            val parsed = PenWidths.parse(family, new) ?: return@OutlinedTextField
+                            val list = (widths[family] ?: PenWidths.DEFAULTS.getValue(family)).toMutableList().also { it[index] = parsed }
+                            onChange(widths + (family to list))
+                        },
+                        label = { Text(strings.penWidthNames[index]) },
+                        suffix = { Text("mm") },
+                        isError = PenWidths.parse(family, text) == null,
+                        singleLine = true,
+                        modifier = Modifier.width(100.dp).testTag(SettingsTags.penWidth(family, index)),
+                    )
+                }
+            }
+        }
+    }
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+        TextButton(onClick = { onChange(PenWidths.DEFAULTS); resets++ }, enabled = widths != PenWidths.DEFAULTS, modifier = Modifier.testTag(SettingsTags.PEN_WIDTHS_RESET)) {
+            Text(strings.penWidthsReset)
         }
     }
 }

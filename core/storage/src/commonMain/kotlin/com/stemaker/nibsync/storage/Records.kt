@@ -37,6 +37,7 @@ internal data class OpRecord(
     @SerialName("f") val files: List<FileElementRecord> = emptyList(),
     @SerialName("o") val todos: List<TodoRecord> = emptyList(),
     @SerialName("td") val todoDone: TodoDoneRecord? = null,
+    @SerialName("n") val links: List<LinkRecord> = emptyList(),
 ) {
     companion object {
         const val TYPE_ADD = 1
@@ -46,6 +47,7 @@ internal data class OpRecord(
         const val TYPE_ADD_FILES = 5
         const val TYPE_ADD_TODOS = 6
         const val TYPE_TODO_DONE = 7
+        const val TYPE_ADD_LINKS = 8
     }
 }
 
@@ -66,6 +68,25 @@ internal data class FileElementRecord(
     @SerialName("s") val sha256: String,
     @SerialName("m") val mimeType: String,
     @SerialName("n") val name: String? = null,
+)
+
+/**
+ * An anchor ([kind] "anchor": [anchor] id and [name]) or a link to a note ("note": [document],
+ * optional [anchor], the names [name] (document title) and [anchorName] when it was made).
+ * Position in position steps. Unknown kinds are skipped.
+ */
+@Serializable
+internal data class LinkRecord(
+    @SerialName("k") val kind: String,
+    @SerialName("id") val id: String,
+    @SerialName("x") val x: Int,
+    @SerialName("y") val y: Int,
+    @SerialName("ts") val createdAtEpochMs: Long,
+    @SerialName("a") val author: String,
+    @SerialName("an") val anchor: String? = null,
+    @SerialName("nm") val name: String? = null,
+    @SerialName("doc") val document: String? = null,
+    @SerialName("ann") val anchorName: String? = null,
 )
 
 /** A text box; position and size in [com.stemaker.nibsync.model.Quantization] position steps. */

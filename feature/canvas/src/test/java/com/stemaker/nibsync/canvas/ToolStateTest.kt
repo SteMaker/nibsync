@@ -3,6 +3,8 @@ package com.stemaker.nibsync.canvas
 import com.google.common.truth.Truth.assertThat
 import com.stemaker.nibsync.model.BrushFamily
 import com.stemaker.nibsync.model.Layer
+import com.stemaker.nibsync.model.PenPreferences
+import com.stemaker.nibsync.model.PenWidths
 import org.junit.Test
 
 class ToolStateTest {
@@ -19,7 +21,7 @@ class ToolStateTest {
         for (family in BrushFamily.entries) {
             val settings = s.pens.getValue(family)
             assertThat(PenPalette.colors(family)).contains(settings.colorArgb)
-            assertThat(PenPalette.sizes(family)).contains(settings.sizeMm)
+            assertThat(PenWidths.DEFAULTS.getValue(family)).contains(settings.sizeMm)
         }
     }
 
@@ -50,7 +52,7 @@ class ToolStateTest {
     fun paletteHasSixColorsAndThreeIncreasingSizes() {
         for (family in BrushFamily.entries) {
             assertThat(PenPalette.colors(family)).hasSize(6)
-            val sizes = PenPalette.sizes(family)
+            val sizes = PenWidths.DEFAULTS.getValue(family)
             assertThat(sizes).hasSize(3)
             assertThat(sizes).isInStrictOrder()
         }
@@ -82,5 +84,24 @@ class ToolStateTest {
         val eraser = lasso.withEraser()
         assertThat(eraser.lassoActive).isFalse()
         assertThat(eraser.withPen(BrushFamily.BALLPOINT).tool).isEqualTo(Tool.PEN)
+    }
+
+    @Test
+    fun newWidthsKeepEachPensPosition() {
+        val s = ToolState().withPen(BrushFamily.BALLPOINT).withSize(0.8f)
+        val widths = PenWidths.DEFAULTS + (BrushFamily.BALLPOINT to listOf(0.2f, 0.4f, 1.5f))
+        val changed = s.withWidths(widths)
+        assertThat(changed.activeBrush.sizeMm).isEqualTo(1.5f)
+        assertThat(changed.sizes(BrushFamily.BALLPOINT)).containsExactly(0.2f, 0.4f, 1.5f).inOrder()
+        assertThat(changed.pens.getValue(BrushFamily.FOUNTAIN_PEN).sizeMm).isEqualTo(0.8f)
+    }
+
+    @Test
+    fun startsWithRememberedPenAndWidth() {
+        val prefs = PenPreferences().used(BrushFamily.BALLPOINT, 0.35f).used(BrushFamily.HIGHLIGHTER, 8f)
+        val s = ToolState.from(prefs)
+        assertThat(s.activePen).isEqualTo(BrushFamily.BALLPOINT)
+        assertThat(s.activeBrush.sizeMm).isEqualTo(0.35f)
+        assertThat(s.pens.getValue(BrushFamily.HIGHLIGHTER).sizeMm).isEqualTo(8f)
     }
 }

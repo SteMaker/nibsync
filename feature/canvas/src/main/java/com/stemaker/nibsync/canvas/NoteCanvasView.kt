@@ -41,6 +41,7 @@ import com.stemaker.nibsync.model.PageElement
 import com.stemaker.nibsync.model.TextBox
 import com.stemaker.nibsync.model.TodoItem
 import com.stemaker.nibsync.media.MediaRenderer
+import com.stemaker.nibsync.model.LinkElement
 import com.stemaker.nibsync.text.TextBoxRenderer
 import com.stemaker.nibsync.model.InputTool
 import com.stemaker.nibsync.model.PageFormat
@@ -114,6 +115,13 @@ class NoteCanvasView(context: Context) : FrameLayout(context) {
 
     /** Pictures and file links currently shown, back to front. */
     var files: List<FileElement> = emptyList()
+        private set
+
+    /** Draws anchors and links to notes. */
+    val linkRenderer = LinkRenderer()
+
+    /** Anchors and links to notes currently shown, back to front. */
+    var links: List<LinkElement> = emptyList()
         private set
 
     /** Lays out and draws text boxes; also used by the screen to measure them. */
@@ -264,6 +272,7 @@ class NoteCanvasView(context: Context) : FrameLayout(context) {
     private var lassoPointerId = NO_POINTER
     private var movePointerId = NO_POINTER
     private var moveStartX = 0f
+    private var moveDownTime = 0L
     private var moveStartY = 0f
     private var moveDx = 0f
     private var moveDy = 0f
@@ -369,6 +378,14 @@ class NoteCanvasView(context: Context) : FrameLayout(context) {
         invalidate()
     }
 
+    /** Shows the given anchors and links to notes (back to front). Cheap if nothing changed. */
+    fun setLinks(elements: List<LinkElement>) {
+        if (elements === links) return
+        links = elements
+        updateContentBottom()
+        invalidate()
+    }
+
     /** Shows the given text boxes (back to front). Cheap if nothing changed. */
     fun setTextBoxes(boxes: List<TextBox>) {
         if (boxes === textBoxes) return
@@ -402,6 +419,7 @@ class NoteCanvasView(context: Context) : FrameLayout(context) {
             strokes.maxOfOrNull { it.bounds.bottom } ?: 0f,
             textBoxes.maxOfOrNull { it.bounds.bottom } ?: 0f,
             files.maxOfOrNull { it.bounds.bottom } ?: 0f,
+            links.maxOfOrNull { it.bounds.bottom } ?: 0f,
             todos.maxOfOrNull { it.bounds.bottom } ?: 0f,
         )
         if (bottom != viewport.contentBottomMm) setViewport(viewport.withContentBottom(bottom))
@@ -461,6 +479,7 @@ class NoteCanvasView(context: Context) : FrameLayout(context) {
             for (stroke in shown) {
                 if (!textDrawn && stroke.layer.zIndex > Layer.TEXT.zIndex) {
                     drawFiles(this, Layer.TEXT, visible, moving)
+                    drawLinks(this, visible, moving)
                     drawTextBoxes(this, visible, moving)
                     textDrawn = true
                 }
@@ -472,6 +491,7 @@ class NoteCanvasView(context: Context) : FrameLayout(context) {
             }
             if (!textDrawn) {
                 drawFiles(this, Layer.TEXT, visible, moving)
+                drawLinks(this, visible, moving)
                 drawTextBoxes(this, visible, moving)
             }
             drawTodos(this, visible, moving)
@@ -516,6 +536,16 @@ class NoteCanvasView(context: Context) : FrameLayout(context) {
                     canvas.restoreToCount(save)
                 }
                 f.bounds.intersects(visible) -> mediaRenderer.draw(canvas, f, viewport.scale)
+            }
+        }
+    }
+
+    private fun drawLinks(canvas: Canvas, visible: com.stemaker.nibsync.model.geometry.Rect, moving: Boolean) {
+        for (link in links) {
+            if (moving && link.id in selection) {
+                canvas.withTranslation(moveDx, moveDy) { linkRenderer.draw(this, link, viewport.scale) }
+            } else if (link.bounds.intersects(visible)) {
+                linkRenderer.draw(canvas, link, viewport.scale)
             }
         }
     }
@@ -808,7 +838,7 @@ class NoteCanvasView(context: Context) : FrameLayout(context) {
     private fun selectionBounds(): com.stemaker.nibsync.model.geometry.Rect? {
         if (selection.isEmpty()) return null
         val selected = strokes.filter { it.id in selection } + textBoxes.filter { it.id in selection } +
-            todos.filter { it.id in selection } + files.filter { it.id in selection }.map { f ->
+            todos.filter { it.id in selection } + links.filter { it.id in selection } + files.filter { it.id in selection }.map { f ->
                 if (resizePointerId != NO_POINTER) scaledForPreview(f) else f
             }
         val b = boundsOf(selected) ?: return null
@@ -923,6 +953,7 @@ class NoteCanvasView(context: Context) : FrameLayout(context) {
         movePointerId = event.getPointerId(pointerIndex)
         moveStartX = toDoc.mapX(event.getX(pointerIndex))
         moveStartY = toDoc.mapY(event.getY(pointerIndex))
+        moveDownTime = event.eventTime
         moveDx = 0f
         moveDy = 0f
     }
@@ -968,7 +999,13 @@ class NoteCanvasView(context: Context) : FrameLayout(context) {
             val dy = moveDy
             moveDx = 0f
             moveDy = 0f
-            if (commit && (dx * dx + dy * dy) > MIN_MOVE_MM * MIN_MOVE_MM) {
+            val tolerance = TEXT_TAP_TOLERANCE_DP * resources.displayMetrics.density / viewport.scale
+            val tapped = commit && event != null && event.eventTime - moveDownTime <= TAP_MAX_MS &&
+                abs(dx) <= tolerance && abs(dy) <= tolerance && links.any { it.bounds.contains(moveStartX, moveStartY) }
+            if (tapped) {
+                // A short tap on a selected link or anchor follows or renames it.
+                onPageTapped(moveStartX, moveStartY)
+            } else if (commit && (dx * dx + dy * dy) > MIN_MOVE_MM * MIN_MOVE_MM) {
                 onSelectionMoved(dx, dy)?.let {
                     show(it.added, it.removed)
                     selection = it.added.mapTo(LinkedHashSet()) { s -> s.id }
@@ -1134,7 +1171,7 @@ class NoteCanvasView(context: Context) : FrameLayout(context) {
         val tolerance = TEXT_TAP_TOLERANCE_DP * resources.displayMetrics.density / viewport.scale
         if (capturedPoints.any { abs(it.x - first.x) > tolerance || abs(it.y - first.y) > tolerance }) return null
         val onElement = textBoxes.any { it.bounds.contains(first.x, first.y) } || files.any { it.bounds.contains(first.x, first.y) } ||
-            todos.any { it.bounds.contains(first.x, first.y) }
+            links.any { it.bounds.contains(first.x, first.y) } || todos.any { it.bounds.contains(first.x, first.y) }
         return if (onElement) first.x to first.y else null
     }
 
@@ -1179,6 +1216,8 @@ class NoteCanvasView(context: Context) : FrameLayout(context) {
         textBoxes = textBoxes.filter { it.id !in removed } + added.filterIsInstance<TextBox>().filter { it.id !in knownBoxes }
         val knownFiles = files.mapTo(HashSet()) { it.id }
         files = files.filter { it.id !in removed } + added.filterIsInstance<FileElement>().filter { it.id !in knownFiles }
+        val knownLinks = links.mapTo(HashSet()) { it.id }
+        links = links.filter { it.id !in removed } + added.filterIsInstance<LinkElement>().filter { it.id !in knownLinks }
         val knownTodos = todos.mapTo(HashSet()) { it.id }
         todos = todos.filter { it.id !in removed } + added.filterIsInstance<TodoItem>().filter { it.id !in knownTodos }
         updateContentBottom()

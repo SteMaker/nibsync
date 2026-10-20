@@ -8,7 +8,12 @@ import com.stemaker.nibsync.document.erase.EraserMode
 import com.stemaker.nibsync.document.select.ClipContent
 import com.stemaker.nibsync.document.select.Lasso
 import com.stemaker.nibsync.document.select.translated
+import com.stemaker.nibsync.model.Anchor
+import com.stemaker.nibsync.model.AnchorDraft
 import com.stemaker.nibsync.model.Asset
+import com.stemaker.nibsync.model.LinkTarget
+import com.stemaker.nibsync.model.NoteLink
+import com.stemaker.nibsync.model.linkTarget
 import com.stemaker.nibsync.model.BackgroundSpec
 import com.stemaker.nibsync.model.DocumentId
 import com.stemaker.nibsync.model.ElementDraft
@@ -50,6 +55,7 @@ class CanvasViewModel(
     private val session: DocumentSession,
     private val recognizer: ShapeRecognizer = ShapeRecognizer.None,
     val clipboard: StrokeClipboard = StrokeClipboard(),
+    initialTools: ToolState = ToolState(),
 ) : ViewModel() {
 
     val document: StateFlow<DocumentState> = session.state
@@ -132,6 +138,20 @@ class CanvasViewModel(
         return added
     }
 
+    /** Follows a link to a note; set by the app. */
+    var openNote: (LinkTarget) -> Unit = {}
+
+    /** Asks for a new name of an anchor (then [renameAnchor]); set by the app. */
+    var editAnchor: (Anchor) -> Unit = {}
+
+    /** Gives the anchor a new name; it stays the same anchor, so links to it keep working. */
+    fun renameAnchor(anchor: Anchor, name: String) {
+        val current = session.state.value.anchor(anchor.anchorId) ?: return
+        if (name.isBlank() || name.trim() == current.name) return
+        val added = session.replaceElements(listOf(current.id), listOf(AnchorDraft(current.x, current.y, name.trim(), current.anchorId)))
+        if (current.id in _selection.value) _selection.value = added.mapTo(LinkedHashSet()) { it.id }
+    }
+
     /**
      * Scales the selected picture or file link by [factor] from its top left corner, in one
      * undo step. Only for a selection of exactly one such element.
@@ -165,7 +185,7 @@ class CanvasViewModel(
         _selection.value = _selection.value.filterTo(LinkedHashSet()) { it in doc }
     }
 
-    private val _tools = MutableStateFlow(ToolState())
+    private val _tools = MutableStateFlow(initialTools)
     val tools: StateFlow<ToolState> = _tools.asStateFlow()
 
     fun selectPen(pen: BrushFamily) {
@@ -179,6 +199,9 @@ class CanvasViewModel(
     fun selectColor(argb: Int) = _tools.update { it.withColor(argb) }
 
     fun selectSize(mm: Float) = _tools.update { it.withSize(mm) }
+
+    /** The pen widths set in the settings. */
+    fun setPenWidths(widths: Map<BrushFamily, List<Float>>) = _tools.update { it.withWidths(widths) }
 
 
     /** Changes the paper pattern of the document (synced, not undoable). */
@@ -360,6 +383,9 @@ class CanvasViewModel(
                 text.open(hit)
             }
             is FileLink -> openFile(hit)
+            is NoteLink -> openNote(hit.linkTarget)
+            // A tap selects an anchor (to move it); a tap on the selected anchor renames it.
+            is Anchor -> if (_selection.value == setOf(hit.id)) editAnchor(hit) else selectTemporarily(setOf(hit.id))
             is ImageElement -> selectTemporarily(setOf(hit.id))
             else -> {
                 clearSelection()

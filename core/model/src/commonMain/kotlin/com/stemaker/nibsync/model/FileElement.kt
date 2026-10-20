@@ -18,6 +18,9 @@ data class Asset(val sha256: String, val mimeType: String) {
         const val SVG = "image/svg+xml"
         const val PDF = "application/pdf"
 
+        /** A file of unknown type. */
+        const val BINARY = "application/octet-stream"
+
         /** File types shown as pictures; everything else is a [FileLink]. */
         val IMAGE_TYPES = setOf(PNG, JPEG, SVG)
     }
@@ -52,7 +55,7 @@ data class ImageElement(
     override val layer: Layer get() = Layer.IMAGE
 }
 
-/** A file (e.g. a PDF) shown as a labelled link; tapping it opens the file in another app. */
+/** A file of any type (e.g. a PDF) shown as a labelled link; tapping it opens the file in another app. */
 data class FileLink(
     override val id: StrokeId,
     override val x: Float,
@@ -70,7 +73,16 @@ data class FileLink(
 
     override val layer: Layer get() = Layer.TEXT
 
+    /** Short type label on the link: "PDF", the file's extension (up to 4 letters) or "FILE". */
+    val badge: String get() = badgeFor(asset.mimeType, fileName)
+
     companion object {
+        fun badgeFor(mimeType: String, fileName: String): String {
+            if (mimeType == Asset.PDF) return "PDF"
+            val ext = fileName.substringAfterLast('.', "")
+            return if (ext.length in 1..4 && ext.all { it.isLetterOrDigit() }) ext.uppercase() else "FILE"
+        }
+
         const val DEFAULT_WIDTH_MM = 60f
         const val DEFAULT_HEIGHT_MM = 12f
     }

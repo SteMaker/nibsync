@@ -18,8 +18,10 @@
     <string name="text_tool">Textbox</string>
     <string name="move_text_box">Textbox verschieben</string>
     <string name="resize_text_box">Breite ändern</string>
-    <string name="insert">Bild oder PDF einfügen</string>
-    <string name="insert_file">Datei auswählen…</string>
+    <string name="insert">Einfügen</string>
+    <string name="insert_file">Bild oder Datei…</string>
+    <string name="insert_anchor">Anker…</string>
+    <string name="insert_note_link">Link zu Notiz…</string>
     <string name="insert_clipboard">Aus Zwischenablage</string>
     <string name="todo_tool">ToDo (mit dem Stift antippen: handschriftlich, mit dem Finger: Tastatur)</string>
     <string name="todo_keyboard">ToDo tippen</string>

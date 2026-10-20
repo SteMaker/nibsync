@@ -64,6 +64,7 @@ import com.stemaker.nibsync.text.endsTitleEditing
 import com.stemaker.nibsync.text.DocumentPath
 import com.stemaker.nibsync.canvas.TickedTodo
 import com.stemaker.nibsync.canvas.TodoListScreen
+import com.stemaker.nibsync.canvas.ToolState
 import com.stemaker.nibsync.library.OpenTodo
 import com.stemaker.nibsync.library.TodoCollector
 import androidx.compose.runtime.mutableIntStateOf
@@ -77,6 +78,13 @@ import com.stemaker.nibsync.sync.client.AccountId
 import com.stemaker.nibsync.sync.client.displayName
 import com.stemaker.nibsync.library.ui.LibraryViewModel
 import com.stemaker.nibsync.model.DocumentId
+import android.widget.Toast
+import com.stemaker.nibsync.model.LinkTarget
+import com.stemaker.nibsync.model.LinkElement
+import com.stemaker.nibsync.model.AnchorDraft
+import com.stemaker.nibsync.model.Anchor
+import com.stemaker.nibsync.library.LinkTargets
+import com.stemaker.nibsync.model.BrushFamily
 import com.stemaker.nibsync.shapes.GeometricShapeRecognizer
 import kotlinx.coroutines.launch
 
@@ -182,6 +190,7 @@ class MainActivity : ComponentActivity() {
                 var showSettings by remember { mutableStateOf(false) }
                 var showTitle by remember { mutableStateOf(settings.showTitle) }
                 var showCreated by remember { mutableStateOf(settings.showCreated) }
+                var penWidths by remember { mutableStateOf(settings.pens.widths) }
                 if (showSettings) {
                     SettingsScreen(
                         sync = sync,
@@ -205,6 +214,11 @@ class MainActivity : ComponentActivity() {
                         onShowCreated = {
                             showCreated = it
                             settings.showCreated = it
+                        },
+                        penWidths = penWidths,
+                        onPenWidths = {
+                            penWidths = it
+                            settings.pens = settings.pens.copy(widths = it)
                         },
                         onClose = { showSettings = false },
                     )
@@ -350,7 +364,7 @@ class MainActivity : ComponentActivity() {
                                 showCreated = showCreated,
                                 onRename = node?.let { n -> { title: String -> scope.launch { container.library.rename(n.id, title) }; Unit } },
                             )
-                            DocumentPane(docId, documentTitle, openLibrary, showPageBreaks, drawWithFinger, header)
+                            DocumentPane(docId, documentTitle, openLibrary, showPageBreaks, drawWithFinger, header, penWidths)
                         }
                     }
                 }
@@ -366,6 +380,7 @@ class MainActivity : ComponentActivity() {
         showPageBreaks: Boolean,
         drawWithFinger: Boolean,
         header: PageHeader,
+        penWidths: Map<BrushFamily, List<Float>>,
     ) {
         var openSession by remember(docId) { mutableStateOf<DocumentSession?>(null) }
         LaunchedEffect(docId) {
@@ -375,10 +390,25 @@ class MainActivity : ComponentActivity() {
         if (current == null) {
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
         } else {
-            val vm = viewModel(key = docId.value) { CanvasViewModel(current, GeometricShapeRecognizer(), container.clipboard) }
+            val vm = viewModel(key = docId.value) {
+                CanvasViewModel(current, GeometricShapeRecognizer(), container.clipboard, ToolState.from(settings.pens))
+            }
+            LaunchedEffect(vm, penWidths) { vm.setPenWidths(penWidths) }
+            // The pen and its width are remembered for the next document and app start.
+            LaunchedEffect(vm) {
+                vm.tools.collect { tools ->
+                    val pens = settings.pens
+                    val used = pens.used(tools.activePen, tools.activeSettings.sizeMm)
+                    if (used != pens) settings.pens = used
+                }
+            }
+            var anchorDialog by remember(docId) { mutableStateOf<AnchorDialog?>(null) }
+            var linkDialog by remember(docId) { mutableStateOf(false) }
             DisposableEffect(vm) {
                 canvasViewModel = vm
                 vm.openFile = { media.openLink(docId, it) }
+                vm.openNote = ::followLink
+                vm.editAnchor = { anchorDialog = AnchorDialog(it) }
                 vm.copyAssets = media::copyAssets
                 // Leaving the document (or the screen) ends text editing, so the text is stored.
                 onDispose { vm.finishText() }
@@ -402,6 +432,8 @@ class MainActivity : ComponentActivity() {
                 assetFile = { media.assetFile(docId, it) },
                 onInsertFile = { pickFile.launch(media.mimeTypes) },
                 onInsertFromClipboard = { scope.launch { media.insertFromClipboard(vm, docId, canvasView?.viewport) } },
+                onInsertAnchor = { anchorDialog = AnchorDialog(null) },
+                onInsertNoteLink = { linkDialog = true },
                 pageOverlay = { viewport ->
                     val state by current.state.collectAsStateWithLifecycle()
                     DocumentHeader(
@@ -420,13 +452,71 @@ class MainActivity : ComponentActivity() {
                 pageModifier = Modifier.endsTitleEditing(headerState),
                 onCanvasCreated = { view ->
                     canvasView = view
+                    view.linkRenderer.titleOf = { container.library.tree.value[NodeId(it.value)]?.title }
                     // Opened from the list of to-dos: show the to-do.
                     revealTodo?.takeIf { it.first == docId }?.let { view.revealY(it.second) }
                     revealTodo = null
                 },
             )
+            anchorDialog?.let { dialog ->
+                val anchor = dialog.anchor
+                AnchorNameDialog(anchor?.name ?: "", onDismiss = { anchorDialog = null }) { name ->
+                    anchorDialog = null
+                    if (anchor != null) {
+                        vm.renameAnchor(anchor, name)
+                    } else {
+                        val v = canvasView?.viewport?.takeIf { it.hasSize }
+                        val r = v?.visibleDocumentRect
+                        val pageWidth = v?.pageWidthMm ?: current.state.value.meta.format.widthMm
+                        val w = LinkElement.widthFor(name)
+                        val cx = r?.let { (it.left + it.right) / 2 } ?: (pageWidth / 2)
+                        val x = (cx - w / 2).coerceIn(0f, maxOf(0f, pageWidth - w))
+                        vm.insert(listOf(AnchorDraft(x, maxOf(0f, r?.let { (it.top + it.bottom) / 2 } ?: 50f), name)))
+                    }
+                }
+            }
+            if (linkDialog) {
+                val tree by container.library.tree.collectAsStateWithLifecycle()
+                NoteLinkDialog(
+                    tree = tree,
+                    anchorsOf = { doc -> LinkTargets.anchors(container.openSessionOrNull(doc)?.state?.value ?: container.repository.load(doc)) },
+                    onDismiss = { linkDialog = false },
+                ) { target, anchor ->
+                    linkDialog = false
+                    val v = canvasView?.viewport?.takeIf { it.hasSize }
+                    val r = v?.visibleDocumentRect
+                    val pageWidth = v?.pageWidthMm ?: current.state.value.meta.format.widthMm
+                    val cx = r?.let { (it.left + it.right) / 2 } ?: (pageWidth / 2)
+                    val cy = r?.let { (it.top + it.bottom) / 2 } ?: 50f
+                    vm.insert(listOf(LinkTargets.draft(target, anchor, cx, cy, pageWidth)))
+                }
+            }
         }
     }
+
+    /** Opens the document a link leads to, at its anchor; a short message if it is not here. */
+    private fun followLink(target: LinkTarget) {
+        lifecycleScope.launch {
+            val tree = container.library.tree.value
+            val node = tree[NodeId(target.document.value)]
+            val doc = if (node != null) runCatching { container.openSession(target.document, node.title).state.value }.getOrNull() else null
+            val y = LinkTargets.revealY(target, tree, doc)
+            if (y == null) {
+                Toast.makeText(this@MainActivity, R.string.note_not_found, Toast.LENGTH_LONG).show()
+                return@launch
+            }
+            if (target.document == documentId) {
+                canvasView?.revealY(y)
+            } else {
+                revealTodo = target.document to y
+                documentId = target.document
+                settings.lastDocument = target.document
+            }
+        }
+    }
+
+    /** The anchor name dialog: for a new anchor ([anchor] null) or renaming one. */
+    private class AnchorDialog(val anchor: Anchor?)
 
     /**
      * Keyboard shortcuts: Ctrl+Z undo, Ctrl+Y / Ctrl+Shift+Z redo. Handled before the view

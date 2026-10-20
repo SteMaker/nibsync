@@ -48,7 +48,7 @@ class MediaRenderer(
         color = 0xffb0bec5.toInt()
     }
     private val linkFill = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = 0xfff5f7fa.toInt() }
-    private val badgePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = 0xffd32f2f.toInt() }
+    private val badgePaint = Paint(Paint.ANTI_ALIAS_FLAG)
     private val badgeText = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
         color = Color.WHITE
         isFakeBoldText = true
@@ -109,12 +109,13 @@ class MediaRenderer(
         canvas.drawRoundRect(rect, r, r, linkFill)
         outline.strokeWidth = 0.3f
         canvas.drawRoundRect(rect, r, r, outline)
-        // A small red "PDF" badge, then the file name.
+        // A small badge with the type (red for PDF), then the file name.
         val pad = h * 0.18f
         val badge = RectF(rect.left + pad, rect.top + pad, rect.left + pad + (h - 2 * pad) * 0.8f, rect.bottom - pad)
+        badgePaint.color = if (link.asset.mimeType == Asset.PDF) PDF_BADGE else OTHER_BADGE
         canvas.drawRoundRect(badge, h * 0.08f, h * 0.08f, badgePaint)
-        badgeText.textSize = badge.height() * 0.3f
-        val label = if (link.asset.mimeType == Asset.PDF) "PDF" else "FILE"
+        val label = link.badge
+        badgeText.textSize = badge.height() * (if (label.length > 3) 0.24f else 0.3f)
         canvas.drawText(label, badge.centerX(), badge.centerY() + badgeText.textSize * 0.35f, badgeText)
         nameText.textSize = h * 0.36f
         val textLeft = badge.right + pad
@@ -173,5 +174,7 @@ class MediaRenderer(
         const val MAX_DECODE_PX = 4096
         const val MIN_DECODE_PX = 256f
         const val UPGRADE_FACTOR = 1.5f
+        const val PDF_BADGE = 0xffd32f2f.toInt()
+        const val OTHER_BADGE = 0xff546e7a.toInt()
     }
 }

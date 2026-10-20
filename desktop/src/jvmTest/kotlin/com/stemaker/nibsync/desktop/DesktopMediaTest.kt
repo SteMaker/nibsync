@@ -2,6 +2,7 @@ package com.stemaker.nibsync.desktop
 
 import com.google.common.truth.Truth.assertThat
 import com.stemaker.nibsync.model.Asset
+import com.stemaker.nibsync.model.FileLinkDraft
 import com.stemaker.nibsync.model.DocumentId
 import com.stemaker.nibsync.model.ImageDraft
 import com.stemaker.nibsync.model.MediaFiles
@@ -44,8 +45,11 @@ class DesktopMediaTest {
     }
 
     @Test
-    fun otherFilesAreRefused() {
-        assertThat(DesktopMedia.read(tmp.newFile("a.txt").apply { writeText("hallo") })).isNull()
+    fun otherFilesBecomeLinksAndMissingOnesAreRefused() {
+        val text = DesktopMedia.read(tmp.newFile("a.txt").apply { writeText("hallo") })!!
+        assertThat(text.mimeType).isEqualTo("text/plain")
+        assertThat(MediaFiles.draft(text, "ab".repeat(32), null, 210f, 105f, 50f)).isInstanceOf(FileLinkDraft::class.java)
+        assertThat(DesktopMedia.read(tmp.newFile("data.xyz").apply { writeBytes(byteArrayOf(1, 2, 3)) })!!.mimeType).isEqualTo(Asset.BINARY)
         assertThat(DesktopMedia.read(File(tmp.root, "missing.png"))).isNull()
     }
 

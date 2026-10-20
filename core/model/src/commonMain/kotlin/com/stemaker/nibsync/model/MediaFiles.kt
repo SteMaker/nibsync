@@ -38,6 +38,63 @@ object MediaFiles {
         }
     }
 
+    /**
+     * The type any file is stored with: a picture or PDF recognised by [detectType], else the
+     * declared type, else one guessed from the file name, else [Asset.BINARY]. Files that are not
+     * pictures become [FileLink]s, which the system opens with a fitting program.
+     */
+    fun fileType(bytes: ByteArray, declaredType: String?, fileName: String?): String =
+        detectType(bytes, declaredType, fileName)
+            ?: declaredType?.lowercase()?.takeIf { it.matches(MIME_TYPE) && it !in Asset.IMAGE_TYPES && it != Asset.BINARY }
+            ?: fileName?.let(::typeForName)
+            ?: Asset.BINARY
+
+    /** The usual type of a file named [fileName], by its extension; null if unknown. */
+    fun typeForName(fileName: String): String? {
+        val ext = fileName.substringAfterLast('.', "").lowercase()
+        return EXTENSION_TYPES[ext]?.takeIf { it !in Asset.IMAGE_TYPES }
+    }
+
+    private val MIME_TYPE = Regex("[a-z0-9][a-z0-9!#$&^_.+-]*/[a-z0-9][a-z0-9!#$&^_.+-]*")
+
+    private val EXTENSION_TYPES = mapOf(
+        "pdf" to Asset.PDF,
+        "txt" to "text/plain",
+        "md" to "text/markdown",
+        "csv" to "text/csv",
+        "html" to "text/html",
+        "htm" to "text/html",
+        "xml" to "text/xml",
+        "json" to "application/json",
+        "rtf" to "application/rtf",
+        "doc" to "application/msword",
+        "docx" to "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        "xls" to "application/vnd.ms-excel",
+        "xlsx" to "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        "ppt" to "application/vnd.ms-powerpoint",
+        "pptx" to "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+        "odt" to "application/vnd.oasis.opendocument.text",
+        "ods" to "application/vnd.oasis.opendocument.spreadsheet",
+        "odp" to "application/vnd.oasis.opendocument.presentation",
+        "epub" to "application/epub+zip",
+        "zip" to "application/zip",
+        "gif" to "image/gif",
+        "webp" to "image/webp",
+        "heic" to "image/heic",
+        "tif" to "image/tiff",
+        "tiff" to "image/tiff",
+        "mp3" to "audio/mpeg",
+        "m4a" to "audio/mp4",
+        "ogg" to "audio/ogg",
+        "wav" to "audio/wav",
+        "mp4" to "video/mp4",
+        "mov" to "video/quicktime",
+        "webm" to "video/webm",
+        "ics" to "text/calendar",
+        "vcf" to "text/vcard",
+        "eml" to "message/rfc822",
+    )
+
     private fun looksLikeSvg(bytes: ByteArray, declaredType: String?, fileName: String?): Boolean {
         val head = bytes.copyOf(minOf(bytes.size, 2048)).decodeToString()
         return "<svg" in head || ((declaredType == Asset.SVG || fileName?.endsWith(".svg", ignoreCase = true) == true) && "<" in head)

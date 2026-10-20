@@ -41,6 +41,17 @@ class TextEditController internal constructor(internal val state: RichTextState)
     fun toggleItalic() = state.toggleSpanStyle(SpanStyle(fontStyle = FontStyle.Italic))
     fun setFont(font: TextFont) = state.addRichSpan(FontRun(font))
     fun setSize(pt: Float) = state.addSpanStyle(SpanStyle(fontSize = pt.sp))
+    val canGrow: Boolean get() = RichText.SIZES_PT.any { it > sizePt }
+    val canShrink: Boolean get() = RichText.SIZES_PT.any { it < sizePt }
+
+    /** One step up in [RichText.SIZES_PT], from the size at the cursor (a selection gets that size + 1 step). */
+    fun grow() {
+        RichText.SIZES_PT.firstOrNull { it > sizePt }?.let(::setSize)
+    }
+
+    fun shrink() {
+        RichText.SIZES_PT.lastOrNull { it < sizePt }?.let(::setSize)
+    }
     fun toggleBulletList() = keepingPendingStyle { state.toggleUnorderedList() }
     fun toggleNumberedList() = keepingPendingStyle { state.toggleOrderedList() }
     fun indent() = keepingPendingStyle { state.increaseListLevel() }

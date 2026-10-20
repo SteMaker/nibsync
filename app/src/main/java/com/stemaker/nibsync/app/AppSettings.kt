@@ -3,6 +3,7 @@ package com.stemaker.nibsync.app
 import android.content.Context
 import androidx.core.content.edit
 import com.stemaker.nibsync.model.DocumentId
+import com.stemaker.nibsync.model.PenPreferences
 
 /** Device-local preferences (not synced). */
 class AppSettings(context: Context) {
@@ -34,6 +35,14 @@ class AppSettings(context: Context) {
     var lastBookAccount: String?
         get() = prefs.getString(KEY_LAST_BOOK_ACCOUNT, null)
         set(value) = prefs.edit { putString(KEY_LAST_BOOK_ACCOUNT, value) }
+
+    /** Pen widths from the settings, the last pen and its width. */
+    var pens: PenPreferences
+        get() = PenPreferences.fromStrings { prefs.getString(it, null) }
+        set(value) = prefs.edit {
+            PenPreferences.KEYS.forEach(::remove)
+            value.toStrings().forEach { (k, v) -> putString(k, v) }
+        }
 
     private companion object {
         const val KEY_LAST_BOOK_ACCOUNT = "lastBookAccount"

@@ -65,10 +65,15 @@ class NoteAppTest {
     private val app = ApplicationProvider.getApplicationContext<NibSyncApp>()
     private val documentId = DocumentId("test-" + UUID.randomUUID())
     private lateinit var scenario: ActivityScenario<MainActivity>
+    private val settings = AppSettings(app)
+    private var savedPens = com.stemaker.nibsync.model.PenPreferences()
 
     @Before
     fun launch() {
         app.sync.paused = true // never sync test data with the account on the device
+        // Every test starts with the default pens, whatever an earlier test or the user chose.
+        savedPens = settings.pens
+        settings.pens = com.stemaker.nibsync.model.PenPreferences()
         scenario = launchActivity()
     }
 
@@ -76,6 +81,7 @@ class NoteAppTest {
     fun cleanUp() {
         app.sync.paused = false
         if (::scenario.isInitialized) scenario.close()
+        settings.pens = savedPens
         runBlocking {
             app.container.closeSession(documentId)
             app.container.repository.delete(documentId)
@@ -292,7 +298,7 @@ class NoteAppTest {
         val brush = strokes().single().brush
         assertThat(brush.family).isEqualTo(BrushFamily.BALLPOINT)
         assertThat(brush.colorArgb).isEqualTo(com.stemaker.nibsync.canvas.PenPalette.inkColors[2])
-        assertThat(brush.sizeMm).isEqualTo(com.stemaker.nibsync.canvas.PenPalette.sizes(BrushFamily.BALLPOINT)[2])
+        assertThat(brush.sizeMm).isEqualTo(com.stemaker.nibsync.model.PenWidths.DEFAULTS.getValue(BrushFamily.BALLPOINT)[2])
     }
 
     @Test

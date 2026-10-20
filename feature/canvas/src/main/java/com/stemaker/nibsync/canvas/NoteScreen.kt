@@ -7,6 +7,8 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.filled.AddPhotoAlternate
 import androidx.compose.material.icons.filled.FolderOpen
+import androidx.compose.material.icons.filled.Flag
+import androidx.compose.material.icons.filled.Link
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.OpenWith
 import androidx.compose.material.icons.filled.TextFields
@@ -121,6 +123,8 @@ object NoteScreenTags {
     const val INSERT = "insert"
     const val INSERT_FILE = "insert-file"
     const val INSERT_CLIPBOARD = "insert-clipboard"
+    const val INSERT_ANCHOR = "insert-anchor"
+    const val INSERT_NOTE_LINK = "insert-note-link"
     const val MOVE_TEXT = "move-text"
     const val RESIZE_TEXT = "resize-text"
     const val DELETE_SELECTION = "delete-selection"
@@ -153,6 +157,10 @@ fun NoteScreen(
     onInsertFile: (() -> Unit)? = null,
     /** Inserts a picture or PDF from the system clipboard, if there is one; null disables it. */
     onInsertFromClipboard: (() -> Unit)? = null,
+    /** Asks for the name of a new anchor; null: no anchors. */
+    onInsertAnchor: (() -> Unit)? = null,
+    /** Asks for the target of a new link to a note; null: no such links. */
+    onInsertNoteLink: (() -> Unit)? = null,
     onCanvasCreated: (NoteCanvasView) -> Unit = {},
     /** Extra content over the page, placed with its viewport (e.g. the document title). */
     pageOverlay: @Composable androidx.compose.foundation.layout.BoxScope.(Viewport) -> Unit = {},
@@ -224,6 +232,8 @@ fun NoteScreen(
             onTodo = viewModel::selectTodo,
             onInsertFile = onInsertFile,
             onInsertFromClipboard = onInsertFromClipboard,
+            onInsertAnchor = onInsertAnchor,
+            onInsertNoteLink = onInsertNoteLink,
             textEditing = textEditing?.controller ?: todoEditing?.text,
             onTextDelete = { if (todoEditing != null) viewModel.deleteTodo() else viewModel.deleteText() },
             inkTodoOpen = todoEditing?.isInk == true,
@@ -267,6 +277,7 @@ fun NoteScreen(
                         view.setStrokes(document.strokes)
                         view.setTextBoxes(document.textBoxes)
                         view.setFiles(document.files)
+                        view.setLinks(document.links)
                         view.editingTextBox = textEditing?.boxId
                         view.setTodos(document.todos, doneTasks)
                         view.openTodo = todoEditing?.preview(PREVIEW_AUTHOR)
@@ -491,6 +502,8 @@ private fun Toolbar(
     onTodo: (ink: Boolean) -> Unit,
     onInsertFile: (() -> Unit)?,
     onInsertFromClipboard: (() -> Unit)?,
+    onInsertAnchor: (() -> Unit)?,
+    onInsertNoteLink: (() -> Unit)?,
     textEditing: com.stemaker.nibsync.text.TextEditController?,
     onTextDelete: () -> Unit,
     inkTodoOpen: Boolean,
@@ -598,7 +611,7 @@ private fun Toolbar(
                         Icon(Icons.Filled.TaskAlt, contentDescription = todoLabel)
                     }
                 }
-                if (onInsertFile != null) InsertMenu(onInsertFile, onInsertFromClipboard)
+                if (onInsertFile != null) InsertMenu(onInsertFile, onInsertFromClipboard, onInsertAnchor, onInsertNoteLink)
                 Divider()
                 // Colours and widths are in the tool settings bar on the right.
                 ScrollingRow(Modifier.weight(1f)) {
@@ -637,7 +650,7 @@ private fun PenOptions(tools: ToolState, onColor: (Int) -> Unit, onSize: (Float)
         )
     }
     HorizontalDivider(Modifier.width(36.dp).padding(vertical = 4.dp))
-    PenPalette.sizes(tools.activePen).forEachIndexed { index, mm ->
+    tools.sizes(tools.activePen).forEachIndexed { index, mm ->
         SizeDot(
             diameter = (8 + index * 6).dp,
             selected = tools.activeSettings.sizeMm == mm,
@@ -702,9 +715,9 @@ private fun WithTooltip(text: String, content: @Composable () -> Unit) {
     }
 }
 
-/** "Insert" button: pick a picture or PDF file, or take one from the clipboard. */
+/** "Insert" button: pick a picture or file, take one from the clipboard, set an anchor or link a note. */
 @Composable
-private fun InsertMenu(onInsertFile: () -> Unit, onInsertFromClipboard: (() -> Unit)?) {
+private fun InsertMenu(onInsertFile: () -> Unit, onInsertFromClipboard: (() -> Unit)?, onInsertAnchor: (() -> Unit)?, onInsertNoteLink: (() -> Unit)?) {
     var open by remember { mutableStateOf(false) }
     val label = stringResource(R.string.insert)
     Box {
@@ -727,6 +740,22 @@ private fun InsertMenu(onInsertFile: () -> Unit, onInsertFromClipboard: (() -> U
                 onClick = { open = false; onInsertFromClipboard?.invoke() },
                 modifier = Modifier.testTag(NoteScreenTags.INSERT_CLIPBOARD),
             )
+            if (onInsertAnchor != null) {
+                DropdownMenuItem(
+                    text = { Text(stringResource(R.string.insert_anchor)) },
+                    leadingIcon = { Icon(Icons.Filled.Flag, contentDescription = null) },
+                    onClick = { open = false; onInsertAnchor() },
+                    modifier = Modifier.testTag(NoteScreenTags.INSERT_ANCHOR),
+                )
+            }
+            if (onInsertNoteLink != null) {
+                DropdownMenuItem(
+                    text = { Text(stringResource(R.string.insert_note_link)) },
+                    leadingIcon = { Icon(Icons.Filled.Link, contentDescription = null) },
+                    onClick = { open = false; onInsertNoteLink() },
+                    modifier = Modifier.testTag(NoteScreenTags.INSERT_NOTE_LINK),
+                )
+            }
         }
     }
 }

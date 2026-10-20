@@ -3,6 +3,8 @@ package com.stemaker.nibsync.canvas
 import com.stemaker.nibsync.document.erase.EraserMode
 import com.stemaker.nibsync.model.BrushFamily
 import com.stemaker.nibsync.model.BrushSpec
+import com.stemaker.nibsync.model.PenPreferences
+import com.stemaker.nibsync.model.PenWidths
 
 /** Choices offered in the tool bar for each pen type. */
 object PenPalette {
@@ -28,18 +30,11 @@ object PenPalette {
     fun colors(family: BrushFamily): List<Int> =
         if (family == BrushFamily.HIGHLIGHTER) highlighterColors else inkColors
 
-    /** Three widths per pen in millimetres: fine, medium, broad. */
     /** Pixel eraser diameters in millimetres. */
     val eraserSizes: List<Float> = listOf(2f, 5f, 12f)
 
     /** The object eraser only needs to touch a stroke; a small fixed tip is the most precise. */
     const val OBJECT_ERASER_DIAMETER_MM: Float = 2f
-
-    fun sizes(family: BrushFamily): List<Float> = when (family) {
-        BrushFamily.BALLPOINT -> listOf(0.35f, 0.5f, 0.8f)
-        BrushFamily.FOUNTAIN_PEN -> listOf(0.5f, 0.8f, 1.2f)
-        BrushFamily.HIGHLIGHTER -> listOf(3f, 5f, 8f)
-    }
 }
 
 data class PenSettings(val colorArgb: Int, val sizeMm: Float)
@@ -51,8 +46,10 @@ enum class Tool { PEN, ERASER, LASSO, TEXT, TODO }
 data class ToolState(
     val activePen: BrushFamily = BrushFamily.FOUNTAIN_PEN,
     val pens: Map<BrushFamily, PenSettings> = BrushFamily.entries.associateWith {
-        PenSettings(PenPalette.colors(it).first(), PenPalette.sizes(it)[1])
+        PenSettings(PenPalette.colors(it).first(), PenWidths.DEFAULTS.getValue(it)[1])
     },
+    /** Three widths per pen in millimetres (fine, medium, broad), as set in the settings. */
+    val widths: Map<BrushFamily, List<Float>> = PenWidths.DEFAULTS,
     /** The pen's current job; [activePen] is kept while erasing or selecting, for switching back. */
     val tool: Tool = Tool.PEN,
     val eraserMode: EraserMode = EraserMode.OBJECT,
@@ -90,4 +87,27 @@ data class ToolState(
     fun withColor(argb: Int) = copy(pens = pens + (activePen to activeSettings.copy(colorArgb = argb)))
 
     fun withSize(mm: Float) = copy(pens = pens + (activePen to activeSettings.copy(sizeMm = mm)))
+
+    fun sizes(family: BrushFamily): List<Float> = widths[family] ?: PenWidths.DEFAULTS.getValue(family)
+
+    /** New widths from the settings; every pen keeps its position (fine, medium, broad). */
+    fun withWidths(newWidths: Map<BrushFamily, List<Float>>): ToolState {
+        if (newWidths == widths) return this
+        val next = copy(widths = newWidths)
+        return next.copy(
+            pens = pens.mapValues { (family, settings) ->
+                val index = sizes(family).indexOf(settings.sizeMm).takeIf { it >= 0 } ?: 1
+                settings.copy(sizeMm = next.sizes(family)[index])
+            },
+        )
+    }
+
+    companion object {
+        /** The tools as left last time: the last pen with each pen's remembered width. */
+        fun from(prefs: PenPreferences) = ToolState(
+            activePen = prefs.lastPen ?: BrushFamily.FOUNTAIN_PEN,
+            pens = BrushFamily.entries.associateWith { PenSettings(PenPalette.colors(it).first(), prefs.startWidth(it)) },
+            widths = prefs.widths,
+        )
+    }
 }

@@ -8,6 +8,8 @@
     <string name="text_outdent">Indent less</string>
     <string name="text_delete">Delete text box</string>
     <string name="text_size_pt">%1$s pt</string>
+    <string name="text_grow">Larger text</string>
+    <string name="text_shrink">Smaller text</string>
     <string name="font_sans">Sans serif</string>
     <string name="font_serif">Serif</string>
     <string name="font_mono">Monospace</string>

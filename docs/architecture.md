@@ -38,8 +38,9 @@ input (x, y, t, pressure, tilt, orientation in millimetres) plus a platform-neut
 
 ## Data model and sync readiness
 
-- A document is a set of ops (`AddStrokes`, `AddTextBoxes`, `AddFiles`, `RemoveStrokes`,
-  `SetBackground`) with Lamport stamps. Strokes, text boxes, pictures and file links are
+- A document is a set of ops (`AddStrokes`, `AddTextBoxes`, `AddFiles`, `AddTodos`,
+  `AddLinks`, `RemoveStrokes`, `SetBackground`, `SetTodoDone`) with Lamport stamps. Strokes,
+  text boxes, pictures, file links, to-dos, anchors and note links are
   `PageElement`s sharing one id space (`StrokeId`, a historical name), so removal and
   tombstones cover all of them.
 - `DocumentState` is a two-phase-set CRDT: idempotent, order-independent, removals win.
@@ -54,7 +55,7 @@ Storage layout (`filesDir/` on Android; `documents/` and `library/` are what get
 ```
 documents/<documentId>/meta.json
 documents/<documentId>/ops/<deviceId>.oplog   "NSOL" v1 header + length-prefixed CBOR records
-documents/<documentId>/assets/<sha256>        inserted pictures and PDFs, immutable
+documents/<documentId>/assets/<sha256>        inserted pictures and files, immutable
 library/<nodeId>.json                         one file per book / chapter / document entry
 device-id                                     local only
 ```
@@ -83,7 +84,7 @@ present here are uploaded too, so it arrives complete.
 ## Layers
 
 `BACKGROUND` (pattern) -> `IMAGE` (pictures) -> `MARKER` (highlighter) -> `TEXT` (text boxes,
-file links) -> `INK` -> `TODO` (to-dos). Highlighter strokes are placed on
+file links, anchors, note links) -> `INK` -> `TODO` (to-dos). Highlighter strokes are placed on
 `MARKER` and therefore always appear behind the ink. While being drawn, the in-progress
 highlighter is shown on top (Ink overlay limitation) and drops behind once finished.
 
@@ -116,7 +117,8 @@ versions side by side, nothing is lost.
   box, painted onto the view canvas between marker and ink strokes. While a box is edited it
   is hidden on the page and the editor is drawn over it at the current zoom.
 - Text tool: tap = new box (80 mm, or the tapped box is opened), dragged frame = box of that
-  width. The tool bar switches to formatting while a box is open; the text is saved 1.5 s
+  width. The tool bar switches to formatting while a box is open (A−/A+ step the size through
+  `RichText.SIZES_PT` from the size at the cursor); the text is saved 1.5 s
   after typing stops, on "Done", on tool change and when the app goes to the background.
   An emptied box is removed. Erasers ignore text; the lasso selects, moves and copies it.
 
@@ -149,11 +151,14 @@ versions side by side, nothing is lost.
   documents cached until the sync reports). Nothing of it is stored or synced; ticking off there
   writes `SetTodoDone` into the to-do's document.
 
-## Pictures and PDFs
+## Pictures and files
 
 Inserted files are stored per document as `assets/<sha256>` (content-addressed, never
 changed) and referenced by `ImageElement` (PNG, JPEG, SVG; drawn scaled to its box) or
-`FileLink` (PDF; a labelled chip that opens the file in a viewer app). Sources: the insert
+`FileLink` (any other file up to 50 MB: a chip with the type, "PDF" or the extension, and the
+file name; tapping it opens the file in a viewer app if the system has one). The stored type is
+`MediaFiles.fileType`: recognised content, else the declared type, else one guessed from the
+extension, else `application/octet-stream` (Android then asks by the extension). Sources: the insert
 menu (file picker, clipboard), Ctrl+V, and "Share" from other apps into the open document.
 Pictures start at their 150 dpi print size, at most 80 % of the page width, centred in view.
 
@@ -166,11 +171,35 @@ Pictures start at their 150 dpi print size, at most 80 % of the page width, cent
 - Sync: assets are uploaded before the log that refers to them and downloaded when a
   document folder changed; pasting into another document copies the files along.
 
+## Anchors and links to notes
+
+An `Anchor` is a named place in a document (a small flag with its name); a `NoteLink` leads to a
+document or to an anchor in it (a chip with an arrow and "Title › Anchor"). Both are
+`LinkElement`s on the `TEXT` layer, added with `DocumentOp.AddLinks` (record type 8, list
+`"n"` of `LinkRecord`s; older versions skip it). Like a to-do's `taskId`, an anchor's `anchorId`
+stays when it is moved or renamed (remove + add), so links keep working; a copy gets a new
+one. A link stores the target's title and anchor name when made; the apps show the document's
+current title from the library (`titleOf`). Choosing the target and finding it again is
+`LinkTargets` (core/library): the documents with their folders and a search, the anchors top
+down, and where to scroll (`revealY`: the anchor, else the top; null if the document is not on
+this device, e.g. deleted or in an unsynced book).
+
+UI: insert menu "Anchor …" (name, placed in the middle of the view and selected for moving)
+and "Link to note …" (document, then its top or an anchor). Tablet: a tap on a link follows it;
+a tap on an anchor selects it, a second tap renames it. PC: a click selects, a double click
+follows the link or renames the anchor.
+
 ## Input
 
 Stylus writes (or erases with the eraser selected); fingers scroll and pinch-zoom; a toggle
 enables writing with a finger. Pointers cancelled by the system (palm rejection) cancel the
 stroke or erase gesture.
+
+Pens: each pen offers three widths (fine, medium, broad), set per pen in the settings
+("Pen widths"). `PenPreferences` (core/model) keeps them on the device together with the last
+writing pen (ballpoint or fountain pen) and which width each pen had; both apps restore it for
+every document and at start (`ToolState.from`, `DesktopToolState.from`). Changing a width in
+the settings keeps a pen's position (a pen on "broad" gets the new broad width).
 
 ## Shape recognition
 
@@ -279,7 +308,7 @@ stack trace, app version and system to `crash.log` in the data folder (`CrashLog
 1 MB to `crash.old.log`); Compose's error dialog then names that file.
 
 Tools on the PC (`NoteController`, `DesktopTool`): text (default), the three pens with the
-Android palette, both erasers (`EraseGesture`), lasso; holding the pen still recognises shapes
+Android palette and the widths from the settings, both erasers (`EraseGesture`), lasso; holding the pen still recognises shapes
 (`GeometricShapeRecognizer`). A click on a picture or link selects it (double-click opens a
 link with the system program); the selection is dragged, scaled at its corner handle, copied,
 cut, pasted (Ctrl+C/X/V, also between documents with their files) and deleted (Del). Pictures
@@ -320,4 +349,6 @@ boxes the same way.
 | T ✅ | Text boxes with formatting (bold, italic, font, size, lists) | `TextBox`, `feature/text`, text tool in `NoteScreen` |
 | S ✅ | Several sync accounts (Nextcloud, OneDrive, Google Drive), one per book | `sync/client` (`SyncAccount`, `BookAccounts`), `BookScope` in `SyncEngine`; settings "Accounts" |
 | Q ✅ | To-dos (typed or handwritten), tick off on the page or in the generated "Open to-dos" page | `TodoItem`, `TodoEditing`, `TodoIndex`; to-do tool in both apps |
+| L ✅ | Any file as a link; anchors and links to notes | `MediaFiles.fileType`, `Anchor`/`NoteLink`, `LinkTargets`, insert menu |
+| P ✅ | Pen widths in the settings, last pen and width remembered | `PenPreferences` (core/model), `AppSettings`/`Settings`, `ToolState.from` |
 | I ✅ | Lined/grid/dotted backgrounds | `BackgroundPattern`, `DocumentOp.SetBackground`, `ui/background`, `NoteCanvasView.drawPattern` |

@@ -12,6 +12,8 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.FormatBold
 import androidx.compose.material.icons.filled.FormatItalic
 import androidx.compose.material.icons.filled.FormatListNumbered
+import androidx.compose.material.icons.filled.TextDecrease
+import androidx.compose.material.icons.filled.TextIncrease
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -50,7 +52,9 @@ fun TextFormatActions(controller: TextEditController, onDelete: () -> Unit) {
     Toggle(R.string.text_italic, Icons.Filled.FormatItalic, controller.isItalic, TextTags.ITALIC, controller::toggleItalic)
     ToolbarDivider()
     FontMenu(controller)
+    Action(R.string.text_shrink, Icons.Filled.TextDecrease, controller.canShrink, TextTags.SHRINK, controller::shrink)
     SizeMenu(controller)
+    Action(R.string.text_grow, Icons.Filled.TextIncrease, controller.canGrow, TextTags.GROW, controller::grow)
     ToolbarDivider()
     Toggle(R.string.text_bullets, Icons.AutoMirrored.Filled.FormatListBulleted, controller.isBulletList, TextTags.BULLETS, controller::toggleBulletList)
     Toggle(R.string.text_numbers, Icons.Filled.FormatListNumbered, controller.isNumberedList, TextTags.NUMBERS, controller::toggleNumberedList)

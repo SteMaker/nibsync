@@ -6,6 +6,7 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.provider.OpenableColumns
+import android.webkit.MimeTypeMap
 import android.widget.Toast
 import androidx.core.content.FileProvider
 import com.stemaker.nibsync.app.AppContainer
@@ -22,13 +23,16 @@ import kotlinx.coroutines.withContext
 import java.io.File
 
 /**
- * Inserting pictures and PDFs into the open document (file picker, clipboard, sharing) and
- * opening file links in other apps.
+ * Inserting pictures and other files into the open document (file picker, clipboard, sharing)
+ * and opening file links in other apps.
  */
 class MediaActions(private val context: Context, private val container: AppContainer) {
 
-    /** File types offered in the picker and accepted from other apps. */
-    val mimeTypes = arrayOf(Asset.PNG, Asset.JPEG, Asset.SVG, Asset.PDF)
+    /** File types offered in the picker: any file; pictures are shown, other files become links. */
+    val mimeTypes = arrayOf("*/*")
+
+    /** Types taken from the clipboard (other content there is text for the text editor). */
+    private val clipboardTypes = arrayOf(Asset.PNG, Asset.JPEG, Asset.SVG, Asset.PDF)
 
     /**
      * Reads [uri], stores it with document [doc] and adds it to the page in the middle of what
@@ -41,7 +45,7 @@ class MediaActions(private val context: Context, private val container: AppConta
             return toast(R.string.media_too_big)
         } catch (e: Exception) {
             return toast(R.string.media_unreadable)
-        } ?: return toast(R.string.media_unsupported)
+        } ?: return toast(R.string.media_unreadable)
         val sha = container.repository.putAsset(doc, file.bytes)
         val pageWidth = viewport?.pageWidthMm ?: 210f
         val visible = viewport?.takeIf { it.hasSize }?.visibleDocumentRect
@@ -54,7 +58,7 @@ class MediaActions(private val context: Context, private val container: AppConta
 
     private class TooLarge : Exception()
 
-    /** The file behind [uri] if it is a supported type, else null. */
+    /** The file behind [uri], or null if it cannot be opened. */
     private fun read(uri: Uri): PickedFile? {
         val resolver = context.contentResolver
         var name = uri.lastPathSegment?.substringAfterLast('/') ?: "file"
@@ -71,7 +75,7 @@ class MediaActions(private val context: Context, private val container: AppConta
             if (data.size > MediaImport.MAX_BYTES) throw TooLarge()
             data
         } ?: return null
-        val type = MediaImport.detectType(bytes, resolver.getType(uri), name) ?: return null
+        val type = MediaImport.fileType(bytes, resolver.getType(uri), name)
         return PickedFile(bytes, type, name)
     }
 
@@ -91,7 +95,7 @@ class MediaActions(private val context: Context, private val container: AppConta
         val clipboard = context.getSystemService(ClipboardManager::class.java) ?: return null
         val clip = clipboard.primaryClip ?: return null
         val description = clip.description
-        val accepted = mimeTypes.any { description.hasMimeType(it) } || description.hasMimeType("image/*")
+        val accepted = clipboardTypes.any { description.hasMimeType(it) } || description.hasMimeType("image/*")
         if (!accepted || clip.itemCount == 0) return null
         return clip.getItemAt(0).uri
     }
@@ -107,12 +111,16 @@ class MediaActions(private val context: Context, private val container: AppConta
         if (!source.exists()) return toast(R.string.media_not_synced)
         // A copy under the file's real name, so the viewer shows a sensible title.
         val dir = File(context.cacheDir, "open").apply { mkdirs() }
-        val name = link.fileName.replace(Regex("[\\\\/:*?\"<>|]"), "_").ifBlank { "file.pdf" }
+        val name = link.fileName.replace(Regex("[\\\\/:*?\"<>|]"), "_").ifBlank { "file" }
         val copy = File(dir, name)
         source.copyTo(copy, overwrite = true)
         val uri = FileProvider.getUriForFile(context, "${context.packageName}.files", copy)
+        // Files of unknown type: the extension may still tell a viewer app.
+        val type = link.asset.mimeType.takeIf { it != Asset.BINARY }
+            ?: MimeTypeMap.getSingleton().getMimeTypeFromExtension(name.substringAfterLast('.', "").lowercase())
+            ?: "*/*"
         val intent = Intent(Intent.ACTION_VIEW)
-            .setDataAndType(uri, link.asset.mimeType)
+            .setDataAndType(uri, type)
             .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
         try {
             context.startActivity(intent)

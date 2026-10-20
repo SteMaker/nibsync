@@ -1,6 +1,7 @@
 package com.stemaker.nibsync.desktop
 
 import com.stemaker.nibsync.model.DocumentId
+import com.stemaker.nibsync.model.PenPreferences
 import okio.FileSystem
 import okio.Path
 import java.util.Properties
@@ -39,6 +40,15 @@ class Settings(private val fs: FileSystem, private val file: Path) {
         get() = props.getProperty(SHOW_CREATED)?.toBoolean() ?: true
         set(value) {
             props.setProperty(SHOW_CREATED, value.toString())
+            save()
+        }
+
+    /** Pen widths from the settings, the last pen and its width. */
+    var pens: PenPreferences
+        get() = PenPreferences.fromStrings(props::getProperty)
+        set(value) {
+            PenPreferences.KEYS.forEach(props::remove)
+            value.toStrings().forEach { (k, v) -> props.setProperty(k, v) }
             save()
         }
 

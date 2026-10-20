@@ -20,7 +20,11 @@ import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.sp
 import com.stemaker.nibsync.document.DocumentState
+import com.stemaker.nibsync.model.Anchor
 import com.stemaker.nibsync.model.Asset
+import com.stemaker.nibsync.model.DocumentId
+import com.stemaker.nibsync.model.LinkElement
+import com.stemaker.nibsync.model.NoteLink
 import com.stemaker.nibsync.model.BackgroundPattern
 import com.stemaker.nibsync.model.FileLink
 import com.stemaker.nibsync.model.ImageElement
@@ -37,6 +41,9 @@ import kotlin.math.roundToInt
  * elements back to front (pictures, highlighter, text and links, ink).
  */
 class PagePainter(private val text: DesktopTextLayout, private val media: MediaCache) {
+    /** Current title of a linked document (null: unknown here, the stored one is shown). */
+    var titleOf: (DocumentId) -> String? = { null }
+
     /** Measures link labels in layout pixels (1 sp = 1 px), scaled down when drawn. */
     private val labels = TextMeasurer(createFontFamilyResolver(), Density(1f), LayoutDirection.Ltr)
 
@@ -101,6 +108,65 @@ class PagePainter(private val text: DesktopTextLayout, private val media: MediaC
             is ImageElement -> drawImage(scope, element)
             is FileLink -> drawLink(scope, element)
             is TodoItem -> drawTodo(scope, element, doc.isDone(element.taskId))
+            is Anchor -> drawAnchor(scope, element)
+            is NoteLink -> drawNoteLink(scope, element)
+        }
+    }
+
+    /** An anchor: a small flag and its name. */
+    private fun drawAnchor(scope: DrawScope, anchor: Anchor) = with(scope) {
+        val h = anchor.heightMm
+        val r = CornerRadius(h * 0.2f)
+        drawRoundRect(ANCHOR_FILL, Offset(anchor.x, anchor.y), Size(anchor.widthMm, h), r)
+        val pole = anchor.x + h * 0.3f
+        drawLine(ANCHOR, Offset(pole, anchor.y + h * 0.15f), Offset(pole, anchor.y + h * 0.85f), strokeWidth = h * 0.08f)
+        val flag = androidx.compose.ui.graphics.Path().apply {
+            moveTo(pole, anchor.y + h * 0.15f)
+            lineTo(pole + h * 0.45f, anchor.y + h * 0.32f)
+            lineTo(pole, anchor.y + h * 0.5f)
+            close()
+        }
+        drawPath(flag, ANCHOR)
+        drawLabel(this, anchor.name, ANCHOR, anchor.x + h, anchor.y, anchor.widthMm - h - h * 0.15f, h)
+    }
+
+    /** A link to a note: a chip with an arrow badge and the document (and anchor) name. */
+    private fun drawNoteLink(scope: DrawScope, link: NoteLink) = with(scope) {
+        val h = link.heightMm
+        val r = CornerRadius(h * 0.2f)
+        val topLeft = Offset(link.x, link.y)
+        drawRoundRect(LINK_FILL, topLeft, Size(link.widthMm, h), r)
+        drawRoundRect(NOTE_LINK, topLeft, Size(link.widthMm, h), r, style = StrokeStyle(0.3f))
+        val pad = h * 0.15f
+        val badge = h - 2 * pad
+        drawRoundRect(NOTE_LINK, Offset(link.x + pad, link.y + pad), Size(badge, badge), CornerRadius(h * 0.1f))
+        // An arrow to the top right in the badge.
+        val bx = link.x + pad
+        val by = link.y + pad
+        val arrow = StrokeStyle(badge * 0.11f, cap = androidx.compose.ui.graphics.StrokeCap.Round)
+        drawLine(Color.White, Offset(bx + badge * 0.28f, by + badge * 0.72f), Offset(bx + badge * 0.72f, by + badge * 0.28f), strokeWidth = arrow.width, cap = arrow.cap)
+        drawLine(Color.White, Offset(bx + badge * 0.4f, by + badge * 0.28f), Offset(bx + badge * 0.72f, by + badge * 0.28f), strokeWidth = arrow.width, cap = arrow.cap)
+        drawLine(Color.White, Offset(bx + badge * 0.72f, by + badge * 0.6f), Offset(bx + badge * 0.72f, by + badge * 0.28f), strokeWidth = arrow.width, cap = arrow.cap)
+        val label = link.label(titleOf(link.target) ?: link.title)
+        drawLabel(this, label, NOTE_LINK, link.x + h, link.y, link.widthMm - h - pad, h)
+    }
+
+    /** One line of [label] at [x] mm, vertically centred in a [h] mm row, cut with "…" at [width] mm. */
+    private fun drawLabel(scope: DrawScope, label: String, color: Color, x: Float, y: Float, width: Float, h: Float) = with(scope) {
+        if (width <= 0f) return
+        val k = DesktopTextLayout.LAYOUT_PX_PER_MM
+        val measured = labels.measure(
+            label,
+            TextStyle(color = color, fontSize = (LinkElement.FONT_MM * k).sp),
+            overflow = TextOverflow.Ellipsis,
+            maxLines = 1,
+            constraints = Constraints(maxWidth = (width * k).roundToInt().coerceAtLeast(1)),
+        )
+        withTransform({
+            translate(x, y)
+            scale(1f / k, 1f / k, pivot = Offset.Zero)
+        }) {
+            drawText(measured, topLeft = Offset(0f, h * k / 2 - measured.size.height / 2f))
         }
     }
 
@@ -232,11 +298,11 @@ class PagePainter(private val text: DesktopTextLayout, private val media: MediaC
         drawRoundRect(OUTLINE, topLeft, size, r, style = StrokeStyle(0.3f))
         val pad = h * 0.18f
         val badgeH = h - 2 * pad
-        drawRoundRect(BADGE, Offset(link.x + pad, link.y + pad), Size(badgeH * 0.8f, badgeH), CornerRadius(h * 0.08f))
+        val label = link.badge
+        drawRoundRect(if (link.asset.mimeType == Asset.PDF) BADGE else BADGE_OTHER, Offset(link.x + pad, link.y + pad), Size(badgeH * 0.8f, badgeH), CornerRadius(h * 0.08f))
         // Labels are measured at 20 px/mm and scaled down, like text boxes.
         val k = DesktopTextLayout.LAYOUT_PX_PER_MM
-        val label = if (link.asset.mimeType == Asset.PDF) "PDF" else "FILE"
-        val badge = labels.measure(label, TextStyle(color = Color.White, fontSize = (badgeH * 0.3f * k).sp))
+        val badge = labels.measure(label, TextStyle(color = Color.White, fontSize = (badgeH * (if (label.length > 3) 0.24f else 0.3f) * k).sp))
         val name = labels.measure(
             link.fileName,
             TextStyle(color = NAME, fontSize = (h * 0.36f * k).sp),
@@ -264,6 +330,10 @@ class PagePainter(private val text: DesktopTextLayout, private val media: MediaC
         private val OUTLINE = Color(0xffb0bec5)
         private val LINK_FILL = Color(0xfff5f7fa)
         private val BADGE = Color(0xffd32f2f)
+        private val BADGE_OTHER = Color(0xff546e7a)
+        private val ANCHOR = Color(0xff00796b)
+        private val ANCHOR_FILL = Color(0x2200796b)
+        private val NOTE_LINK = Color(0xff1a3fa8)
         private val NAME = Color(0xff263238)
         private val TODO_FILL = Color(0xf5fffdf7)
         private val TODO_FRAME = Color(0xffb0bec5)

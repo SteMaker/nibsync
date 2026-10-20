@@ -12,6 +12,11 @@ import com.stemaker.nibsync.model.DocumentId
 import com.stemaker.nibsync.model.ElementDraft
 import com.stemaker.nibsync.model.FileElement
 import com.stemaker.nibsync.model.FileLink
+import com.stemaker.nibsync.model.Anchor
+import com.stemaker.nibsync.model.AnchorDraft
+import com.stemaker.nibsync.model.LinkTarget
+import com.stemaker.nibsync.model.NoteLink
+import com.stemaker.nibsync.model.linkTarget
 import com.stemaker.nibsync.model.FileLinkDraft
 import com.stemaker.nibsync.model.ImageDraft
 import com.stemaker.nibsync.model.ImageElement
@@ -58,13 +63,14 @@ class NoteController(
     measureText: (RichText, Float) -> Float,
     private val recognizer: ShapeRecognizer = ShapeRecognizer.None,
     private val clipboard: DesktopClipboard = DesktopClipboard(),
+    initialTools: DesktopToolState = DesktopToolState(),
 ) {
     val text = TextBoxEditing(session).also { it.measureText = measureText }
 
     /** The to-do being written or typed, see [selectTodo]. */
     val todo = TodoEditing(session).also { it.measureText = measureText }
 
-    private val _tools = MutableStateFlow(DesktopToolState())
+    private val _tools = MutableStateFlow(initialTools)
     val tools: StateFlow<DesktopToolState> = _tools.asStateFlow()
 
     private val _selection = MutableStateFlow<Set<StrokeId>>(emptySet())
@@ -77,6 +83,12 @@ class NoteController(
 
     /** Opens a file link in another program; set by the app. */
     var openFile: (FileLink) -> Unit = {}
+
+    /** Follows a link to a note; set by the app. */
+    var openNote: (LinkTarget) -> Unit = {}
+
+    /** Asks for a new name of an anchor (then [renameAnchor]); set by the app. */
+    var editAnchor: (Anchor) -> Unit = {}
 
     /** Copies files of pasted elements from the document they were copied in; set by the app. */
     var copyAssets: (from: DocumentId, to: DocumentId, assets: Set<com.stemaker.nibsync.model.Asset>) -> Unit = { _, _, _ -> }
@@ -108,6 +120,9 @@ class NoteController(
         selectTool(DesktopTool.ERASER)
         _tools.update { it.copy(eraserMode = mode) }
     }
+
+    /** The pen widths set in the settings. */
+    fun setPenWidths(widths: Map<BrushFamily, List<Float>>) = _tools.update { it.withWidths(widths) }
 
     fun selectEraserSize(mm: Float) = _tools.update { it.copy(eraserSizeMm = mm) }
 
@@ -345,6 +360,8 @@ class NoteController(
                 clickAt(x, y, pageWidthMm)
             }
             is FileLink -> if (double) openFile(hit) else selectByClick(hit.id)
+            is NoteLink -> if (double) openNote(hit.linkTarget) else selectByClick(hit.id)
+            is Anchor -> if (double) editAnchor(hit) else selectByClick(hit.id)
             is ImageElement -> selectByClick(hit.id)
             is TodoItem -> when {
                 _tools.value.tool == DesktopTool.LASSO -> selectByClick(hit.id)
@@ -489,6 +506,14 @@ class NoteController(
         }
         val added = session.replaceElements(listOf(element.id), listOf(draft))
         _selection.value = added.mapTo(LinkedHashSet()) { it.id }
+    }
+
+    /** Gives the anchor a new name; it stays the same anchor, so links to it keep working. */
+    fun renameAnchor(anchor: Anchor, name: String) {
+        val current = session.state.value.anchor(anchor.anchorId) ?: return
+        if (name.isBlank() || name == current.name) return
+        val added = session.replaceElements(listOf(current.id), listOf(AnchorDraft(current.x, current.y, name.trim(), current.anchorId)))
+        if (current.id in _selection.value) _selection.value = added.mapTo(LinkedHashSet()) { it.id }
     }
 
     /** Escape: stop editing or selecting. */

@@ -10,6 +10,7 @@ import androidx.compose.ui.draganddrop.DragData
 import androidx.compose.ui.draganddrop.dragData
 import androidx.compose.ui.unit.dp
 import com.stemaker.nibsync.model.MediaFiles
+import com.stemaker.nibsync.model.BrushFamily
 import com.stemaker.nibsync.model.PickedFile
 import com.stemaker.nibsync.shapes.GeometricShapeRecognizer
 import kotlinx.coroutines.launch
@@ -48,6 +49,13 @@ import androidx.compose.ui.input.key.type
 import androidx.compose.ui.graphics.Color
 import com.stemaker.nibsync.document.DocumentSession
 import com.stemaker.nibsync.library.NodeId
+import com.stemaker.nibsync.library.LibraryTree
+import com.stemaker.nibsync.library.LinkTargets
+import com.stemaker.nibsync.model.Anchor
+import com.stemaker.nibsync.model.AnchorDraft
+import com.stemaker.nibsync.model.LinkElement
+import com.stemaker.nibsync.model.LinkTarget
+import androidx.compose.runtime.rememberUpdatedState
 import com.stemaker.nibsync.library.OpenTodo
 import com.stemaker.nibsync.text.DocumentHeader
 import com.stemaker.nibsync.text.DocumentHeaderState
@@ -93,6 +101,7 @@ fun App(
             SideEffect { keys.blocked = showSettings || newBook || libraryAction != null }
             var showTitle by remember { mutableStateOf(settings.showTitle) }
             var showCreated by remember { mutableStateOf(settings.showCreated) }
+            var penWidths by remember { mutableStateOf(settings.pens.widths) }
             val appScope = rememberCoroutineScope()
             val accounts = sync?.accounts?.collectAsState()?.value.orEmpty()
             val bookAccounts = sync?.books?.map?.collectAsState()?.value.orEmpty()
@@ -114,6 +123,8 @@ fun App(
                     onShowTitle = { showTitle = it; settings.showTitle = it },
                     showCreated = showCreated,
                     onShowCreated = { showCreated = it; settings.showCreated = it },
+                    penWidths = penWidths,
+                    onPenWidths = { penWidths = it; settings.pens = settings.pens.copy(widths = it) },
                 )
                 SettingsDialog(sync, display, strings, openBrowser, cloudLogin = cloudLogin, onClose = { showSettings = false })
             }
@@ -140,6 +151,16 @@ fun App(
             var todoRefresh by remember { mutableIntStateOf(0) }
             var ticked by remember { mutableStateOf<TickedTodo?>(null) }
             var reveal by remember { mutableStateOf<Pair<DocumentId, Float>?>(null) }
+
+            /** Opens the document a link leads to, at its anchor; false if the document is not here. */
+            suspend fun followLink(target: LinkTarget): Boolean {
+                val node = NodeId(target.document.value)
+                val doc = if (tree[node] != null) runCatching { container.openSession(target.document).state.value }.getOrNull() else null
+                val y = LinkTargets.revealY(target, tree, doc) ?: return false
+                reveal = target.document to y
+                open(node)
+                return true
+            }
             val syncStatuses = sync?.statuses?.collectAsState()?.value
             LaunchedEffect(syncStatuses) {
                 // The sync may have changed stored documents.
@@ -255,7 +276,10 @@ fun App(
                                 showCreated = showCreated,
                                 onRename = node?.let { n -> { title: String -> appScope.launch { container.library.rename(n.id, title) }; Unit } },
                             )
-                            DocumentPane(container, id, strings, keys, sync, clipboard, header, reveal?.takeIf { it.first == id }?.second) { reveal = null }
+                            DocumentPane(
+                                container, id, strings, keys, sync, clipboard, header, settings, penWidths, tree, ::followLink,
+                                reveal?.takeIf { it.first == id }?.second,
+                            ) { reveal = null }
                         }
                     }
                 }
@@ -274,6 +298,12 @@ private fun DocumentPane(
     sync: SyncController?,
     clipboard: DesktopClipboard,
     header: HeaderInfo,
+    /** Where the last pen and its width are remembered. */
+    settings: Settings,
+    penWidths: Map<BrushFamily, List<Float>>,
+    tree: LibraryTree,
+    /** Follows a link to a note; false if that note is not here. */
+    onOpenNote: suspend (LinkTarget) -> Boolean,
     /** Scroll so this height (mm) is in view, e.g. a to-do opened from the list. */
     revealYMm: Float? = null,
     onRevealed: () -> Unit = {},
@@ -286,13 +316,31 @@ private fun DocumentPane(
     val textLayout = remember(id) { DesktopTextLayout() }
     val media = remember(id) { MediaCache(scope) { File(container.repository.assetPath(id, it.sha256).toString()) } }
     val painter = remember(id) { PagePainter(textLayout, media) }
+    painter.titleOf = { tree[NodeId(it.value)]?.title }
     // Pictures that arrive with the sync get drawn once they are there.
     LaunchedEffect(id) { container.assetsArrivedFlow.collect { if (id in it) media.retryMissing() } }
     var message by remember(id) { mutableStateOf<String?>(null) }
     val controller = remember(s) {
-        NoteController(s, textLayout::heightMm, GeometricShapeRecognizer(), clipboard).apply {
+        NoteController(s, textLayout::heightMm, GeometricShapeRecognizer(), clipboard, DesktopToolState.from(settings.pens)).apply {
             openFile = { link -> if (!DesktopMedia.open(container.repository, id, link)) message = strings.mediaNotSynced }
             copyAssets = { from, to, assets -> DesktopMedia.copyAssets(container.repository, from, to, assets) }
+        }
+    }
+    // Dialogs of the insert menu: naming an anchor (new: null element), choosing a link target.
+    var anchorDialog by remember(id) { mutableStateOf<AnchorDialog?>(null) }
+    var linkDialog by remember(id) { mutableStateOf(false) }
+    val dialogOpen = rememberUpdatedState(anchorDialog != null || linkDialog)
+    SideEffect {
+        controller.openNote = { target -> scope.launch { if (!onOpenNote(target)) message = strings.noteNotFound } }
+        controller.editAnchor = { anchorDialog = AnchorDialog(it) }
+    }
+    LaunchedEffect(controller, penWidths) { controller.setPenWidths(penWidths) }
+    // The pen and its width are remembered for the next document and app start.
+    LaunchedEffect(controller) {
+        controller.tools.collect { tools ->
+            val pens = settings.pens
+            val used = pens.used(tools.pen, tools.choice.sizeMm)
+            if (used != pens) settings.pens = used
         }
     }
     val editing by controller.text.editing.collectAsState()
@@ -348,7 +396,7 @@ private fun DocumentPane(
     }
     DisposableEffect(controller) {
         // While the title is typed, keys belong to it.
-        keys.handler = { event -> !titleEditing.value && handleKey(event, controller, ::pasteHere) }
+        keys.handler = { event -> !titleEditing.value && !dialogOpen.value && handleKey(event, controller, ::pasteHere) }
         onDispose { keys.handler = { false } }
     }
 
@@ -370,7 +418,41 @@ private fun DocumentPane(
             onPaste = ::pasteHere,
             onTodo = controller::selectTodo,
             onTodoInk = controller::selectTodoInk,
+            onInsertAnchor = { anchorDialog = AnchorDialog(null) },
+            onInsertNoteLink = { linkDialog = true },
         )
+        anchorDialog?.let { dialog ->
+            val anchor = dialog.anchor
+            LibraryNameDialog(
+                title = if (anchor == null) strings.newAnchor else strings.renameAnchor,
+                strings = strings,
+                placeholder = strings.anchorPlaceholder,
+                initial = anchor?.name ?: "",
+                onDismiss = { anchorDialog = null },
+            ) { name ->
+                anchorDialog = null
+                if (anchor != null) {
+                    controller.renameAnchor(anchor, name)
+                } else {
+                    val r = viewport.visibleDocumentRect
+                    val w = LinkElement.widthFor(name)
+                    val x = ((r.left + r.right) / 2 - w / 2).coerceIn(0f, maxOf(0f, viewport.pageWidthMm - w))
+                    controller.insert(listOf(AnchorDraft(x, maxOf(0f, (r.top + r.bottom) / 2), name)))
+                }
+            }
+        }
+        if (linkDialog) {
+            NoteLinkDialog(
+                strings = strings,
+                tree = tree,
+                anchorsOf = { doc -> LinkTargets.anchors(container.openSessionOrNull(doc)?.state?.value ?: container.repository.load(doc)) },
+                onDismiss = { linkDialog = false },
+            ) { target, anchor ->
+                linkDialog = false
+                val r = viewport.visibleDocumentRect
+                controller.insert(listOf(LinkTargets.draft(target, anchor, (r.left + r.right) / 2, (r.top + r.bottom) / 2, viewport.pageWidthMm)))
+            }
+        }
         NoteToolbar(
             strings = strings,
             canUndo = canUndo || editing != null || todoEdit != null,
@@ -460,6 +542,9 @@ private fun DocumentPane(
 }
 
 /** What the page shows about the document itself: title and creation time on top, path below. */
+/** The anchor name dialog: for a new anchor ([anchor] null) or renaming one. */
+private class AnchorDialog(val anchor: Anchor?)
+
 class HeaderInfo(
     val path: List<String>,
     /** The library title; null for a document outside the library (then the stored title). */

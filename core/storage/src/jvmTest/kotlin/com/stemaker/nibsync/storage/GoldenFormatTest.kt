@@ -53,6 +53,30 @@ class GoldenFormatTest {
         ),
     )
 
+    // Added in format version 1 later on (op type 8); older readers skip it.
+    private val linkOps = listOf(
+        com.stemaker.nibsync.document.DocumentOp.AddLinks(
+            com.stemaker.nibsync.document.OpStamp(9, DEV_A),
+            listOf(
+                com.stemaker.nibsync.model.Anchor(
+                    com.stemaker.nibsync.model.StrokeId("cccccccc-cccc-4ccc-8ccc-cccccccccccc"),
+                    com.stemaker.nibsync.model.StrokeId("dddddddd-dddd-4ddd-8ddd-dddddddddddd"),
+                    10f, 20.5f, "Kapitel 1", 1_700_000_000_000, DEV_A,
+                ),
+                com.stemaker.nibsync.model.NoteLink(
+                    com.stemaker.nibsync.model.StrokeId("eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee"),
+                    30f, 40f, com.stemaker.nibsync.model.DocumentId("ffffffff-ffff-4fff-8fff-ffffffffffff"),
+                    com.stemaker.nibsync.model.StrokeId("dddddddd-dddd-4ddd-8ddd-dddddddddddd"), "Projekt", "Kapitel 1", 1_700_000_000_001, DEV_A,
+                ),
+                com.stemaker.nibsync.model.NoteLink(
+                    com.stemaker.nibsync.model.StrokeId("12121212-1212-4212-8212-121212121212"),
+                    30f, 60f, com.stemaker.nibsync.model.DocumentId("ffffffff-ffff-4fff-8fff-ffffffffffff"),
+                    null, "Projekt", null, 1_700_000_000_002, DEV_A,
+                ),
+            ),
+        ),
+    )
+
     private val goldenDir = "src/jvmTest/resources/golden".toPath()
 
     private fun encodedLog(ops: List<com.stemaker.nibsync.document.DocumentOp> = this.ops): okio.ByteString {
@@ -86,6 +110,14 @@ class GoldenFormatTest {
         FileSystem.SYSTEM.write(goldenDir / "ops-v1-text.oplog") { write(encodedLog(textOps)) }
         FileSystem.SYSTEM.write(goldenDir / "ops-v1-files.oplog") { write(encodedLog(fileOps)) }
         FileSystem.SYSTEM.write(goldenDir / "ops-v1-todos.oplog") { write(encodedLog(todoOps)) }
+        FileSystem.SYSTEM.write(goldenDir / "ops-v1-links.oplog") { write(encodedLog(linkOps)) }
+    }
+
+    @Test
+    fun linkOpsAreStable() {
+        val golden = golden("ops-v1-links.oplog")
+        assertThat(OpLogCodec.read(Buffer().write(golden)).ops).isEqualTo(linkOps)
+        assertThat(encodedLog(linkOps).hex()).isEqualTo(golden.hex())
     }
 
     @Test

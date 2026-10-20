@@ -3,6 +3,7 @@ package com.stemaker.nibsync.document
 import com.stemaker.nibsync.model.BackgroundSpec
 import com.stemaker.nibsync.model.DeviceId
 import com.stemaker.nibsync.model.FileElement
+import com.stemaker.nibsync.model.LinkElement
 import com.stemaker.nibsync.model.Stroke
 import com.stemaker.nibsync.model.StrokeId
 import com.stemaker.nibsync.model.TextBox
@@ -33,6 +34,9 @@ sealed interface DocumentOp {
     data class AddFiles(override val stamp: OpStamp, val elements: List<FileElement>) : DocumentOp
 
     data class AddTodos(override val stamp: OpStamp, val items: List<TodoItem>) : DocumentOp
+
+    /** Adds anchors and links to notes. */
+    data class AddLinks(override val stamp: OpStamp, val elements: List<LinkElement>) : DocumentOp
 
     /**
      * Ticks a to-do off ([done]) or reopens it, by [TodoItem.taskId]. Concurrent changes of the

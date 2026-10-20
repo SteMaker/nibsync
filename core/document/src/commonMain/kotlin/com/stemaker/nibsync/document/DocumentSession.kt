@@ -19,6 +19,11 @@ import com.stemaker.nibsync.model.TextBoxDraft
 import com.stemaker.nibsync.model.TodoContent
 import com.stemaker.nibsync.model.TodoDraft
 import com.stemaker.nibsync.model.TodoItem
+import com.stemaker.nibsync.model.Anchor
+import com.stemaker.nibsync.model.AnchorDraft
+import com.stemaker.nibsync.model.LinkElement
+import com.stemaker.nibsync.model.NoteLink
+import com.stemaker.nibsync.model.NoteLinkDraft
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.channels.Channel
@@ -125,6 +130,26 @@ class DocumentSession(
             widthMm = Quantization.quantizePosition(draft.widthMm),
             heightMm = Quantization.quantizePosition(draft.heightMm),
             content = draft.content,
+            createdAtEpochMs = clock(),
+            author = device,
+        )
+        is AnchorDraft -> Anchor(
+            id = ids.newStrokeId(),
+            anchorId = draft.anchorId ?: ids.newStrokeId(),
+            x = Quantization.quantizePosition(draft.x),
+            y = Quantization.quantizePosition(draft.y),
+            name = draft.name,
+            createdAtEpochMs = clock(),
+            author = device,
+        )
+        is NoteLinkDraft -> NoteLink(
+            id = ids.newStrokeId(),
+            x = Quantization.quantizePosition(draft.x),
+            y = Quantization.quantizePosition(draft.y),
+            target = draft.target,
+            anchorId = draft.anchorId,
+            title = draft.title,
+            anchorName = draft.anchorName,
             createdAtEpochMs = clock(),
             author = device,
         )
@@ -243,7 +268,7 @@ class DocumentSession(
         pending.trySend(Pending.Write(op))
     }
 
-    /** One add op per element kind: strokes, text boxes, files, to-dos. */
+    /** One add op per element kind: strokes, text boxes, files, to-dos, anchors and links. */
     private fun emitAdd(elements: List<PageElement>) {
         val strokes = elements.filterIsInstance<Stroke>()
         val boxes = elements.filterIsInstance<TextBox>()
@@ -253,6 +278,8 @@ class DocumentSession(
         if (files.isNotEmpty()) emit { DocumentOp.AddFiles(it, files) }
         val todos = elements.filterIsInstance<TodoItem>()
         if (todos.isNotEmpty()) emit { DocumentOp.AddTodos(it, todos) }
+        val links = elements.filterIsInstance<LinkElement>()
+        if (links.isNotEmpty()) emit { DocumentOp.AddLinks(it, links) }
     }
 
     private fun applyEdit(edit: Edit, record: Boolean) {

@@ -7,6 +7,9 @@ import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.filled.AddPhotoAlternate
+import androidx.compose.material.icons.filled.AttachFile
+import androidx.compose.material.icons.filled.Flag
+import androidx.compose.material.icons.filled.Link
 import androidx.compose.material.icons.filled.BorderColor
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.ContentCut
@@ -17,6 +20,8 @@ import androidx.compose.material.icons.filled.HistoryEdu
 import androidx.compose.material.icons.filled.Keyboard
 import androidx.compose.material.icons.filled.TaskAlt
 import androidx.compose.material.icons.filled.TextFields
+import androidx.compose.material.icons.filled.TextDecrease
+import androidx.compose.material.icons.filled.TextIncrease
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.PointerEventType
@@ -102,6 +107,9 @@ object ToolbarTags {
     const val TODO_KEYBOARD = "todo-keyboard"
     const val TODO_INK = "todo-ink"
     const val INSERT = "insert"
+    const val INSERT_FILE = "insert-file"
+    const val INSERT_ANCHOR = "insert-anchor"
+    const val INSERT_NOTE_LINK = "insert-note-link"
     fun color(index: Int) = "color-$index"
     fun size(index: Int) = "size-$index"
     fun eraserSize(index: Int) = "eraser-size-$index"
@@ -131,6 +139,8 @@ class ToolbarTools(
     /** The to-do tool was chosen; [ink] if with a pen (graphics tablet), else typed. */
     val onTodo: (ink: Boolean) -> Unit = {},
     val onTodoInk: (Boolean) -> Unit = {},
+    val onInsertAnchor: () -> Unit = {},
+    val onInsertNoteLink: () -> Unit = {},
 )
 
 /** Tool bar above the page: undo/redo, and text formatting while a box is open. */
@@ -167,7 +177,9 @@ fun NoteToolbar(
                 Toggle(strings.italic, Icons.Filled.FormatItalic, editing.isItalic, TextTags.ITALIC, editing::toggleItalic)
                 Divider()
                 FontMenu(strings, editing)
+                Action(strings.textShrink, Icons.Filled.TextDecrease, editing.canShrink, TextTags.SHRINK, editing::shrink)
                 SizeMenu(strings, editing)
+                Action(strings.textGrow, Icons.Filled.TextIncrease, editing.canGrow, TextTags.GROW, editing::grow)
                 Divider()
                 Toggle(strings.bullets, Icons.AutoMirrored.Filled.FormatListBulleted, editing.isBulletList, TextTags.BULLETS, editing::toggleBulletList)
                 Toggle(strings.numbers, Icons.Filled.FormatListNumbered, editing.isNumberedList, TextTags.NUMBERS, editing::toggleNumberedList)
@@ -209,7 +221,36 @@ private fun ToolButtons(strings: Strings, t: ToolbarTools) {
     ) {
         Toggle(strings.toolTodo, Icons.Filled.TaskAlt, s.tool == DesktopTool.TODO, ToolbarTags.TODO) { t.onTodo(pressedWithPen) }
     }
-    Action(strings.insert, Icons.Filled.AddPhotoAlternate, true, ToolbarTags.INSERT, t.onInsert)
+    InsertMenu(strings, t)
+}
+
+/** Insert: a picture or file, an anchor, a link to a note. */
+@Composable
+private fun InsertMenu(strings: Strings, t: ToolbarTools) {
+    var open by remember { mutableStateOf(false) }
+    Box {
+        Action(strings.insert, Icons.Filled.AddPhotoAlternate, true, ToolbarTags.INSERT) { open = true }
+        DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
+            DropdownMenuItem(
+                text = { Text(strings.insertFile) },
+                leadingIcon = { Icon(Icons.Filled.AttachFile, contentDescription = null) },
+                onClick = { open = false; t.onInsert() },
+                modifier = Modifier.testTag(ToolbarTags.INSERT_FILE),
+            )
+            DropdownMenuItem(
+                text = { Text(strings.insertAnchor) },
+                leadingIcon = { Icon(Icons.Filled.Flag, contentDescription = null) },
+                onClick = { open = false; t.onInsertAnchor() },
+                modifier = Modifier.testTag(ToolbarTags.INSERT_ANCHOR),
+            )
+            DropdownMenuItem(
+                text = { Text(strings.insertNoteLink) },
+                leadingIcon = { Icon(Icons.Filled.Link, contentDescription = null) },
+                onClick = { open = false; t.onInsertNoteLink() },
+                modifier = Modifier.testTag(ToolbarTags.INSERT_NOTE_LINK),
+            )
+        }
+    }
 }
 
 /** Actions of the active tool in the tool bar (the lasso's); colours and widths are on the right. */
@@ -242,7 +283,7 @@ fun ToolSettingsBar(strings: Strings, t: ToolbarTools) {
                         Swatch(argb, s.choice.colorArgb == argb, strings.color(i + 1), ToolbarTags.color(i)) { t.onColor(argb) }
                     }
                     HorizontalDivider(Modifier.width(30.dp).padding(vertical = 4.dp))
-                    DesktopPalette.sizes(s.pen).forEachIndexed { i, mm ->
+                    s.sizes(s.pen).forEachIndexed { i, mm ->
                         Dot((8 + i * 5).dp, s.choice.sizeMm == mm, strings.width(mm), ToolbarTags.size(i)) { t.onSize(mm) }
                     }
                 }
@@ -260,7 +301,7 @@ fun ToolSettingsBar(strings: Strings, t: ToolbarTools) {
                             Swatch(argb, s.choice.colorArgb == argb, strings.color(i + 1), ToolbarTags.color(i)) { t.onColor(argb) }
                         }
                         HorizontalDivider(Modifier.width(30.dp).padding(vertical = 4.dp))
-                        DesktopPalette.sizes(s.pen).forEachIndexed { i, mm ->
+                        s.sizes(s.pen).forEachIndexed { i, mm ->
                             Dot((8 + i * 5).dp, s.choice.sizeMm == mm, strings.width(mm), ToolbarTags.size(i)) { t.onSize(mm) }
                         }
                     }

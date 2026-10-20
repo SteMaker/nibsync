@@ -21,12 +21,11 @@ import javax.imageio.ImageIO
 
 /** Reading, sizing and opening inserted files on the PC; placement is [MediaFiles]. */
 object DesktopMedia {
-    /** Reads [file] if it is a supported type; null otherwise (or too large). */
+    /** Reads [file] (pictures are shown, other files become links); null if missing or too large. */
     fun read(file: File): PickedFile? {
         if (!file.isFile || file.length() > MediaFiles.MAX_BYTES) return null
-        val bytes = file.readBytes()
-        val type = MediaFiles.detectType(bytes, null, file.name) ?: return null
-        return PickedFile(bytes, type, file.name)
+        val bytes = runCatching { file.readBytes() }.getOrNull() ?: return null
+        return PickedFile(bytes, MediaFiles.fileType(bytes, null, file.name), file.name)
     }
 
     /** Natural size on paper, or null if the picture cannot be read. */
@@ -81,7 +80,7 @@ object DesktopMedia {
         if (!source.exists()) return false
         // A copy under the file's real name, so the viewer shows a sensible title.
         val dir = File(System.getProperty("java.io.tmpdir"), "nibsync-open").apply { mkdirs() }
-        val name = link.fileName.replace(Regex("[\\\\/:*?\"<>|]"), "_").ifBlank { "file.pdf" }
+        val name = link.fileName.replace(Regex("[\\\\/:*?\"<>|]"), "_").ifBlank { "file" }
         val copy = File(dir, name)
         source.copyTo(copy, overwrite = true)
         runCatching {
@@ -105,14 +104,11 @@ object DesktopMedia {
         }
     }
 
-    /** Lets the user pick a picture or PDF with the system file dialog. */
+    /** Lets the user pick a picture or any other file with the system file dialog. */
     fun chooseFile(parent: java.awt.Frame?, title: String): File? {
         val dialog = java.awt.FileDialog(parent, title, java.awt.FileDialog.LOAD)
-        dialog.setFilenameFilter { _, name -> name.substringAfterLast('.').lowercase() in EXTENSIONS }
         dialog.isVisible = true
         val name = dialog.file ?: return null
         return File(dialog.directory, name)
     }
-
-    private val EXTENSIONS = setOf("png", "jpg", "jpeg", "svg", "pdf")
 }

@@ -1,8 +1,10 @@
 package com.stemaker.nibsync.document
 
+import com.stemaker.nibsync.model.Anchor
 import com.stemaker.nibsync.model.BackgroundSpec
 import com.stemaker.nibsync.model.DocumentMeta
 import com.stemaker.nibsync.model.FileElement
+import com.stemaker.nibsync.model.LinkElement
 import com.stemaker.nibsync.model.PageElement
 import com.stemaker.nibsync.model.Stroke
 import com.stemaker.nibsync.model.StrokeId
@@ -56,6 +58,15 @@ class DocumentState private constructor(
     /** Visible to-dos, back to front. */
     val todos: List<TodoItem> by lazy { elements.filterIsInstance<TodoItem>() }
 
+    /** Visible anchors and links to notes, back to front. */
+    val links: List<LinkElement> by lazy { elements.filterIsInstance<LinkElement>() }
+
+    /** Visible anchors, back to front. */
+    val anchors: List<Anchor> by lazy { elements.filterIsInstance<Anchor>() }
+
+    /** The anchor [anchorId] (if it was moved, its current element). */
+    fun anchor(anchorId: StrokeId): Anchor? = anchors.firstOrNull { it.anchorId == anchorId }
+
     /** Whether the task has been ticked off (open unless a [DocumentOp.SetTodoDone] says so). */
     fun isDone(taskId: StrokeId): Boolean = todoDone[taskId]?.second ?: false
 
@@ -85,6 +96,7 @@ class DocumentState private constructor(
             is DocumentOp.AddTextBoxes -> add(op.stamp, op.boxes, newClock)
             is DocumentOp.AddFiles -> add(op.stamp, op.elements, newClock)
             is DocumentOp.AddTodos -> add(op.stamp, op.items, newClock)
+            is DocumentOp.AddLinks -> add(op.stamp, op.elements, newClock)
             is DocumentOp.RemoveStrokes ->
                 DocumentState(meta, entries - op.ids, tombstones + op.ids, applied + op.stamp, newClock, backgroundSetAt, background, todoDone)
             is DocumentOp.SetBackground ->
