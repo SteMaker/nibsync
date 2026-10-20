@@ -25,6 +25,7 @@ import com.stemaker.nibsync.model.Asset
 import com.stemaker.nibsync.model.DocumentId
 import com.stemaker.nibsync.model.LinkElement
 import com.stemaker.nibsync.model.NoteLink
+import com.stemaker.nibsync.model.selectedBounds
 import com.stemaker.nibsync.model.BackgroundPattern
 import com.stemaker.nibsync.model.FileLink
 import com.stemaker.nibsync.model.ImageElement
@@ -85,14 +86,14 @@ class PagePainter(private val text: DesktopTextLayout, private val media: MediaC
             for (element in elements) {
                 val selected = element.id in overlay.selection
                 when {
-                    selected && gesture is GesturePreview.Moving -> translate(gesture.dx, gesture.dy) { drawElement(this, element, hiddenTextBox, doc) }
+                    selected && gesture is GesturePreview.Moving -> translate(gesture.dx, gesture.dy) { drawElement(this, element, hiddenTextBox, doc, selected) }
                     selected && gesture is GesturePreview.Resizing && element is com.stemaker.nibsync.model.FileElement -> withTransform({
                         translate(element.x, element.y)
                         scale(gesture.factor, gesture.factor, pivot = Offset.Zero)
                         translate(-element.x, -element.y)
-                    }) { drawElement(this, element, hiddenTextBox, doc) }
+                    }) { drawElement(this, element, hiddenTextBox, doc, selected) }
                     element is TodoItem && element.id == overlay.todo?.id -> Unit
-                    element.bounds.intersects(visible) -> drawElement(this, element, hiddenTextBox, doc)
+                    (if (selected) element.selectedBounds else element.bounds).intersects(visible) -> drawElement(this, element, hiddenTextBox, doc, selected)
                 }
             }
             overlay.todo?.let { drawTodo(this, it, doc.isDone(it.taskId), content = !overlay.todoInEditor, editing = true) }
@@ -101,23 +102,24 @@ class PagePainter(private val text: DesktopTextLayout, private val media: MediaC
         drawOverlay(this, viewport, overlay)
     }
 
-    private fun drawElement(scope: DrawScope, element: com.stemaker.nibsync.model.PageElement, hiddenTextBox: Any?, doc: DocumentState) {
+    private fun drawElement(scope: DrawScope, element: com.stemaker.nibsync.model.PageElement, hiddenTextBox: Any?, doc: DocumentState, selected: Boolean) {
         when (element) {
             is Stroke -> StrokePainter.draw(scope, element)
             is TextBox -> if (element.id != hiddenTextBox) drawTextBox(scope, element)
             is ImageElement -> drawImage(scope, element)
             is FileLink -> drawLink(scope, element)
             is TodoItem -> drawTodo(scope, element, doc.isDone(element.taskId))
-            is Anchor -> drawAnchor(scope, element)
+            is Anchor -> drawAnchor(scope, element, selected)
             is NoteLink -> drawNoteLink(scope, element)
         }
     }
 
-    /** An anchor: a small flag and its name. */
-    private fun drawAnchor(scope: DrawScope, anchor: Anchor) = with(scope) {
+    /** An anchor: a small flag, and its name while [selected]. */
+    private fun drawAnchor(scope: DrawScope, anchor: Anchor, selected: Boolean) = with(scope) {
         val h = anchor.heightMm
         val r = CornerRadius(h * 0.2f)
-        drawRoundRect(ANCHOR_FILL, Offset(anchor.x, anchor.y), Size(anchor.widthMm, h), r)
+        val shown = if (selected) anchor.labelBounds else anchor.bounds
+        drawRoundRect(ANCHOR_FILL, Offset(shown.left, shown.top), Size(shown.width, h), r)
         val pole = anchor.x + h * 0.3f
         drawLine(ANCHOR, Offset(pole, anchor.y + h * 0.15f), Offset(pole, anchor.y + h * 0.85f), strokeWidth = h * 0.08f)
         val flag = androidx.compose.ui.graphics.Path().apply {
@@ -127,7 +129,7 @@ class PagePainter(private val text: DesktopTextLayout, private val media: MediaC
             close()
         }
         drawPath(flag, ANCHOR)
-        drawLabel(this, anchor.name, ANCHOR, anchor.x + h, anchor.y, anchor.widthMm - h - h * 0.15f, h)
+        if (selected) drawLabel(this, anchor.name, ANCHOR, anchor.x + h, anchor.y, shown.width - h - h * 0.15f, h)
     }
 
     /** A link to a note: a chip with an arrow badge and the document (and anchor) name. */
@@ -157,7 +159,7 @@ class PagePainter(private val text: DesktopTextLayout, private val media: MediaC
         val k = DesktopTextLayout.LAYOUT_PX_PER_MM
         val measured = labels.measure(
             label,
-            TextStyle(color = color, fontSize = (LinkElement.FONT_MM * k).sp),
+            TextStyle(color = color, fontSize = (LinkElement.fontFor(h) * k).sp),
             overflow = TextOverflow.Ellipsis,
             maxLines = 1,
             constraints = Constraints(maxWidth = (width * k).roundToInt().coerceAtLeast(1)),

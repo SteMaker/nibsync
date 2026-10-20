@@ -24,6 +24,7 @@ import com.stemaker.nibsync.model.ImageDraft
 import com.stemaker.nibsync.model.ImageElement
 import com.stemaker.nibsync.model.assets
 import com.stemaker.nibsync.model.PageElement
+import com.stemaker.nibsync.model.selectedBounds
 import com.stemaker.nibsync.model.Quantization
 import com.stemaker.nibsync.model.RichText
 import com.stemaker.nibsync.model.TextBox
@@ -362,7 +363,10 @@ class CanvasViewModel(
 
     /** The topmost text box, picture or file link at ([x], [y]) mm, or null. */
     fun tappableAt(x: Float, y: Float): PageElement? =
-        session.state.value.elements.lastOrNull { it !is Stroke && it.bounds.contains(x, y) }
+        session.state.value.elements.lastOrNull { it !is Stroke && it.shownBounds.contains(x, y) }
+
+    /** Bounds as drawn: a selected anchor shows its name too. */
+    private val PageElement.shownBounds get() = if (id in _selection.value) selectedBounds else bounds
 
     /**
      * A tap on the page at ([x], [y]) mm (pen tap on an element, text tool, lasso or finger).

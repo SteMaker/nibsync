@@ -13,7 +13,7 @@ import com.stemaker.nibsync.model.LinkElement
 import com.stemaker.nibsync.model.NoteLink
 
 /**
- * Draws anchors (a flag and the name) and links to notes (a chip with an arrow and the target's
+ * Draws anchors (a flag, and the name while selected) and links to notes (a chip with an arrow and the target's
  * name) in document coordinates (mm), like the PC's PagePainter.
  */
 class LinkRenderer {
@@ -38,22 +38,23 @@ class LinkRenderer {
         style = Paint.Style.STROKE
         strokeCap = Paint.Cap.ROUND
     }
-    private val label = TextPaint(Paint.ANTI_ALIAS_FLAG).apply { textSize = LinkElement.FONT_MM }
+    private val label = TextPaint(Paint.ANTI_ALIAS_FLAG)
     private val rect = RectF()
     private val path = Path()
 
     /** [pxPerMm] is the zoom; it is not needed for vector drawing but kept like MediaRenderer's. */
     @Suppress("UNUSED_PARAMETER")
-    fun draw(canvas: Canvas, element: LinkElement, pxPerMm: Float) {
+    fun draw(canvas: Canvas, element: LinkElement, pxPerMm: Float, selected: Boolean = false) {
         when (element) {
-            is Anchor -> drawAnchor(canvas, element)
+            is Anchor -> drawAnchor(canvas, element, selected)
             is NoteLink -> drawLink(canvas, element)
         }
     }
 
-    private fun drawAnchor(canvas: Canvas, a: Anchor) {
+    private fun drawAnchor(canvas: Canvas, a: Anchor, selected: Boolean) {
         val h = a.heightMm
-        rect.set(a.x, a.y, a.x + a.widthMm, a.y + h)
+        val shown = if (selected) a.labelBounds else a.bounds
+        rect.set(shown.left, shown.top, shown.right, shown.bottom)
         canvas.drawRoundRect(rect, h * 0.2f, h * 0.2f, anchorFill)
         val x = a.x + h * 0.3f
         pole.strokeWidth = h * 0.08f
@@ -64,7 +65,7 @@ class LinkRenderer {
         path.lineTo(x, a.y + h * 0.5f)
         path.close()
         canvas.drawPath(path, anchorPaint)
-        drawLabel(canvas, a.name, ANCHOR, a.x + h, a.y, a.widthMm - h - h * 0.15f, h)
+        if (selected) drawLabel(canvas, a.name, ANCHOR, a.x + h, a.y, shown.width - h - h * 0.15f, h)
     }
 
     private fun drawLink(canvas: Canvas, link: NoteLink) {
@@ -88,6 +89,7 @@ class LinkRenderer {
     private fun drawLabel(canvas: Canvas, text: String, color: Int, x: Float, y: Float, width: Float, h: Float) {
         if (width <= 0f) return
         label.color = color
+        label.textSize = LinkElement.fontFor(h)
         val shown = TextUtils.ellipsize(text, label, width, TextUtils.TruncateAt.END).toString()
         canvas.drawText(shown, x, y + h / 2 + label.textSize * 0.35f, label)
     }

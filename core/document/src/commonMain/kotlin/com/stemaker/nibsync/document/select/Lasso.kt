@@ -2,6 +2,7 @@ package com.stemaker.nibsync.document.select
 
 import com.stemaker.nibsync.model.ElementDraft
 import com.stemaker.nibsync.model.PageElement
+import com.stemaker.nibsync.model.selectedBounds
 import com.stemaker.nibsync.model.Stroke
 import com.stemaker.nibsync.model.StrokeDraft
 import com.stemaker.nibsync.model.StrokeId
@@ -90,11 +91,13 @@ object Lasso {
 }
 
 /** Union of the bounds of [strokes], or null if there are none. */
-fun boundsOf(strokes: Collection<PageElement>): Rect? {
-    if (strokes.isEmpty()) return null
-    return strokes.map { it.bounds }.reduce { a, b ->
-        Rect(minOf(a.left, b.left), minOf(a.top, b.top), maxOf(a.right, b.right), maxOf(a.bottom, b.bottom))
-    }
+fun boundsOf(strokes: Collection<PageElement>): Rect? = union(strokes.map { it.bounds })
+
+/** Union of the [selectedBounds] of the selected [elements] (anchors show their name then). */
+fun selectionBoundsOf(elements: Collection<PageElement>): Rect? = union(elements.map { it.selectedBounds })
+
+private fun union(rects: List<Rect>): Rect? = rects.reduceOrNull { a, b ->
+    Rect(minOf(a.left, b.left), minOf(a.top, b.top), maxOf(a.right, b.right), maxOf(a.bottom, b.bottom))
 }
 
 /** The stroke moved by ([dx], [dy]) mm, as a draft for a new stroke. */

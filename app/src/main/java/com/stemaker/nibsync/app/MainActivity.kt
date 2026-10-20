@@ -80,7 +80,6 @@ import com.stemaker.nibsync.library.ui.LibraryViewModel
 import com.stemaker.nibsync.model.DocumentId
 import android.widget.Toast
 import com.stemaker.nibsync.model.LinkTarget
-import com.stemaker.nibsync.model.LinkElement
 import com.stemaker.nibsync.model.AnchorDraft
 import com.stemaker.nibsync.model.Anchor
 import com.stemaker.nibsync.library.LinkTargets
@@ -468,7 +467,7 @@ class MainActivity : ComponentActivity() {
                         val v = canvasView?.viewport?.takeIf { it.hasSize }
                         val r = v?.visibleDocumentRect
                         val pageWidth = v?.pageWidthMm ?: current.state.value.meta.format.widthMm
-                        val w = LinkElement.widthFor(name)
+                        val w = Anchor.HEIGHT_MM
                         val cx = r?.let { (it.left + it.right) / 2 } ?: (pageWidth / 2)
                         val x = (cx - w / 2).coerceIn(0f, maxOf(0f, pageWidth - w))
                         vm.insert(listOf(AnchorDraft(x, maxOf(0f, r?.let { (it.top + it.bottom) / 2 } ?: 50f), name)))

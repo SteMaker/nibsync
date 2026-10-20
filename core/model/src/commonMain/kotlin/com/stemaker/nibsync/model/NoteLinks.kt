@@ -15,20 +15,23 @@ sealed interface LinkElement : PageElement {
     companion object {
         const val HEIGHT_MM = 8f
 
-        /** Label size: text height in mm, and an average character width used to size the element. */
-        const val FONT_MM = HEIGHT_MM * 0.45f
-        private const val CHAR_MM = FONT_MM * 0.56f
+        /** Label text height of an element [heightMm] high. */
+        fun fontFor(heightMm: Float): Float = heightMm * 0.45f
         const val MAX_WIDTH_MM = 120f
 
-        /** Width for an icon and [label]: the label is drawn shortened if the real font is wider. */
-        fun widthFor(label: String): Float = minOf(MAX_WIDTH_MM, HEIGHT_MM + 2f + label.length * CHAR_MM)
+        /**
+         * Width for an icon and [label] in a row [heightMm] high, from an average character
+         * width; the label is drawn shortened if the real font is wider.
+         */
+        fun widthFor(label: String, heightMm: Float = HEIGHT_MM): Float =
+            minOf(MAX_WIDTH_MM, heightMm * 1.25f + label.length * fontFor(heightMm) * 0.56f)
     }
 }
 
 /**
- * A named place in a document that [NoteLink]s can lead to; shown as a small flag with its
- * name. [anchorId] stays the same when the anchor is moved (remove + add with a fresh [id]),
- * so links keep working; a copy is a new anchor.
+ * A named place in a document that [NoteLink]s can lead to; shown as a small flag, with its
+ * name beside it while selected ([labelBounds]). [anchorId] stays the same when the anchor is
+ * moved (remove + add with a fresh [id]), so links keep working; a copy is a new anchor.
  */
 data class Anchor(
     override val id: StrokeId,
@@ -39,9 +42,20 @@ data class Anchor(
     override val createdAtEpochMs: Long,
     override val author: DeviceId,
 ) : LinkElement {
-    override val widthMm: Float get() = LinkElement.widthFor(name)
-    override val heightMm: Float get() = LinkElement.HEIGHT_MM
+    override val widthMm: Float get() = HEIGHT_MM
+    override val heightMm: Float get() = HEIGHT_MM
+
+    /** The flag and the name, as shown while the anchor is selected. */
+    val labelBounds: Rect get() = Rect(x, y, x + maxOf(HEIGHT_MM, LinkElement.widthFor(name, HEIGHT_MM)), y + HEIGHT_MM)
+
+    companion object {
+        /** Smaller than a link: an anchor is only a marker. */
+        const val HEIGHT_MM = LinkElement.HEIGHT_MM * 0.7f
+    }
 }
+
+/** Where [this] is drawn when selected: an anchor shows its name then, so it is wider. */
+val PageElement.selectedBounds: Rect get() = if (this is Anchor) labelBounds else bounds
 
 /**
  * A link to the document [target], or to the anchor [anchorId] in it. [title] and [anchorName]

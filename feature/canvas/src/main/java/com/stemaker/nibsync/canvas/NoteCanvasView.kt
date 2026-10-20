@@ -28,7 +28,7 @@ import com.stemaker.nibsync.ink.toMatrix
 import com.stemaker.nibsync.document.erase.EraseGesture
 import com.stemaker.nibsync.document.erase.EraseResult
 import com.stemaker.nibsync.document.erase.EraserMode
-import com.stemaker.nibsync.document.select.boundsOf
+import com.stemaker.nibsync.document.select.selectionBoundsOf
 import com.stemaker.nibsync.model.BackgroundPattern
 import com.stemaker.nibsync.model.BackgroundSpec
 import com.stemaker.nibsync.model.BrushFamily
@@ -42,6 +42,7 @@ import com.stemaker.nibsync.model.TextBox
 import com.stemaker.nibsync.model.TodoItem
 import com.stemaker.nibsync.media.MediaRenderer
 import com.stemaker.nibsync.model.LinkElement
+import com.stemaker.nibsync.model.selectedBounds
 import com.stemaker.nibsync.text.TextBoxRenderer
 import com.stemaker.nibsync.model.InputTool
 import com.stemaker.nibsync.model.PageFormat
@@ -543,9 +544,9 @@ class NoteCanvasView(context: Context) : FrameLayout(context) {
     private fun drawLinks(canvas: Canvas, visible: com.stemaker.nibsync.model.geometry.Rect, moving: Boolean) {
         for (link in links) {
             if (moving && link.id in selection) {
-                canvas.withTranslation(moveDx, moveDy) { linkRenderer.draw(this, link, viewport.scale) }
-            } else if (link.bounds.intersects(visible)) {
-                linkRenderer.draw(canvas, link, viewport.scale)
+                canvas.withTranslation(moveDx, moveDy) { linkRenderer.draw(this, link, viewport.scale, selected = true) }
+            } else if (link.selectedBounds.intersects(visible)) {
+                linkRenderer.draw(canvas, link, viewport.scale, selected = link.id in selection)
             }
         }
     }
@@ -841,7 +842,7 @@ class NoteCanvasView(context: Context) : FrameLayout(context) {
             todos.filter { it.id in selection } + links.filter { it.id in selection } + files.filter { it.id in selection }.map { f ->
                 if (resizePointerId != NO_POINTER) scaledForPreview(f) else f
             }
-        val b = boundsOf(selected) ?: return null
+        val b = selectionBoundsOf(selected) ?: return null
         return com.stemaker.nibsync.model.geometry.Rect(b.left - SELECTION_PADDING_MM, b.top - SELECTION_PADDING_MM, b.right + SELECTION_PADDING_MM, b.bottom + SELECTION_PADDING_MM)
     }
 
@@ -1001,7 +1002,7 @@ class NoteCanvasView(context: Context) : FrameLayout(context) {
             moveDy = 0f
             val tolerance = TEXT_TAP_TOLERANCE_DP * resources.displayMetrics.density / viewport.scale
             val tapped = commit && event != null && event.eventTime - moveDownTime <= TAP_MAX_MS &&
-                abs(dx) <= tolerance && abs(dy) <= tolerance && links.any { it.bounds.contains(moveStartX, moveStartY) }
+                abs(dx) <= tolerance && abs(dy) <= tolerance && links.any { it.id in selection && it.selectedBounds.contains(moveStartX, moveStartY) }
             if (tapped) {
                 // A short tap on a selected link or anchor follows or renames it.
                 onPageTapped(moveStartX, moveStartY)

@@ -53,7 +53,6 @@ import com.stemaker.nibsync.library.LibraryTree
 import com.stemaker.nibsync.library.LinkTargets
 import com.stemaker.nibsync.model.Anchor
 import com.stemaker.nibsync.model.AnchorDraft
-import com.stemaker.nibsync.model.LinkElement
 import com.stemaker.nibsync.model.LinkTarget
 import androidx.compose.runtime.rememberUpdatedState
 import com.stemaker.nibsync.library.OpenTodo
@@ -435,7 +434,7 @@ private fun DocumentPane(
                     controller.renameAnchor(anchor, name)
                 } else {
                     val r = viewport.visibleDocumentRect
-                    val w = LinkElement.widthFor(name)
+                    val w = Anchor.HEIGHT_MM
                     val x = ((r.left + r.right) / 2 - w / 2).coerceIn(0f, maxOf(0f, viewport.pageWidthMm - w))
                     controller.insert(listOf(AnchorDraft(x, maxOf(0f, (r.top + r.bottom) / 2), name)))
                 }

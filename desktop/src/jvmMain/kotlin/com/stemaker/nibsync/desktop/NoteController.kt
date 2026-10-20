@@ -5,7 +5,7 @@ import com.stemaker.nibsync.document.erase.EraseGesture
 import com.stemaker.nibsync.document.erase.EraserMode
 import com.stemaker.nibsync.document.select.ClipContent
 import com.stemaker.nibsync.document.select.Lasso
-import com.stemaker.nibsync.document.select.boundsOf
+import com.stemaker.nibsync.document.select.selectionBoundsOf
 import com.stemaker.nibsync.document.select.translated
 import com.stemaker.nibsync.model.BrushFamily
 import com.stemaker.nibsync.model.DocumentId
@@ -22,6 +22,7 @@ import com.stemaker.nibsync.model.ImageDraft
 import com.stemaker.nibsync.model.ImageElement
 import com.stemaker.nibsync.model.InputTool
 import com.stemaker.nibsync.model.PageElement
+import com.stemaker.nibsync.model.selectedBounds
 import com.stemaker.nibsync.model.RichText
 import com.stemaker.nibsync.model.ShapeRecognizer
 import com.stemaker.nibsync.model.Stroke
@@ -166,7 +167,7 @@ class NoteController(
 
     /** The topmost text box, picture, file link or to-do at ([x], [y]) mm, or null. */
     fun elementAt(x: Float, y: Float): PageElement? =
-        session.state.value.elements.lastOrNull { it !is Stroke && it.bounds.contains(x, y) }
+        session.state.value.elements.lastOrNull { it !is Stroke && (if (it.id in _selection.value) it.selectedBounds else it.bounds).contains(x, y) }
 
     // ---- pointer gestures ------------------------------------------------------------------
 
@@ -438,7 +439,7 @@ class NoteController(
 
     /** The frame around the selection, in mm. */
     fun selectionFrame(): Rect? {
-        val b = boundsOf(selected()) ?: return null
+        val b = selectionBoundsOf(selected()) ?: return null
         return Rect(b.left - SELECTION_PADDING_MM, b.top - SELECTION_PADDING_MM, b.right + SELECTION_PADDING_MM, b.bottom + SELECTION_PADDING_MM)
     }
 

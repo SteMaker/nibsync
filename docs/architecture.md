@@ -173,7 +173,7 @@ Pictures start at their 150 dpi print size, at most 80 % of the page width, cent
 
 ## Anchors and links to notes
 
-An `Anchor` is a named place in a document (a small flag with its name); a `NoteLink` leads to a
+An `Anchor` is a named place in a document (a small flag, 30 % smaller than a link; its name shows only while it is selected, `labelBounds`); a `NoteLink` leads to a
 document or to an anchor in it (a chip with an arrow and "Title › Anchor"). Both are
 `LinkElement`s on the `TEXT` layer, added with `DocumentOp.AddLinks` (record type 8, list
 `"n"` of `LinkRecord`s; older versions skip it). Like a to-do's `taskId`, an anchor's `anchorId`

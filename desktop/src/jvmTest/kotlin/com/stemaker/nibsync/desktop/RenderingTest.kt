@@ -8,7 +8,13 @@ import androidx.compose.ui.graphics.toPixelMap
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.LayoutDirection
 import com.google.common.truth.Truth.assertThat
+import androidx.compose.ui.graphics.asSkiaBitmap
+import com.stemaker.nibsync.document.DocumentOp
+import com.stemaker.nibsync.document.DocumentState
+import com.stemaker.nibsync.document.OpStamp
+import com.stemaker.nibsync.model.Anchor
 import com.stemaker.nibsync.model.BrushFamily
+import com.stemaker.nibsync.model.StrokeId
 import com.stemaker.nibsync.model.InputTool
 import com.stemaker.nibsync.model.StrokePoint
 import kotlinx.coroutines.test.TestScope
@@ -18,13 +24,39 @@ import java.io.File
 class RenderingTest {
     private val viewport = initialViewport(210f, 297f).withViewSize(1050f, 800f) // 5 px/mm, page fills the width
 
-    private fun render(): ImageBitmap {
+    private fun render(doc: DocumentState = sampleDocument(), overlay: PagePainter.Overlay = PagePainter.Overlay()): ImageBitmap {
         val image = ImageBitmap(1050, 800)
         val painter = PagePainter(DesktopTextLayout(), MediaCache(TestScope()) { null as File? })
         CanvasDrawScope().draw(Density(1f), LayoutDirection.Ltr, Canvas(image), Size(1050f, 800f)) {
-            painter.draw(this, sampleDocument(), viewport)
+            painter.draw(this, doc, viewport, overlay = overlay)
         }
         return image
+    }
+
+    @Test
+    fun anAnchorShowsItsNameOnlyWhileSelected() {
+        val anchor = Anchor(StrokeId("a"), StrokeId("anchor"), 40f, 100f, "Besprechung mit Team", 0, DEV)
+        val doc = sampleDocument().apply(DocumentOp.AddLinks(OpStamp(3, DEV), listOf(anchor)))
+        val t = viewport.documentToView
+        // Teal pixels where the name goes, right of the flag.
+        fun nameInk(image: ImageBitmap): Int {
+            val pixels = image.toPixelMap()
+            var n = 0
+            for (x in t.mapX(anchor.x + Anchor.HEIGHT_MM * 1.2f).toInt() until t.mapX(anchor.labelBounds.right).toInt()) {
+                for (y in t.mapY(anchor.y).toInt() until t.mapY(anchor.y + Anchor.HEIGHT_MM).toInt()) {
+                    val p = pixels[x, y]
+                    if (p.green > p.red + 0.2f && p.red < 0.4f) n++
+                }
+            }
+            return n
+        }
+        val plain = render(doc)
+        val selected = render(doc, PagePainter.Overlay(selection = setOf(anchor.id)))
+        System.getenv("NIBSYNC_ANCHOR_PNG")?.let { out ->
+            File(out).writeBytes(org.jetbrains.skia.Image.makeFromBitmap(selected.asSkiaBitmap()).encodeToData()!!.bytes)
+        }
+        assertThat(nameInk(plain)).isEqualTo(0)
+        assertThat(nameInk(selected)).isGreaterThan(30)
     }
 
     @Test
