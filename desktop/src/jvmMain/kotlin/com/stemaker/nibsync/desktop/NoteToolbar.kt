@@ -82,12 +82,15 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.PopupProperties
 import com.stemaker.nibsync.model.RichText
 import com.stemaker.nibsync.model.TextFont
 import com.stemaker.nibsync.text.TextEditController
 import com.stemaker.nibsync.text.TextFonts
+import com.stemaker.nibsync.text.TextPreset
 import com.stemaker.nibsync.text.TextTags
 
 /**
@@ -172,6 +175,8 @@ fun NoteToolbar(
                 ToolOptions(strings, tools)
             }
             if (editing != null) {
+                Divider()
+                PresetMenu(strings, editing)
                 Divider()
                 Toggle(strings.bold, Icons.Filled.FormatBold, editing.isBold, TextTags.BOLD, editing::toggleBold)
                 Toggle(strings.italic, Icons.Filled.FormatItalic, editing.isItalic, TextTags.ITALIC, editing::toggleItalic)
@@ -359,6 +364,33 @@ private fun FontMenu(strings: Strings, controller: TextEditController) {
                     text = { Text(strings.font(font), fontFamily = TextFonts.family(font)) },
                     onClick = { open = false; controller.setFont(font) },
                     modifier = NotFocusable.testTag(TextTags.font(font)),
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun PresetMenu(strings: Strings, controller: TextEditController) {
+    var open by remember { mutableStateOf(false) }
+    Box {
+        OutlinedButton(onClick = { open = true }, modifier = NotFocusable.testTag(TextTags.PRESET)) {
+            Text(controller.preset?.let(strings::preset) ?: strings.textStyle)
+        }
+        DropdownMenu(expanded = open, onDismissRequest = { open = false }, properties = PopupProperties(focusable = false)) {
+            for (preset in TextPreset.entries) {
+                DropdownMenuItem(
+                    text = {
+                        // Each entry looks like its style (headings a little smaller than on the page).
+                        Text(
+                            strings.preset(preset),
+                            fontFamily = TextFonts.family(preset.font),
+                            fontWeight = if (preset.bold) FontWeight.Bold else FontWeight.Normal,
+                            fontSize = minOf(preset.sizePt, 20f).sp,
+                        )
+                    },
+                    onClick = { open = false; controller.applyPreset(preset) },
+                    modifier = NotFocusable.testTag(TextTags.preset(preset)),
                 )
             }
         }

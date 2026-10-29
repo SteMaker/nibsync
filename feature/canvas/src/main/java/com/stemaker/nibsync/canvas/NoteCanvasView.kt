@@ -452,6 +452,19 @@ class NoteCanvasView(context: Context) : FrameLayout(context) {
         setViewport(viewport.copy(scrollYMm = maxOf(0f, yMm - REVEAL_MARGIN_MM)).clamped())
     }
 
+    /**
+     * [px] at the bottom of the view are covered by the on-screen keyboard: the page can scroll
+     * that much further. 0 when it is gone.
+     */
+    fun setBottomInset(px: Float) {
+        if (px != viewport.bottomInsetPx) setViewport(viewport.withBottomInset(px))
+    }
+
+    /** Scrolls as little as needed to show document y [topMm] to [bottomMm] above the keyboard. */
+    fun reveal(topMm: Float, bottomMm: Float) {
+        if (viewport.hasSize) setViewport(viewport.revealing(topMm - REVEAL_GAP_MM, bottomMm + REVEAL_GAP_MM))
+    }
+
     override fun onDraw(canvas: Canvas) {
         // Hosts like Compose's AndroidView do not clip children, so stay inside our bounds.
         canvas.clipRect(0, 0, width, height)
@@ -1270,6 +1283,9 @@ class NoteCanvasView(context: Context) : FrameLayout(context) {
 
         /** A pen touch at most this long (and short in distance) is a tap, not a dot. */
         const val TAP_MAX_MS = 300L
+
+        /** Space kept around a line revealed above the keyboard. */
+        const val REVEAL_GAP_MM = 4f
 
         /** How far the pen may wander while "holding still", in dp on screen. */
         const val HOLD_TOLERANCE_DP = 4f

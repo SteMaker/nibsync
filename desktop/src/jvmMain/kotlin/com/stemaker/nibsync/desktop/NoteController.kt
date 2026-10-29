@@ -416,14 +416,8 @@ class NoteController(
             text.finish()
             return
         }
-        val width = minOf(DEFAULT_WIDTH_MM, pageWidthMm - MARGIN_MM - x)
-        if (width >= MIN_NEW_WIDTH_MM) {
-            text.startNew(x, maxOf(0f, y - FIRST_LINE_OFFSET_MM), width)
-        } else {
-            // Too close to the right edge: the box ends at the margin instead.
-            val w = minOf(MIN_NEW_WIDTH_MM, pageWidthMm - MARGIN_MM)
-            text.startNew(maxOf(0f, pageWidthMm - MARGIN_MM - w), maxOf(0f, y - FIRST_LINE_OFFSET_MM), w)
-        }
+        val (left, top, width) = TextBox.placeNew(x, y, pageWidthMm)
+        text.startNew(left, top, width)
     }
 
     // ---- selection ---------------------------------------------------------------------------
@@ -546,18 +540,6 @@ class NoteController(
     }
 
     companion object {
-        /** Width of a new box, unless the page ends earlier. */
-        const val DEFAULT_WIDTH_MM = 120f
-
-        /** Free space kept to the right page edge. */
-        const val MARGIN_MM = 5f
-
-        /** New boxes are at least this wide, moved left if needed. */
-        const val MIN_NEW_WIDTH_MM = 30f
-
-        /** A new box starts this far above the click, so the first line is where one clicked. */
-        const val FIRST_LINE_OFFSET_MM = 2.5f
-
         const val SELECTION_PADDING_MM = 2f
         const val MIN_MOVE_MM = 0.2f
         const val MIN_SIZE_MM = 5f

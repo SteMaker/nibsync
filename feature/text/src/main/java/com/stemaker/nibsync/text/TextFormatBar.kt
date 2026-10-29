@@ -37,7 +37,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.PopupProperties
 import com.stemaker.nibsync.model.RichText
 import com.stemaker.nibsync.model.TextFont
@@ -48,6 +50,8 @@ import com.stemaker.nibsync.model.TextFont
  */
 @Composable
 fun TextFormatActions(controller: TextEditController, onDelete: () -> Unit) {
+    PresetMenu(controller)
+    ToolbarDivider()
     Toggle(R.string.text_bold, Icons.Filled.FormatBold, controller.isBold, TextTags.BOLD, controller::toggleBold)
     Toggle(R.string.text_italic, Icons.Filled.FormatItalic, controller.isItalic, TextTags.ITALIC, controller::toggleItalic)
     ToolbarDivider()
@@ -62,6 +66,42 @@ fun TextFormatActions(controller: TextEditController, onDelete: () -> Unit) {
     Action(R.string.text_indent, Icons.AutoMirrored.Filled.FormatIndentIncrease, controller.canIndent, TextTags.INDENT, controller::indent)
     ToolbarDivider()
     Action(R.string.text_delete, Icons.Filled.Delete, true, TextTags.DELETE, onDelete)
+}
+
+@Composable
+private fun PresetMenu(controller: TextEditController) {
+    var open by remember { mutableStateOf(false) }
+    Box {
+        OutlinedButton(onClick = { open = true }, modifier = Modifier.testTag(TextTags.PRESET)) {
+            Text(stringResource(controller.preset?.let(::presetLabel) ?: R.string.text_style))
+        }
+        // Not focusable: the editor keeps the focus and with it the cursor and pending style.
+        DropdownMenu(expanded = open, onDismissRequest = { open = false }, properties = PopupProperties(focusable = false)) {
+            for (preset in TextPreset.entries) {
+                DropdownMenuItem(
+                    text = {
+                        // Each entry looks like its style (headings a little smaller than on the page).
+                        Text(
+                            stringResource(presetLabel(preset)),
+                            fontFamily = TextFonts.family(preset.font),
+                            fontWeight = if (preset.bold) FontWeight.Bold else FontWeight.Normal,
+                            fontSize = minOf(preset.sizePt, 20f).sp,
+                        )
+                    },
+                    onClick = { open = false; controller.applyPreset(preset) },
+                    modifier = Modifier.testTag(TextTags.preset(preset)),
+                )
+            }
+        }
+    }
+}
+
+private fun presetLabel(preset: TextPreset) = when (preset) {
+    TextPreset.NORMAL -> R.string.preset_normal
+    TextPreset.HEADING_1 -> R.string.preset_heading_1
+    TextPreset.HEADING_2 -> R.string.preset_heading_2
+    TextPreset.HEADING_3 -> R.string.preset_heading_3
+    TextPreset.CODE -> R.string.preset_code
 }
 
 @Composable

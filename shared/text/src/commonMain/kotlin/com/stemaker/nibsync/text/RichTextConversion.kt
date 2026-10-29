@@ -1,5 +1,6 @@
 package com.stemaker.nibsync.text
 
+import androidx.compose.ui.text.style.TextIndent
 import androidx.compose.ui.unit.TextUnitType
 import androidx.compose.ui.unit.sp
 import com.mohamedrejeb.richeditor.annotation.ExperimentalRichTextApi
@@ -13,6 +14,7 @@ import com.stemaker.nibsync.model.RichText
 import com.stemaker.nibsync.model.TextMark
 import com.stemaker.nibsync.model.TextParagraph
 import com.stemaker.nibsync.model.withoutStrayBreaks
+import kotlin.math.roundToInt
 
 /**
  * Converts between the stored [RichText] and the editor library's document model. Formatting
@@ -21,19 +23,46 @@ import com.stemaker.nibsync.model.withoutStrayBreaks
 @OptIn(ExperimentalRichTextApi::class)
 internal object RichTextConversion {
 
-    fun toDocument(text: RichText): RichTextDocument = RichTextDocument(
-        text.withoutStrayBreaks().paragraphs.map { p ->
-            RichTextBlock(
-                text = p.text,
-                type = when (p.list) {
-                    ListKind.NONE -> RichTextBlockType.Paragraph
-                    ListKind.BULLET -> RichTextBlockType.ListItem(ordered = false, indent = p.indent)
-                    ListKind.NUMBERED -> RichTextBlockType.ListItem(ordered = true, indent = p.indent)
-                },
-                spans = p.marks.map { it.toSpanMark() },
-            )
-        },
-    )
+    /**
+     * A [TextParagraph.continued] line becomes a plain paragraph indented like its item's text
+     * (the editor has no such lines). The editor counts a list anew after it, so numbered items
+     * behind one get their number as start number.
+     */
+    fun toDocument(text: RichText): RichTextDocument {
+        val numbers = IntArray(MAX_LEVELS)
+        var afterContinued = false
+        return RichTextDocument(
+            text.withoutStrayBreaks().paragraphs.map { p ->
+                val level = p.indent.coerceAtMost(MAX_LEVELS - 1)
+                val spans = p.marks.map { it.toSpanMark() }
+                when {
+                    p.continued -> {
+                        afterContinued = true
+                        val indent = continuedIndent(p.indent).sp
+                        RichTextBlock(text = p.text, type = RichTextBlockType.Paragraph, spans = spans, textIndent = TextIndent(indent, indent))
+                    }
+                    p.list == ListKind.NONE -> {
+                        numbers.fill(0)
+                        afterContinued = false
+                        RichTextBlock(text = p.text, type = RichTextBlockType.Paragraph, spans = spans)
+                    }
+                    p.list == ListKind.BULLET -> {
+                        numbers.fill(0, level)
+                        RichTextBlock(text = p.text, type = RichTextBlockType.ListItem(ordered = false, indent = p.indent), spans = spans)
+                    }
+                    else -> {
+                        numbers.fill(0, level + 1)
+                        numbers[level]++
+                        val start = if (afterContinued) numbers[level] else null
+                        RichTextBlock(text = p.text, type = RichTextBlockType.ListItem(ordered = true, indent = p.indent, startNumber = start), spans = spans)
+                    }
+                }
+            },
+        )
+    }
+
+    /** Indent (pt) of a continued line at list level [indent]: where its item's text starts. */
+    private fun continuedIndent(indent: Int): Int = TextMetrics.LIST_INDENT_PT * (indent + 1)
 
     private fun TextMark.toSpanMark(): RichTextSpanMark {
         val range = start until end
@@ -50,22 +79,34 @@ internal object RichTextConversion {
      * editor can report a span reaching past the text, e.g. over a pasted "\r") and stray line
      * breaks from pasting are removed.
      */
-    fun fromDocument(document: RichTextDocument): RichText = RichText(
-        document.blocks.map { block ->
+    fun fromDocument(document: RichTextDocument): RichText {
+        val out = ArrayList<TextParagraph>(document.blocks.size)
+        for (block in document.blocks) {
             val type = block.type
             val length = block.text.length
-            TextParagraph(
-                text = block.text,
-                list = when {
-                    type !is RichTextBlockType.ListItem -> ListKind.NONE
-                    type.ordered -> ListKind.NUMBERED
-                    else -> ListKind.BULLET
-                },
-                indent = (type as? RichTextBlockType.ListItem)?.indent ?: 0,
-                marks = normalized(block.spans.mapNotNull { it.toTextMark()?.clampedTo(length) }),
-            ).withoutStrayBreaks()
-        }.ifEmpty { listOf(TextParagraph("")) },
-    )
+            val marks = normalized(block.spans.mapNotNull { it.toTextMark()?.clampedTo(length) })
+            val previous = out.lastOrNull()
+            val continuedLevel = continuedLevel(block)
+            val paragraph = when {
+                type is RichTextBlockType.ListItem ->
+                    TextParagraph(block.text, if (type.ordered) ListKind.NUMBERED else ListKind.BULLET, type.indent, marks)
+                // An indented paragraph right after a list item is a further line of it.
+                continuedLevel != null && previous != null && previous.list != ListKind.NONE ->
+                    TextParagraph(block.text, previous.list, continuedLevel, marks, continued = true)
+                else -> TextParagraph(block.text, marks = marks)
+            }
+            out += paragraph.withoutStrayBreaks()
+        }
+        return RichText(out.ifEmpty { listOf(TextParagraph("")) })
+    }
+
+    /** The list level of a paragraph indented like a continued line, else null. */
+    private fun continuedLevel(block: RichTextBlock): Int? {
+        val indent = block.textIndent ?: return null
+        if (indent.firstLine != indent.restLine || indent.firstLine.type != TextUnitType.Sp) return null
+        val level = (indent.firstLine.value / TextMetrics.LIST_INDENT_PT).roundToInt() - 1
+        return level.takeIf { it >= 0 && continuedIndent(it).toFloat() == indent.firstLine.value }
+    }
 
     private fun TextMark.clampedTo(length: Int): TextMark? {
         val s = start.coerceIn(0, length)
@@ -102,4 +143,5 @@ internal object RichTextConversion {
         }.sortedWith(compareBy({ it.start }, { it.end }, { it.style.toString() }))
 
     private const val BOLD_WEIGHT = 600
+    private const val MAX_LEVELS = 8
 }

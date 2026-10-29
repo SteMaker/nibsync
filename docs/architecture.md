@@ -116,11 +116,23 @@ versions side by side, nothing is lost.
 - The page shows boxes with `TextBoxRenderer`: Compose text layout at 20 px/mm, cached per
   box, painted onto the view canvas between marker and ink strokes. While a box is edited it
   is hidden on the page and the editor is drawn over it at the current zoom.
-- Text tool: tap = new box (80 mm, or the tapped box is opened), dragged frame = box of that
-  width. The tool bar switches to formatting while a box is open (A−/A+ step the size through
-  `RichText.SIZES_PT` from the size at the cursor); the text is saved 1.5 s
-  after typing stops, on "Done", on tool change and when the app goes to the background.
+- Text tool: tap = new box (`TextBox.placeNew`: 120 mm wide or up to the margin, first line
+  at the tap; a tap beside an open box only ends it), or the tapped box is opened; dragged
+  frame = box of that width. The tool bar switches to formatting while a box is open (A−/A+
+  step the size through `RichText.SIZES_PT` from the size at the cursor); the text is saved
+  1.5 s after typing stops, on "Done", on tool change and when the app goes to the background.
   An emptied box is removed. Erasers ignore text; the lasso selects, moves and copies it.
+- Style presets (`TextPreset`: Normal, Heading 1–3, Code) format whole paragraphs touched by
+  the cursor or selection. They are only a quick way to set size, bold and font, stored as
+  ordinary marks, so there is no paragraph style in the file format.
+- Shift+Enter in a list item starts a further line of it (`TextParagraph.continued`, record
+  field `"c"`): no bullet, indented like the item's text, numbering goes on; Enter in such a
+  line starts the next item. The editor has no such lines: they become plain paragraphs with
+  that text indent, and numbered items after one get a start number. Older app versions show
+  the line as an item of its own.
+- On-screen keyboard (Android): while it is up, the cursor of the edited text is scrolled
+  into view (`Viewport.revealing`); if it covers the page instead of shrinking the window
+  (edge-to-edge), the page can scroll that much further (`Viewport.bottomInsetPx`).
 
 ## Document title on the page
 

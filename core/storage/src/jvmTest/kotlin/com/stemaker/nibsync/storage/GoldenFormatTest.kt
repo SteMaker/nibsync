@@ -77,6 +77,26 @@ class GoldenFormatTest {
         ),
     )
 
+    // Added in format version 1 later on (paragraph field "c"); older readers show the further
+    // line as a list item of its own.
+    private val continuedLineOps = listOf(
+        com.stemaker.nibsync.document.DocumentOp.AddTextBoxes(
+            com.stemaker.nibsync.document.OpStamp(10, DEV_A),
+            listOf(
+                com.stemaker.nibsync.model.TextBox(
+                    com.stemaker.nibsync.model.StrokeId("34343434-3434-4434-8434-343434343434"), 10f, 20f, 100f, 15f,
+                    com.stemaker.nibsync.model.RichText(
+                        listOf(
+                            com.stemaker.nibsync.model.TextParagraph("Punkt", com.stemaker.nibsync.model.ListKind.NUMBERED),
+                            com.stemaker.nibsync.model.TextParagraph("weiter", com.stemaker.nibsync.model.ListKind.NUMBERED, continued = true),
+                        ),
+                    ),
+                    1_700_000_000_003, DEV_A,
+                ),
+            ),
+        ),
+    )
+
     private val goldenDir = "src/jvmTest/resources/golden".toPath()
 
     private fun encodedLog(ops: List<com.stemaker.nibsync.document.DocumentOp> = this.ops): okio.ByteString {
@@ -111,6 +131,14 @@ class GoldenFormatTest {
         FileSystem.SYSTEM.write(goldenDir / "ops-v1-files.oplog") { write(encodedLog(fileOps)) }
         FileSystem.SYSTEM.write(goldenDir / "ops-v1-todos.oplog") { write(encodedLog(todoOps)) }
         FileSystem.SYSTEM.write(goldenDir / "ops-v1-links.oplog") { write(encodedLog(linkOps)) }
+        FileSystem.SYSTEM.write(goldenDir / "ops-v1-continued-line.oplog") { write(encodedLog(continuedLineOps)) }
+    }
+
+    @Test
+    fun continuedLineIsStable() {
+        val golden = golden("ops-v1-continued-line.oplog")
+        assertThat(OpLogCodec.read(Buffer().write(golden)).ops).isEqualTo(continuedLineOps)
+        assertThat(encodedLog(continuedLineOps).hex()).isEqualTo(golden.hex())
     }
 
     @Test

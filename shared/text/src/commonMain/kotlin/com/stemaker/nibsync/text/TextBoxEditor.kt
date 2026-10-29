@@ -6,9 +6,21 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.withFrameNanos
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.isShiftPressed
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import com.mohamedrejeb.richeditor.ui.BasicRichTextEditor
@@ -16,10 +28,27 @@ import com.stemaker.nibsync.model.TextFont
 
 /**
  * The editable text of a box, drawn at the page zoom ([pxPerMm]) so it looks like the box on
- * the page. The caller positions it over the box.
+ * the page. The caller positions it over the box. [onCursor] gets the cursor's top and bottom
+ * in mm below the editor's top whenever the cursor or the text moves.
  */
 @Composable
-fun TextBoxEditor(controller: TextEditController, widthMm: Float, pxPerMm: Float, modifier: Modifier = Modifier) {
+fun TextBoxEditor(
+    controller: TextEditController,
+    widthMm: Float,
+    pxPerMm: Float,
+    modifier: Modifier = Modifier,
+    onCursor: ((topMm: Float, bottomMm: Float) -> Unit)? = null,
+) {
+    var layout by remember(controller) { mutableStateOf<TextLayoutResult?>(null) }
+    val scale by rememberUpdatedState(pxPerMm)
+    val cursorCallback by rememberUpdatedState(onCursor)
+    LaunchedEffect(controller) {
+        snapshotFlow { layout to controller.state.selection }.collect { (l, sel) ->
+            val callback = cursorCallback ?: return@collect
+            val r = l?.let { runCatching { it.getCursorRect(sel.end.coerceIn(0, it.layoutInput.text.length)) }.getOrNull() } ?: return@collect
+            callback(r.top / scale, r.bottom / scale)
+        }
+    }
     val requests = controller.pendingStyleRequests
     LaunchedEffect(controller, requests) {
         if (requests == 0) return@LaunchedEffect
@@ -45,9 +74,12 @@ fun TextBoxEditor(controller: TextEditController, widthMm: Float, pxPerMm: Float
         val width = with(density) { (widthMm * pxPerMm).toDp() }
         BasicRichTextEditor(
             state = controller.state,
-            modifier = modifier.width(width).testTag(TextTags.EDITOR),
+            modifier = modifier.width(width).testTag(TextTags.EDITOR).onPreviewKeyEvent { e ->
+                e.type == KeyEventType.KeyDown && (e.key == Key.Enter || e.key == Key.NumPadEnter) && controller.lineBreak(soft = e.isShiftPressed)
+            },
             textStyle = TextMetrics.baseStyle,
             cursorBrush = SolidColor(TextMetrics.TEXT_COLOR),
+            onTextLayout = { layout = it },
         )
     }
 }
@@ -55,6 +87,8 @@ fun TextBoxEditor(controller: TextEditController, widthMm: Float, pxPerMm: Float
 /** Test tags used by UI tests. */
 object TextTags {
     const val EDITOR = "text-editor"
+    const val PRESET = "text-preset"
+    fun preset(preset: TextPreset) = "text-preset-${preset.name}"
     const val BOLD = "text-bold"
     const val ITALIC = "text-italic"
     const val FONT = "text-font"

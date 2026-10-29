@@ -15,6 +15,13 @@ import androidx.compose.material.icons.filled.TextFields
 import androidx.compose.material.icons.filled.Keyboard
 import androidx.compose.material.icons.filled.TaskAlt
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.ime
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.ui.layout.boundsInWindow
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.focus.FocusRequester
@@ -239,8 +246,28 @@ fun NoteScreen(
             inkTodoOpen = todoEditing?.isInk == true,
             onDeleteTodo = viewModel::deleteTodo,
         )
+        // With the on-screen keyboard up, the cursor of the edited text is kept visible: the
+        // window either gets smaller, or (edge-to-edge) the keyboard covers the lower part of
+        // the page, which then can scroll that much further. A hardware keyboard has no inset,
+        // so nothing changes.
+        val imeBottom = WindowInsets.ime.getBottom(LocalDensity.current)
+        val windowHeight = LocalView.current.rootView.height
+        var pageBottomInWindow by remember { mutableFloatStateOf(0f) }
+        val keyboardOverlap = if (imeBottom > 0) maxOf(0f, pageBottomInWindow - (windowHeight - imeBottom)) else 0f
+        var cursorMm by remember { mutableStateOf<Pair<Float, Float>?>(null) }
+        if (textEditing == null && todoEditing?.text == null) cursorMm = null
+        LaunchedEffect(keyboardOverlap) { canvasView?.setBottomInset(keyboardOverlap) }
+        val pageHeightPx = viewport?.viewHeightPx
+        LaunchedEffect(imeBottom > 0, keyboardOverlap, pageHeightPx, cursorMm) {
+            val c = cursorMm ?: return@LaunchedEffect
+            if (imeBottom > 0) canvasView?.reveal(c.first, c.second)
+        }
         Row(Modifier.fillMaxSize()) {
-            Box(Modifier.weight(1f).fillMaxHeight().clipToBounds().then(pageModifier)) {
+            Box(
+                Modifier.weight(1f).fillMaxHeight().clipToBounds()
+                    .onGloballyPositioned { pageBottomInWindow = it.boundsInWindow().bottom }
+                    .then(pageModifier),
+            ) {
                 AndroidView(
                     modifier = Modifier.fillMaxSize().testTag(NoteScreenTags.CANVAS),
                     factory = { context ->
@@ -293,11 +320,18 @@ fun NoteScreen(
                         onMove = viewModel::moveText,
                         onResize = viewModel::resizeText,
                         onGestureEnd = viewModel::saveText,
+                        onCursor = { top, bottom -> cursorMm = editing.y + top to editing.y + bottom },
                     )
                 }
                 val todo = todoEditing
                 if (todo != null && v != null && v.hasSize) {
-                    TodoOverlay(todo, v, onMove = viewModel::moveTodo, onResize = viewModel::resizeTodo, onGestureEnd = viewModel::saveTodo)
+                    TodoOverlay(
+                        todo, v, onMove = viewModel::moveTodo, onResize = viewModel::resizeTodo, onGestureEnd = viewModel::saveTodo,
+                        onCursor = { top, bottom ->
+                            val y = todo.y + com.stemaker.nibsync.model.TodoItem.PADDING_MM
+                            cursorMm = y + top to y + bottom
+                        },
+                    )
                 }
                 if (v != null && v.hasSize) pageOverlay(v)
             }
@@ -363,6 +397,7 @@ private fun TodoOverlay(
     onMove: (Float, Float) -> Unit,
     onResize: (Float, Float) -> Unit,
     onGestureEnd: () -> Unit,
+    onCursor: (Float, Float) -> Unit,
 ) {
     val t = viewport.documentToView
     val scale by rememberUpdatedState(viewport.scale)
@@ -378,6 +413,7 @@ private fun TodoOverlay(
                 widthMm = edit.widthMm - com.stemaker.nibsync.model.TodoItem.CONTENT_OFFSET_MM - com.stemaker.nibsync.model.TodoItem.PADDING_MM,
                 pxPerMm = viewport.scale,
                 modifier = Modifier.focusRequester(focus),
+                onCursor = onCursor,
             )
         }
     }
@@ -428,6 +464,7 @@ private fun TextBoxOverlay(
     onMove: (Float, Float) -> Unit,
     onResize: (Float) -> Unit,
     onGestureEnd: () -> Unit,
+    onCursor: (Float, Float) -> Unit,
 ) {
     val t = viewport.documentToView
     val scale by rememberUpdatedState(viewport.scale)
@@ -441,6 +478,7 @@ private fun TextBoxOverlay(
             widthMm = editing.widthMm,
             pxPerMm = viewport.scale,
             modifier = Modifier.focusRequester(focus).border(1.dp, accent.copy(alpha = 0.6f)),
+            onCursor = onCursor,
         )
         Icon(
             Icons.Filled.OpenWith,

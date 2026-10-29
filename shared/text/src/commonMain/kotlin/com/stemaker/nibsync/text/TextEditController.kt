@@ -7,6 +7,7 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.TextUnitType
@@ -14,8 +15,12 @@ import androidx.compose.ui.unit.sp
 import com.mohamedrejeb.richeditor.annotation.ExperimentalRichTextApi
 import com.mohamedrejeb.richeditor.model.RichTextState
 import com.mohamedrejeb.richeditor.paragraph.type.OrderedListStyleType
+import com.mohamedrejeb.richeditor.document.RichTextBlock
 import com.mohamedrejeb.richeditor.document.RichTextBlockType
+import com.stemaker.nibsync.model.ListKind
 import com.stemaker.nibsync.model.RichText
+import com.stemaker.nibsync.model.TextMark
+import com.stemaker.nibsync.model.TextParagraph
 import com.stemaker.nibsync.model.withoutStrayBreaks
 import com.stemaker.nibsync.model.TextFont
 
@@ -52,6 +57,31 @@ class TextEditController internal constructor(internal val state: RichTextState)
     fun shrink() {
         RichText.SIZES_PT.lastOrNull { it < sizePt }?.let(::setSize)
     }
+
+    /** The preset the text at the cursor looks like, or null if it is formatted otherwise. */
+    val preset: TextPreset? get() = TextPreset.entries.firstOrNull { it.sizePt == sizePt && it.bold == isBold && it.font == font }
+
+    /**
+     * Formats every paragraph the cursor or selection touches like [preset] (size, bold, font;
+     * italics stay). In an empty paragraph it applies to what is typed next.
+     */
+    fun applyPreset(preset: TextPreset) {
+        val selection = state.selection
+        val touched = textRanges().filter { (start, end) -> end >= selection.min && start <= selection.max }
+        for ((start, end) in touched) {
+            state.selection = TextRange(start, end)
+            state.addSpanStyle(SpanStyle(fontSize = preset.sizePt.sp))
+            when {
+                // An empty paragraph: only the style for typing, where removing does not work.
+                start == end -> if (isBold != preset.bold) toggleBold()
+                preset.bold -> state.addSpanStyle(SpanStyle(fontWeight = FontWeight.Bold))
+                else -> state.removeSpanStyle(SpanStyle(fontWeight = FontWeight.Bold))
+            }
+            state.addRichSpan(FontRun(preset.font))
+        }
+        if (touched.singleOrNull()?.let { it.first == it.second } != true) state.selection = selection
+    }
+
     fun toggleBulletList() = keepingPendingStyle { state.toggleUnorderedList() }
     fun toggleNumberedList() = keepingPendingStyle { state.toggleOrderedList() }
     fun indent() = keepingPendingStyle { state.increaseListLevel() }
@@ -70,6 +100,9 @@ class TextEditController internal constructor(internal val state: RichTextState)
         pendingStyle = {
             state.addSpanStyle(span)
             if (rich is FontRun) state.addRichSpan(rich)
+            // Adding cannot take away bold or italics the editor took over from the text before.
+            if (isBold != (span.fontWeight == FontWeight.Bold)) toggleBold()
+            if (isItalic != (span.fontStyle == FontStyle.Italic)) toggleItalic()
         }
         pendingStyle?.invoke()
         // The text field moves the cursor behind the new list prefix a frame later, which
@@ -141,6 +174,73 @@ class TextEditController internal constructor(internal val state: RichTextState)
         val steppedLeft = from == textStart && offset < from
         return if (steppedLeft && marker.first > 0) marker.first - 1 else textStart
     }
+
+    /**
+     * Enter ([soft] false) or Shift+Enter ([soft] true) at the cursor, where the editor's own
+     * handling is not wanted: Shift+Enter in a list goes on in a further line of the same item
+     * (indented, no bullet); Enter in such a line starts the next item. Returns false if the
+     * editor should handle the key itself.
+     */
+    fun lineBreak(soft: Boolean): Boolean {
+        if (!state.selection.collapsed) return false
+        val (index, offset) = paragraphAt(state.selection.start) ?: return false
+        val content = text
+        val p = content.paragraphs.getOrNull(index) ?: return false
+        if (if (soft) p.list == ListKind.NONE else !p.continued) return false
+        val span = state.currentSpanStyle
+        val rich = state.currentRichSpanStyle
+        val at = offset.coerceIn(0, p.text.length)
+        val first = p.copy(text = p.text.substring(0, at), marks = p.marks.mapNotNull { it.clipped(0, at) })
+        val second = TextParagraph(
+            p.text.substring(at), p.list, p.indent,
+            p.marks.mapNotNull { it.clipped(at, p.text.length)?.shifted(-at) },
+            continued = soft,
+        )
+        val paragraphs = content.paragraphs.toMutableList()
+        paragraphs[index] = first
+        paragraphs.add(index + 1, second)
+        setContent(RichText(paragraphs))
+        state.selection = TextRange(textStart(index + 1) ?: return true)
+        // Typing goes on in the style the cursor had.
+        state.addSpanStyle(span)
+        if (rich is FontRun) state.addRichSpan(rich)
+        return true
+    }
+
+    private fun TextMark.clipped(from: Int, to: Int): TextMark? {
+        val s = maxOf(start, from)
+        val e = minOf(end, to)
+        return if (s < e) TextMark(s, e, style) else null
+    }
+
+    private fun TextMark.shifted(by: Int) = TextMark(start + by, end + by, style)
+
+    /** Paragraph index and offset in its text of position [offset] of the editor's text. */
+    private fun paragraphAt(offset: Int): Pair<Int, Int>? {
+        val i = textRanges().indexOfFirst { offset in it.first..it.second }
+        return if (i < 0) null else i to offset - textRanges()[i].first
+    }
+
+    /** Where the text of paragraph [index] starts in the editor's text (behind its marker). */
+    private fun textStart(index: Int): Int? = textRanges().getOrNull(index)?.first
+
+    /** Start and end of each paragraph's text in the editor's text, behind list markers. */
+    private fun textRanges(): List<Pair<Int, Int>> {
+        val blocks = runCatching { state.toRichTextDocument().blocks }.getOrNull() ?: return emptyList()
+        val out = ArrayList<Pair<Int, Int>>(blocks.size)
+        var pos = 0
+        for (block in blocks) {
+            val start = pos + markerLength(block, pos)
+            val end = start + block.text.length
+            out += start to end
+            // Paragraphs are separated by one character.
+            pos = end + 1
+        }
+        return out
+    }
+
+    private fun markerLength(block: RichTextBlock, at: Int): Int =
+        if (block.type is RichTextBlockType.ListItem) LIST_MARKER.matchAt(state.annotatedString.text, at)?.value?.length ?: 0 else 0
 
     /** Changes whenever the content changes; read it in a snapshot flow to save while typing. */
     val contentVersion: Any get() = state.annotatedString

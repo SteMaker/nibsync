@@ -30,6 +30,31 @@ data class TextBox(
     companion object {
         /** Boxes are never narrower than this. */
         const val MIN_WIDTH_MM = 10f
+
+        /** Width of a new box made by a click, unless the page ends earlier. */
+        const val DEFAULT_WIDTH_MM = 120f
+
+        /** Free space kept to the right page edge. */
+        const val MARGIN_MM = 5f
+
+        /** New boxes are at least this wide, moved left if needed. */
+        const val MIN_NEW_WIDTH_MM = 30f
+
+        /** A new box starts this far above the click, so the first line is where one clicked. */
+        const val FIRST_LINE_OFFSET_MM = 2.5f
+
+        /**
+         * Left, top and width of a new box for a click at ([x], [y]) mm on a page [pageWidthMm]
+         * wide: [DEFAULT_WIDTH_MM] wide or up to the margin, moved left near the right edge.
+         */
+        fun placeNew(x: Float, y: Float, pageWidthMm: Float): Triple<Float, Float, Float> {
+            val top = maxOf(0f, y - FIRST_LINE_OFFSET_MM)
+            val width = minOf(DEFAULT_WIDTH_MM, pageWidthMm - MARGIN_MM - x)
+            if (width >= MIN_NEW_WIDTH_MM) return Triple(maxOf(0f, x), top, width)
+            // Too close to the right edge: the box ends at the margin instead.
+            val w = maxOf(MIN_WIDTH_MM, minOf(MIN_NEW_WIDTH_MM, pageWidthMm - MARGIN_MM))
+            return Triple(maxOf(0f, pageWidthMm - MARGIN_MM - w), top, w)
+        }
     }
 }
 

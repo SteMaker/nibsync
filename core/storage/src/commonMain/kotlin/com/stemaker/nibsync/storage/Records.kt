@@ -133,6 +133,8 @@ internal data class ParagraphRecord(
     @SerialName("l") val list: String = "NONE",
     @SerialName("n") val indent: Int = 0,
     @SerialName("m") val marks: List<MarkRecord> = emptyList(),
+    /** A further line of the list item above; older readers show it as an item of its own. */
+    @SerialName("c") val continued: Boolean = false,
 )
 
 /**

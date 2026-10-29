@@ -29,6 +29,11 @@ data class Viewport(
     val minZoom: Float = 0.5f,
     val maxZoom: Float = 4f,
     val extraBottomFraction: Float = 0.5f,
+    /**
+     * Pixels at the bottom of the view covered by something else (the on-screen keyboard):
+     * the document can scroll that much further, so its end can still be seen.
+     */
+    val bottomInsetPx: Float = 0f,
 ) {
     init {
         require(pageWidthMm > 0f) { "pageWidthMm must be positive" }
@@ -48,7 +53,7 @@ data class Viewport(
     val documentHeightMm: Float
         get() = max(max(minPageHeightMm, contentBottomMm + visibleHeightMm * extraBottomFraction), visibleHeightMm)
 
-    private val maxScrollYMm: Float get() = max(0f, documentHeightMm - visibleHeightMm)
+    private val maxScrollYMm: Float get() = max(0f, documentHeightMm - visibleHeightMm + bottomInsetPx / scale)
 
     private val maxScrollXMm: Float get() = max(0f, pageWidthMm - visibleWidthMm)
 
@@ -71,6 +76,21 @@ data class Viewport(
         copy(viewWidthPx = widthPx, viewHeightPx = heightPx).clamped()
 
     fun withContentBottom(bottomMm: Float): Viewport = copy(contentBottomMm = bottomMm).clamped()
+
+    fun withBottomInset(px: Float): Viewport = copy(bottomInsetPx = max(0f, px)).clamped()
+
+    /**
+     * Scrolled as little as needed so that document y [topMm] to [bottomMm] is visible above
+     * [bottomInsetPx]; if it does not fit, its bottom is shown (where one types).
+     */
+    fun revealing(topMm: Float, bottomMm: Float): Viewport {
+        if (!hasSize) return this
+        val usable = max(0f, viewHeightPx - bottomInsetPx) / scale
+        var sy = scrollYMm
+        if (topMm < sy) sy = topMm
+        if (bottomMm > sy + usable) sy = bottomMm - usable
+        return copy(scrollYMm = sy).clamped()
+    }
 
     /** Moves the content by the given pixel distances (positive dy scrolls further down). */
     fun scrollByPx(dxPx: Float, dyPx: Float): Viewport =

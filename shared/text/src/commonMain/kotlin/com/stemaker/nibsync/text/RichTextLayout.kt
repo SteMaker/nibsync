@@ -24,7 +24,8 @@ object RichTextLayout {
         val numbers = IntArray(MAX_LEVELS)
         text.paragraphs.forEachIndexed { index, p ->
             val level = p.indent.coerceAtMost(MAX_LEVELS - 1)
-            val prefix = when (p.list) {
+            // A further line of the item above has no prefix, and the numbering goes on.
+            val prefix = if (p.continued) "" else when (p.list) {
                 ListKind.NONE -> {
                     numbers.fill(0)
                     ""
@@ -39,11 +40,11 @@ object RichTextLayout {
                     "${numbers[level]}. "
                 }
             }
-            val style = if (prefix.isEmpty()) {
-                ParagraphStyle()
-            } else {
-                val base = (TextMetrics.LIST_INDENT_PT * (level + 1)).toFloat()
-                ParagraphStyle(textIndent = TextIndent((base - prefixWidthPt(prefix)).coerceAtLeast(0f).sp, base.sp))
+            val base = (TextMetrics.LIST_INDENT_PT * (level + 1)).toFloat()
+            val style = when {
+                p.continued -> ParagraphStyle(textIndent = TextIndent(base.sp, base.sp))
+                prefix.isEmpty() -> ParagraphStyle()
+                else -> ParagraphStyle(textIndent = TextIndent((base - prefixWidthPt(prefix)).coerceAtLeast(0f).sp, base.sp))
             }
             val start = length
             append(prefix)

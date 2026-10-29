@@ -1,5 +1,6 @@
 package com.stemaker.nibsync.desktop
 
+import com.stemaker.nibsync.text.TextPreset
 import java.util.Locale
 
 /** UI texts: German for German systems, English otherwise (like values/ and values-de/ on Android). */
@@ -25,6 +26,14 @@ class Strings(private val german: Boolean = Locale.getDefault().language == "de"
     fun sizePt(pt: String) = "$pt pt"
     val textGrow = if (german) "Schrift größer" else "Larger text"
     val textShrink = if (german) "Schrift kleiner" else "Smaller text"
+    val textStyle = if (german) "Stil" else "Style"
+    fun preset(preset: TextPreset) = when (preset) {
+        TextPreset.NORMAL -> "Normal"
+        TextPreset.HEADING_1 -> if (german) "Überschrift 1" else "Heading 1"
+        TextPreset.HEADING_2 -> if (german) "Überschrift 2" else "Heading 2"
+        TextPreset.HEADING_3 -> if (german) "Überschrift 3" else "Heading 3"
+        TextPreset.CODE -> "Code"
+    }
     val nextcloud = "Nextcloud"
     val syncNotConfigured = if (german) "Kein Konto. Alle Bücher bleiben auf diesem PC." else "No account. All books stay on this PC."
     val syncConnect = if (german) "Mit Nextcloud verbinden" else "Connect to Nextcloud"

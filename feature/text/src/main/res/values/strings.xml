@@ -14,4 +14,10 @@
     <string name="font_serif">Serif</string>
     <string name="font_mono">Monospace</string>
     <string name="font_handwriting">Handwriting</string>
+    <string name="text_style">Style</string>
+    <string name="preset_normal">Normal</string>
+    <string name="preset_heading_1">Heading 1</string>
+    <string name="preset_heading_2">Heading 2</string>
+    <string name="preset_heading_3">Heading 3</string>
+    <string name="preset_code">Code</string>
 </resources>

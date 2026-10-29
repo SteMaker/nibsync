@@ -14,6 +14,7 @@ import androidx.compose.ui.test.performMouseInput
 import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.performTextInputSelection
 import androidx.compose.ui.test.assertIsFocused
+import androidx.compose.ui.test.assertTextContains
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.test.pressKey
 import androidx.compose.ui.test.runComposeUiTest
@@ -21,6 +22,8 @@ import androidx.compose.ui.test.withKeyDown
 import com.google.common.truth.Truth.assertThat
 import com.stemaker.nibsync.model.MarkStyle
 import com.stemaker.nibsync.model.TextMark
+import com.stemaker.nibsync.model.ListKind
+import com.stemaker.nibsync.text.TextPreset
 import com.stemaker.nibsync.text.TextTags
 import kotlinx.coroutines.runBlocking
 import okio.Path.Companion.toOkioPath
@@ -184,6 +187,48 @@ class TextEditingUiTest {
             "Punkt eins" to com.stemaker.nibsync.model.ListKind.BULLET,
             "XPunkt zwei" to com.stemaker.nibsync.model.ListKind.BULLET,
         ).inOrder()
+        runBlocking { container.closeAll() }
+    }
+
+    @Test
+    fun presetMenuAndShiftEnterInAList() = runComposeUiTest {
+        val root = tmp.root.toOkioPath()
+        val container = DesktopContainer(root)
+        val settings = Settings(container.fs, root / "settings.properties")
+        setContent { App(container, settings, Strings(german = true)) }
+        waitUntil(timeoutMillis = 5000) { onAllNodesWithTag("page").fetchSemanticsNodes().isNotEmpty() }
+        waitForIdle()
+        val docId = settings.lastDocument ?: runBlocking { container.library.tree.value.documents.single().id.asDocumentId }
+        val session = runBlocking { container.openSession(docId) }
+
+        onNodeWithTag("page").performMouseInput { click(Offset(300f, 200f)) }
+        waitUntil(timeoutMillis = 5000) { onAllNodesWithTag(TextTags.EDITOR).fetchSemanticsNodes().isNotEmpty() }
+        val editor = onNodeWithTag(TextTags.EDITOR)
+        editor.performTextInput("Titel")
+        // The style menu makes the whole line a heading; the button then names it.
+        onNodeWithTag(TextTags.PRESET).performClick()
+        onNodeWithTag(TextTags.preset(TextPreset.HEADING_2)).performClick()
+        editor.assertIsFocused()
+        onNodeWithTag(TextTags.PRESET).assertTextContains("Überschrift 2")
+        editor.performKeyInput { pressKey(Key.Enter) }
+        onNodeWithTag(TextTags.PRESET).performClick()
+        onNodeWithTag(TextTags.preset(TextPreset.NORMAL)).performClick()
+        // A list item with a further line (Shift+Enter), then the next item (Enter).
+        onNodeWithTag(TextTags.BULLETS).performScrollTo().performClick()
+        editor.performTextInput("Punkt")
+        editor.performKeyInput { withKeyDown(Key.ShiftLeft) { pressKey(Key.Enter) } }
+        editor.performTextInput("weiter")
+        editor.performKeyInput { pressKey(Key.Enter) }
+        editor.performTextInput("Zwei")
+        editor.performKeyInput { pressKey(Key.Escape) }
+        waitUntil(timeoutMillis = 5000) { onAllNodesWithTag(TextTags.EDITOR).fetchSemanticsNodes().isEmpty() }
+
+        val p = session.state.value.textBoxes.single().text.paragraphs
+        assertThat(p.map { it.text }).containsExactly("Titel", "Punkt", "weiter", "Zwei").inOrder()
+        assertThat(p[0].marks).containsAtLeast(TextMark(0, 5, MarkStyle.Bold), TextMark(0, 5, MarkStyle.Size(18f)))
+        assertThat(p.map { it.list }).containsExactly(ListKind.NONE, ListKind.BULLET, ListKind.BULLET, ListKind.BULLET).inOrder()
+        assertThat(p.map { it.continued }).containsExactly(false, false, true, false).inOrder()
+        assertThat(p[1].marks.map { it.style }).doesNotContain(MarkStyle.Bold)
         runBlocking { container.closeAll() }
     }
 }

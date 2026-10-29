@@ -829,6 +829,50 @@ class NoteAppTest {
     }
 
     @Test
+    fun aTapWithTheTextToolMakesABoxOfTheDefaultSize() {
+        compose.onNodeWithTag(NoteScreenTags.TEXT).performClick()
+        val view = checkNotNull(canvas())
+        tap(300f, 300f)
+        waitUntil("editing a new text box") { editing() != null }
+        val e = checkNotNull(editing())
+        val toDoc = view.viewport.viewToDocument
+        assertThat(e.widthMm).isEqualTo(com.stemaker.nibsync.model.TextBox.DEFAULT_WIDTH_MM)
+        assertThat(e.x).isWithin(0.5f).of(toDoc.mapX(300f))
+        assertThat(e.y).isWithin(0.5f).of(toDoc.mapY(300f) - com.stemaker.nibsync.model.TextBox.FIRST_LINE_OFFSET_MM)
+        compose.onNodeWithTag(TextTags.EDITOR).performTextInput("Getippt")
+        tapOutside()
+        assertThat(textBoxes().single().text.plainText).isEqualTo("Getippt")
+    }
+
+    @Test
+    fun theOnScreenKeyboardDoesNotHideTheEditedLine() {
+        val view = checkNotNull(canvas())
+        compose.onNodeWithTag(NoteScreenTags.TEXT).performClick()
+        // Near the bottom of the page view, where the keyboard comes up.
+        tap(400f, view.height - 120f)
+        waitUntil("editing a new text box") { editing() != null }
+        compose.onNodeWithTag(TextTags.EDITOR).performTextInput("Unten")
+        fun keyboardShown(): Boolean {
+            var shown = false
+            scenario.onActivity {
+                val insets = androidx.core.view.ViewCompat.getRootWindowInsets(it.window.decorView)
+                shown = insets?.isVisible(androidx.core.view.WindowInsetsCompat.Type.ime()) == true
+            }
+            return shown
+        }
+        waitUntil("keyboard shown", timeoutMs = 10_000) { keyboardShown() }
+        // The page scrolled so that the line is above the keyboard (the window got smaller, or
+        // the keyboard covers the page's lower part).
+        waitUntil("line above the keyboard") {
+            val e = editing() ?: return@waitUntil false
+            view.viewport.documentToView.mapY(e.y + 6f) < view.height - view.viewport.bottomInsetPx
+        }
+        tapOutside()
+        waitUntil("keyboard gone", timeoutMs = 10_000) { !keyboardShown() && view.viewport.bottomInsetPx == 0f }
+        assertThat(textBoxes().single().text.plainText).isEqualTo("Unten")
+    }
+
+    @Test
     fun emptyBoxLeavesNothingBehind() {
         newTextBox()
         tapOutside()

@@ -40,16 +40,19 @@ data class RichText(val paragraphs: List<TextParagraph>) {
 /**
  * One paragraph. [indent] is the list nesting depth (0 = top level). [marks] style character
  * ranges of [text]; they may overlap (bold and a size, say) but two marks of the same kind
- * do not.
+ * do not. A [continued] list paragraph is a further line of the list item above (Shift+Enter):
+ * no bullet or number, indented like the item's text, the numbering goes on after it.
  */
 data class TextParagraph(
     val text: String,
     val list: ListKind = ListKind.NONE,
     val indent: Int = 0,
     val marks: List<TextMark> = emptyList(),
+    val continued: Boolean = false,
 ) {
     init {
         require(indent >= 0) { "indent must not be negative" }
+        require(!continued || list != ListKind.NONE) { "only list paragraphs can be continued" }
         marks.forEach {
             require(it.start >= 0 && it.end <= text.length && it.start < it.end) { "mark $it out of range for ${text.length} chars" }
         }

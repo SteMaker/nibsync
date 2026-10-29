@@ -32,7 +32,10 @@ case "$MODE" in
         # Free the build daemons' memory before the emulator (about 4 GB) starts.
         ./gradlew --stop >/dev/null 2>&1 || true
         "$ADB" devices | grep -q '^emulator-5580[[:space:]]*device' || STARTED_EMULATOR=1
-        export ANDROID_SERIAL="$(scripts/emulator.sh start)"
+        # Refused without the PC's graphics card (see emulator.sh); a separate assignment, as
+        # "export" would hide the failure.
+        ANDROID_SERIAL="$(scripts/emulator.sh start)"
+        export ANDROID_SERIAL
         # The emulator reaches the PC (and its Docker Nextcloud) as 10.0.2.2.
         export NIBSYNC_TEST_NEXTCLOUD_URL="${NIBSYNC_TEST_NEXTCLOUD_URL:-http://10.0.2.2:8089}"
         ;;

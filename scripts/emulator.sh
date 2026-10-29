@@ -44,12 +44,16 @@ running() { "$ADB" devices | grep -q "^$SERIAL[[:space:]]*device"; }
 boot() {
     create
     if ! running; then
-        # The PC's graphics card when the desktop session is reachable (like the tablet's GPU);
-        # the software renderer otherwise, which crashed the stylus front buffer now and then.
+        # The PC's graphics card, reachable only while someone is logged in on the desktop (like
+        # the tablet's GPU). The software renderer crashes Ink's stylus front buffer and hangs
+        # the emulator, so test runs are refused without it (NIBSYNC_SOFTWARE_GPU=1 forces it).
         local gpu=swiftshader_indirect
         if DISPLAY="${NIBSYNC_GPU_DISPLAY:-:0}" glxinfo -B 2>/dev/null | grep -q "Accelerated: yes"; then
             gpu=host
             export DISPLAY="${NIBSYNC_GPU_DISPLAY:-:0}"
+        elif [[ "${NIBSYNC_SOFTWARE_GPU:-}" != "1" ]]; then
+            echo "No graphics card for the emulator: log in on the PC's desktop first." >&2
+            exit 1
         fi
         # Always a cold boot: restoring snapshots made the emulator hang during tests.
         nohup "$EMULATOR" -avd "$AVD" -port "$PORT" -gpu "$gpu" -memory 2048 -no-snapshot -no-audio -no-boot-anim "$@" >"/tmp/$AVD.log" 2>&1 &
@@ -71,9 +75,16 @@ boot() {
         # Gboard's stylus handwriting would open a "try out your stylus" window over the app on
         # the first pen tap into a text field; the tablet's keyboard does not.
         "$ADB" -s "$SERIAL" shell settings put secure stylus_handwriting_enabled 0
-        # Landscape like the tablet on its stand (3000x1920); fixed, no auto-rotation.
-        "$ADB" -s "$SERIAL" shell settings put system accelerometer_rotation 0
-        "$ADB" -s "$SERIAL" shell settings put system user_rotation 1
+        # Landscape like the tablet on its stand (3000x1920); fixed, no auto-rotation. Right after
+        # booting the system sometimes switches auto-rotation on again (then the emulator turns
+        # to portrait and tests tap beside the app), so lock it and check that it stays.
+        for _ in 1 2 3 4 5; do
+            "$ADB" -s "$SERIAL" shell settings put system accelerometer_rotation 0
+            "$ADB" -s "$SERIAL" shell settings put system user_rotation 1
+            "$ADB" -s "$SERIAL" shell wm user-rotation lock 1 >/dev/null 2>&1 || true
+            sleep 3
+            [[ "$("$ADB" -s "$SERIAL" shell settings get system accelerometer_rotation | tr -d '\r')" == "0" ]] && break
+        done
         "$ADB" -s "$SERIAL" shell wm dismiss-keyguard >/dev/null 2>&1 || true
     fi
     echo "$SERIAL"

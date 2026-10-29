@@ -299,7 +299,16 @@ class CanvasViewModelTest {
         val vm = viewModel()
         vm.selectLasso()
         vm.selectText()
-        vm.requestText(150f, 250f, null, pageWidthMm = 210f) // tap, no box: leave text mode
+        // A tap on free paper starts a box of the default width, its first line at the tap.
+        vm.requestText(50f, 250f, null, pageWidthMm = 210f)
+        val editing = vm.textEditing.value!!
+        assertThat(editing.widthMm).isEqualTo(com.stemaker.nibsync.model.TextBox.DEFAULT_WIDTH_MM)
+        assertThat(editing.y).isEqualTo(250f - com.stemaker.nibsync.model.TextBox.FIRST_LINE_OFFSET_MM)
+        assertThat(vm.tools.value.tool).isEqualTo(Tool.TEXT)
+        // The next tap beside it only ends it (left empty: removed) and leaves text mode.
+        vm.requestText(150f, 50f, null, pageWidthMm = 210f)
+        assertThat(vm.textEditing.value).isNull()
+        assertThat(vm.document.value.textBoxes).isEmpty()
         assertThat(vm.tools.value.tool).isEqualTo(Tool.LASSO)
     }
 

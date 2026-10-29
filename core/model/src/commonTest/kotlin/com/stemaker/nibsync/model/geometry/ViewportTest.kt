@@ -120,4 +120,23 @@ class ViewportTest {
         assertTrue(!a.intersects(Rect(11f, 0f, 20f, 10f)))
         assertTrue(a.contains(10f, 0f))
     }
+
+    @Test
+    fun aKeyboardLetsTheEndScrollAboveItAndRevealsTheCursor() {
+        // 10 px/mm, 150 mm visible; content to 400 mm, so the document is 475 mm high.
+        val v = base.withContentBottom(400f)
+        val end = v.scrollByPx(0f, 1e9f)
+        assertClose(325f, end.scrollYMm)
+        // A keyboard covers the lower 1000 px: 100 mm more to scroll.
+        val covered = end.withBottomInset(1000f).scrollByPx(0f, 1e9f)
+        assertClose(425f, covered.scrollYMm)
+        // A line at 300..305 mm, now hidden below the keyboard's top (top + 50 mm visible).
+        val shown = v.withBottomInset(1000f).revealing(300f, 305f)
+        assertClose(255f, shown.scrollYMm)
+        // Already visible: no scrolling; above the view: scrolled up to it.
+        assertClose(255f, shown.revealing(260f, 270f).scrollYMm)
+        assertClose(100f, shown.revealing(100f, 105f).scrollYMm)
+        // Gone again: back within the document.
+        assertClose(325f, covered.withBottomInset(0f).scrollYMm)
+    }
 }

@@ -370,12 +370,14 @@ class CanvasViewModel(
 
     /**
      * A tap on the page at ([x], [y]) mm (pen tap on an element, text tool, lasso or finger).
-     * A text box opens for editing, a file link opens in another app, a picture gets selected;
-     * an empty spot ends text mode or a picture selection and goes back to the previous tool.
+     * A text box opens for editing, a file link opens in another app, a picture gets selected.
+     * An empty spot starts a new text box with the text tool; if a box was open, it only ends
+     * it, and it ends a picture selection, going back to the previous tool.
      */
     fun tapAt(x: Float, y: Float) {
         val hit = tappableAt(x, y)
         val open = todo.editing.value
+        val textWasOpen = text.editing.value != null
         // A tap into the open to-do keeps it open.
         if (open != null && hit is TodoItem && hit.id == open.itemId) return
         finishText()
@@ -397,6 +399,13 @@ class CanvasViewModel(
                     // A new to-do with its check circle at the tap.
                     val pageWidth = session.state.value.meta.format.widthMm
                     todo.startNew(x - TodoItem.PADDING_MM - TodoItem.CHECK_SIZE_MM / 2, y - TodoItem.MIN_HEIGHT_MM / 2, _tools.value.todoInk, pageWidth)
+                } else if (_tools.value.tool == Tool.TEXT && !textWasOpen && open == null) {
+                    // A new box of the default size, its first line at the tap.
+                    val pageWidth = session.state.value.meta.format.widthMm
+                    if (x in 0f..pageWidth && y >= 0f) {
+                        val (left, top, width) = TextBox.placeNew(x, y, pageWidth)
+                        text.startNew(left, top, width)
+                    }
                 } else {
                     leaveTemporaryMode()
                 }

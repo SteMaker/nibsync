@@ -179,12 +179,13 @@ private fun TextMark.toRecord(): MarkRecord = when (val s = style) {
 }
 
 private fun RichText.toRecords(): List<ParagraphRecord> = paragraphs.map { p ->
-    ParagraphRecord(p.text, p.list.name, p.indent, p.marks.map { it.toRecord() })
+    ParagraphRecord(p.text, p.list.name, p.indent, p.marks.map { it.toRecord() }, p.continued)
 }
 
 private fun List<ParagraphRecord>.toRichText(): RichText {
     val paragraphs = map { p ->
-        TextParagraph(p.text, enumOr(p.list, ListKind.NONE), p.indent.coerceAtLeast(0), p.marks.mapNotNull { it.toDomain(p.text.length) })
+        val list = enumOr(p.list, ListKind.NONE)
+        TextParagraph(p.text, list, p.indent.coerceAtLeast(0), p.marks.mapNotNull { it.toDomain(p.text.length) }, p.continued && list != ListKind.NONE)
     }
     // Texts stored before pasted line breaks were removed may still hold some.
     return if (paragraphs.isEmpty()) RichText.EMPTY else RichText(paragraphs).withoutStrayBreaks()
