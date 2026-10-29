@@ -167,6 +167,7 @@ class DesignTour {
         var main = DocumentId("tour-placeholder")
         runBlocking {
             val work = lib.createBook("Arbeit").also { books += it.id }
+            lib.setColor(work.id, com.stemaker.nibsync.library.BookColors.PALETTE[6])
             val projects = lib.createFolder(work.id, "Projekte")
             val meetings = lib.createFolder(work.id, "Besprechungen")
             val lined = BackgroundSpec(BackgroundKind.LINED, 7f)

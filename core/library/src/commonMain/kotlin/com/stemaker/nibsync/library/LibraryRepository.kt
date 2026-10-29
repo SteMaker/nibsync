@@ -81,6 +81,8 @@ private data class NodeRecord(
     @SerialName("createdAt") val createdAtEpochMs: Long,
     @SerialName("deleted") val deleted: Boolean = false,
     @SerialName("modifiedAt") val modifiedAtEpochMs: Long? = null,
+    /** Added later: older versions ignore it and show the default colour. */
+    @SerialName("color") val colorArgb: Int? = null,
 )
 
 private fun LibraryNode.toRecord() = NodeRecord(
@@ -91,9 +93,10 @@ private fun LibraryNode.toRecord() = NodeRecord(
     createdAtEpochMs = createdAtEpochMs,
     deleted = deleted,
     modifiedAtEpochMs = modifiedAtEpochMs,
+    colorArgb = colorArgb,
 )
 
 private fun NodeRecord.toDomain(): LibraryNode {
     val kind = NodeKind.entries.firstOrNull { it.name == kind } ?: throw SerializationException("Unknown kind $kind")
-    return LibraryNode(NodeId(id), kind, parent?.let(::NodeId), title, createdAtEpochMs, deleted, modifiedAtEpochMs ?: createdAtEpochMs)
+    return LibraryNode(NodeId(id), kind, parent?.let(::NodeId), title, createdAtEpochMs, deleted, modifiedAtEpochMs ?: createdAtEpochMs, colorArgb)
 }

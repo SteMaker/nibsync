@@ -41,6 +41,8 @@ data class LibraryNode(
     val deleted: Boolean = false,
     /** Time of the last change (rename, delete); decides between versions from different devices. */
     val modifiedAtEpochMs: Long = createdAtEpochMs,
+    /** Colour of a book's icon (ARGB); null: the default. */
+    val colorArgb: Int? = null,
 ) {
     init {
         require(kind == NodeKind.FOLDER || parent != null) { "Documents must be inside a folder" }
@@ -58,10 +60,13 @@ data class LibraryNode(
         require(other.id == id) { "Different nodes" }
         val newer = when {
             other.modifiedAtEpochMs != modifiedAtEpochMs -> if (other.modifiedAtEpochMs > modifiedAtEpochMs) other else this
-            else -> if (other.title > title) other else this
+            else -> if (tieKey(other) > tieKey(this)) other else this
         }
         return if (deleted || other.deleted) newer.copy(deleted = true) else newer
     }
+
+    /** Decides between two versions changed at the same time, the same way on every device. */
+    private fun tieKey(n: LibraryNode) = "${n.title}\u0000${n.parent?.value.orEmpty()}\u0000${n.colorArgb ?: 0}"
 }
 
 /**

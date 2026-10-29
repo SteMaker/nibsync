@@ -8,6 +8,8 @@ feature/library/  Library drawer (tree of books/chapters/documents), LibraryView
 feature/canvas/   Endless page (NoteCanvasView), tool bar (Compose), CanvasViewModel
 shared/text/      KMP (Android + PC): text model <-> editor conversion, editor controller,
                   paragraph layout, embedded fonts
+shared/theme/     KMP (Android + PC): NibSyncTheme (neutral greys, light and dark) and the
+                  page chrome colours (desk, shadow, selection, to-do mark)
 feature/text/     Android text boxes: page renderer, format bar
 feature/media/    Pictures and file links: type detection, sizing, rendering (AndroidSVG)
 desktop/          PC app (Linux, Windows, later macOS): Compose Multiplatform for Desktop
@@ -71,6 +73,13 @@ fight with writing at the edge). Tapping a folder selects it as the place for "N
 "New document" (name, A0-A6, portrait/landscape); long press renames or deletes. The last
 opened document and the page-break toggle are device settings. The single document of earlier
 versions (`default`) was adopted into a first book on upgrade.
+
+A book can have a colour (`LibraryNode.colorArgb`, record field `"color"`, palette in
+`BookColors`), set in its menu; its chapters and documents show it lighter. Older versions
+ignore it; merging decides ties (same change time) by title, parent and colour. A search above
+the tree lists the documents whose title or folders match (`LinkTargets.documents`); on the
+tablet it is a search bar that becomes a field only when tapped, so opening the library does
+not bring up the keyboard. A book's account is a small icon (cloud / crossed cloud).
 
 Moving (`Library.move`, `LibraryTree.canMove`/`dropTarget`): chapters and documents go into any
 folder, also of another book, never into themselves; books stay top level. It only changes the

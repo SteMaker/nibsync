@@ -2,6 +2,9 @@ package com.stemaker.nibsync.canvas
 
 import android.graphics.Matrix
 import androidx.compose.foundation.Canvas
+import androidx.compose.material.icons.filled.TaskAlt
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -57,8 +60,9 @@ private const val LIST_DP_PER_MM = 3.2f
 private const val UNDO_MS = 5000L
 
 /**
- * The generated page of all open to-dos, one below the other with the document they are in.
- * Tapping the circle ticks one off (in its document); tapping elsewhere opens the document.
+ * The generated page of all open to-dos, grouped by the document they are in, side by side as
+ * far as the width allows. Tapping the circle ticks one off (in its document); tapping
+ * elsewhere opens the document.
  */
 @Composable
 fun TodoListScreen(
@@ -82,42 +86,44 @@ fun TodoListScreen(
                         Icon(Icons.Filled.Menu, contentDescription = stringResource(R.string.library_menu))
                     }
                     Text(stringResource(R.string.open_todos), style = MaterialTheme.typography.titleLarge, modifier = Modifier.padding(start = 8.dp))
+                    if (!todos.isNullOrEmpty()) {
+                        Surface(shape = CircleShape, color = MaterialTheme.colorScheme.secondaryContainer, modifier = Modifier.padding(start = 12.dp)) {
+                            Text(todos.size.toString(), style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(horizontal = 10.dp, vertical = 2.dp))
+                        }
+                    }
                 }
             }
             when {
                 todos == null -> Unit
-                todos.isEmpty() -> Text(stringResource(R.string.no_open_todos), Modifier.padding(24.dp).testTag(TodoListTags.EMPTY))
+                todos.isEmpty() -> Column(
+                    Modifier.fillMaxSize().testTag(TodoListTags.EMPTY),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.Center,
+                ) {
+                    Icon(Icons.Filled.TaskAlt, contentDescription = null, tint = MaterialTheme.colorScheme.outline, modifier = Modifier.size(72.dp))
+                    Text(stringResource(R.string.all_done), style = MaterialTheme.typography.headlineSmall, modifier = Modifier.padding(top = 16.dp))
+                    Text(
+                        stringResource(R.string.no_open_todos),
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(top = 8.dp),
+                    )
+                }
                 else -> LazyColumn(Modifier.fillMaxSize().testTag(TodoListTags.LIST), contentPadding = PaddingValues(24.dp)) {
-                    items(todos, key = { it.item.taskId.value }) { todo ->
-                        val item = todo.item
-                        Column(Modifier.fillMaxWidth().padding(vertical = 8.dp)) {
-                            Text(todo.path.joinToString(" › "), style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            val k = LIST_DP_PER_MM * density
-                            Canvas(
-                                Modifier
-                                    .padding(top = 4.dp)
-                                    .size((item.widthMm * LIST_DP_PER_MM).dp, (item.heightMm * LIST_DP_PER_MM).dp)
-                                    .testTag(TodoListTags.item(item.taskId))
-                                    .pointerInput(item) {
-                                        detectTapGestures { p ->
-                                            val x = p.x / k + item.x
-                                            val y = p.y / k + item.y
-                                            val c = item.checkBounds
-                                            if (x <= c.right + 2f && y >= c.top - 2f && y <= c.bottom + 2f) onTick(todo) else onOpen(todo)
-                                        }
-                                    },
+                    // One block per document, in library order.
+                    val groups = todos.groupBy { it.document }.values.toList()
+                    items(groups, key = { it.first().document.value }, contentType = { "document" }) { group ->
+                        Column(Modifier.fillMaxWidth().padding(bottom = 24.dp)) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(group.first().path.joinToString(" › "), style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                Text(" · ${group.size}", style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.outline)
+                            }
+                            FlowRow(
+                                Modifier.padding(top = 8.dp),
+                                horizontalArrangement = Arrangement.spacedBy(16.dp),
+                                verticalArrangement = Arrangement.spacedBy(12.dp),
                             ) {
-                                drawIntoCanvas { canvas ->
-                                    val native = canvas.nativeCanvas
-                                    val save = native.save()
-                                    val matrix = Matrix().apply {
-                                        setScale(k, k)
-                                        preTranslate(-item.x, -item.y)
-                                    }
-                                    native.concat(matrix)
-                                    renderer.draw(native, item, done = false, documentToView = matrix)
-                                    native.restoreToCount(save)
-                                }
+                                for (todo in group) TodoCard(todo, renderer, density, onTick, onOpen)
                             }
                         }
                     }
@@ -141,6 +147,38 @@ fun TodoListScreen(
                     }
                 }
             }
+        }
+    }
+}
+
+/** One to-do as on its page, scaled to the list. */
+@Composable
+private fun TodoCard(todo: OpenTodo, renderer: TodoRenderer, density: Float, onTick: (OpenTodo) -> Unit, onOpen: (OpenTodo) -> Unit) {
+    val item = todo.item
+    val k = LIST_DP_PER_MM * density
+    Canvas(
+        Modifier
+            .size((item.widthMm * LIST_DP_PER_MM).dp, (item.heightMm * LIST_DP_PER_MM).dp)
+            .testTag(TodoListTags.item(item.taskId))
+            .pointerInput(item) {
+                detectTapGestures { p ->
+                    val x = p.x / k + item.x
+                    val y = p.y / k + item.y
+                    val c = item.checkBounds
+                    if (x <= c.right + 2f && y >= c.top - 2f && y <= c.bottom + 2f) onTick(todo) else onOpen(todo)
+                }
+            },
+    ) {
+        drawIntoCanvas { canvas ->
+            val native = canvas.nativeCanvas
+            val save = native.save()
+            val matrix = Matrix().apply {
+                setScale(k, k)
+                preTranslate(-item.x, -item.y)
+            }
+            native.concat(matrix)
+            renderer.draw(native, item, done = false, documentToView = matrix)
+            native.restoreToCount(save)
         }
     }
 }

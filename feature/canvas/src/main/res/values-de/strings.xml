@@ -30,8 +30,9 @@
     <string name="resize_todo">Größe ändern</string>
     <string name="delete_todo">ToDo löschen</string>
     <string name="open_todos">Offene ToDos</string>
-    <string name="no_open_todos">Keine offenen ToDos.</string>
+    <string name="no_open_todos">Keine offenen ToDos. Neue legst du mit dem ToDo-Werkzeug in einer Notiz an.</string>
     <string name="todo_done">Erledigt</string>
     <string name="text_done">Fertig</string>
     <string name="eraser">Radierer</string>
+    <string name="all_done">Alles erledigt</string>
 </resources>

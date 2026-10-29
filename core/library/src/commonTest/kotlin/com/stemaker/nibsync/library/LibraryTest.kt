@@ -241,6 +241,23 @@ class LibraryTest {
         again.load("Notizen", "Seite")
         assertEquals(inner.id, again.tree.value[doc.id]?.parent)
     }
+
+    @Test
+    fun aBookColourIsStoredAndOlderFilesHaveNone() = runTest {
+        val lib = library()
+        lib.load("Notizen", "Erste Seite")
+        val book = lib.tree.value.books.single()
+        assertNull(book.colorArgb)
+        lib.setColor(book.id, 0xff2e7d32.toInt())
+        assertEquals(0xff2e7d32.toInt(), lib.tree.value[book.id]!!.colorArgb)
+        // Read back from disk, as after a restart.
+        val again = library()
+        again.load("Notizen", "Erste Seite")
+        assertEquals(0xff2e7d32.toInt(), again.tree.value[book.id]!!.colorArgb)
+        // A file written before colours existed.
+        val old = """{"formatVersion":1,"id":"b1","kind":"FOLDER","title":"Alt","createdAt":5}"""
+        assertNull(nodes().decode(old.encodeToByteArray())!!.colorArgb)
+    }
 }
 
 class LibraryMergeTest {
@@ -269,9 +286,15 @@ class LibraryMergeTest {
     }
 
     @Test
+    fun aColourChangedAtTheSameTimeIsDecidedTheSameWayEverywhere() {
+        val a = base.copy(colorArgb = 1, modifiedAtEpochMs = 20)
+        val b = base.copy(colorArgb = 2, modifiedAtEpochMs = 20)
+        assertEquals(a.mergedWith(b), b.mergedWith(a))
+    }
+
+    @Test
     fun mergeIsIdempotent() {
         val other = base.copy(title = "X", modifiedAtEpochMs = 99)
         assertEquals(base.mergedWith(other), base.mergedWith(other).mergedWith(other))
     }
-
 }

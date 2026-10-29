@@ -1,5 +1,12 @@
 package com.stemaker.nibsync.desktop
 
+import androidx.compose.ui.graphics.Color
+import androidx.compose.material3.LocalContentColor
+import androidx.compose.foundation.border
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.clickable
@@ -103,6 +110,9 @@ object LibraryTags {
     fun row(title: String) = "library-row-$title"
     fun bookMenu(title: String) = "library-book-menu-$title"
     fun assign(account: String) = "library-assign-$account"
+    const val SEARCH = "library-search"
+    const val SEARCH_RESULTS = "library-search-results"
+    fun bookColor(index: Int) = "library-book-color-$index"
 }
 
 /** Which account each book syncs with, and moving a local book to an account. */
@@ -118,6 +128,7 @@ sealed interface LibraryAction {
     data class NewDocument(val parent: LibraryNode) : LibraryAction
     data class Rename(val node: LibraryNode) : LibraryAction
     data class Delete(val node: LibraryNode) : LibraryAction
+    data class SetColor(val book: LibraryNode, val colorArgb: Int?) : LibraryAction
 }
 
 /**
@@ -153,6 +164,7 @@ fun LibraryPane(
     onMove: ((NodeId, NodeId) -> Unit)? = null,
 ) {
     var menuFor by remember { mutableStateOf<NodeId?>(null) }
+    var query by remember { mutableStateOf("") }
     // Dragging: the entry, the pointer (root coordinates) and where each visible row is.
     var drag by remember { mutableStateOf<TreeDrag?>(null) }
     val rowBounds = remember { mutableStateMapOf<NodeId, Rect>() }
@@ -214,95 +226,154 @@ fun LibraryPane(
             }
             HorizontalDivider()
         }
-        LazyColumn(Modifier.fillMaxWidth().weight(1f).onGloballyPositioned { listBounds = it.boundsInRoot() }, state = listState) {
-            items(treeRows(tree, expanded), key = { it.node.id.value }) { row ->
-                val node = row.node
-                val selected = node.id == current
-                DisposableEffect(node.id) { onDispose { rowBounds.remove(node.id) } }
-                Box {
-                    Row(
+        OutlinedTextField(
+            value = query,
+            onValueChange = { query = it },
+            placeholder = { Text(strings.searchDocuments, style = MaterialTheme.typography.bodyMedium) },
+            leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null, Modifier.size(18.dp)) },
+            trailingIcon = {
+                if (query.isNotEmpty()) {
+                    IconButton(onClick = { query = "" }) { Icon(Icons.Filled.Close, contentDescription = strings.clearSearch, Modifier.size(18.dp)) }
+                }
+            },
+            singleLine = true,
+            textStyle = MaterialTheme.typography.bodyMedium,
+            shape = RoundedCornerShape(20.dp),
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 6.dp).testTag(LibraryTags.SEARCH),
+        )
+        if (query.isNotBlank()) {
+            // Documents whose title or folders match, instead of the tree.
+            val found = com.stemaker.nibsync.library.LinkTargets.documents(tree, query)
+            LazyColumn(Modifier.fillMaxWidth().weight(1f).testTag(LibraryTags.SEARCH_RESULTS)) {
+                if (found.isEmpty()) {
+                    item { Text(strings.noDocumentsFound, Modifier.padding(12.dp), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+                }
+                items(found, key = { it.id.value }) { doc ->
+                    Column(
                         Modifier
                             .fillMaxWidth()
-                            .onGloballyPositioned { rowBounds[node.id] = it.boundsInRoot() }
-                            .background(
-                                when {
-                                    node.id == dropTarget -> MaterialTheme.colorScheme.primaryContainer
-                                    selected -> MaterialTheme.colorScheme.secondaryContainer
-                                    else -> MaterialTheme.colorScheme.surfaceContainerLow
-                                },
-                            )
-                            .then(
-                                if (onMove != null && node.parent != null) {
-                                    Modifier.pointerInput(node.id) {
-                                        detectDragGestures(
-                                            onDragStart = { start ->
-                                                val origin = rowBounds[node.id]?.topLeft ?: Offset.Zero
-                                                drag = TreeDrag(node.id, node.title, origin + start)
-                                            },
-                                            onDrag = { change, amount ->
-                                                change.consume()
-                                                drag = drag?.let { it.copy(pointer = it.pointer + amount) }
-                                            },
-                                            onDragEnd = {
-                                                val d = drag
-                                                val target = d?.let { rowBounds.entries.firstOrNull { e -> e.value.contains(it.pointer) }?.key }?.let { currentTree.dropTarget(d.id, it) }
-                                                drag = null
-                                                if (d != null && target != null) currentOnMove?.invoke(d.id, target)
-                                            },
-                                            onDragCancel = { drag = null },
-                                        )
+                            .clickable { query = ""; onOpen(NodeId(doc.id.value)) }
+                            .padding(horizontal = 12.dp, vertical = 6.dp)
+                            .testTag(LibraryTags.row(doc.title)),
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            Icon(Icons.Filled.Description, null, Modifier.size(18.dp))
+                            Text(doc.title, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        }
+                        Text(doc.path, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(start = 24.dp))
+                    }
+                }
+            }
+        } else {
+            LazyColumn(Modifier.fillMaxWidth().weight(1f).onGloballyPositioned { listBounds = it.boundsInRoot() }, state = listState) {
+                items(treeRows(tree, expanded), key = { it.node.id.value }) { row ->
+                    val node = row.node
+                    val selected = node.id == current
+                    DisposableEffect(node.id) { onDispose { rowBounds.remove(node.id) } }
+                    Box {
+                        Row(
+                            Modifier
+                                .fillMaxWidth()
+                                .onGloballyPositioned { rowBounds[node.id] = it.boundsInRoot() }
+                                .background(
+                                    when {
+                                        node.id == dropTarget -> MaterialTheme.colorScheme.primaryContainer
+                                        selected -> MaterialTheme.colorScheme.secondaryContainer
+                                        else -> MaterialTheme.colorScheme.surfaceContainerLow
+                                    },
+                                )
+                                .then(
+                                    if (onMove != null && node.parent != null) {
+                                        Modifier.pointerInput(node.id) {
+                                            detectDragGestures(
+                                                onDragStart = { start ->
+                                                    val origin = rowBounds[node.id]?.topLeft ?: Offset.Zero
+                                                    drag = TreeDrag(node.id, node.title, origin + start)
+                                                },
+                                                onDrag = { change, amount ->
+                                                    change.consume()
+                                                    drag = drag?.let { it.copy(pointer = it.pointer + amount) }
+                                                },
+                                                onDragEnd = {
+                                                    val d = drag
+                                                    val target = d?.let { rowBounds.entries.firstOrNull { e -> e.value.contains(it.pointer) }?.key }?.let { currentTree.dropTarget(d.id, it) }
+                                                    drag = null
+                                                    if (d != null && target != null) currentOnMove?.invoke(d.id, target)
+                                                },
+                                                onDragCancel = { drag = null },
+                                            )
+                                        }
+                                    } else {
+                                        Modifier
+                                    },
+                                )
+                                .onPointerEvent(PointerEventType.Press) { event ->
+                                    if (onAction != null && event.buttons.isSecondaryPressed) menuFor = node.id
+                                }
+                                .clickable {
+                                    if (node.isFolder) {
+                                        onExpandedChange(if (node.id in expanded) expanded - node.id else expanded + node.id)
+                                    } else {
+                                        onOpen(node.id)
                                     }
-                                } else {
-                                    Modifier
-                                },
-                            )
-                            .onPointerEvent(PointerEventType.Press) { event ->
-                                if (onAction != null && event.buttons.isSecondaryPressed) menuFor = node.id
+                                }
+                                .padding(start = (12 + row.depth * 18).dp, end = 12.dp, top = 6.dp, bottom = 6.dp)
+                                .testTag(LibraryTags.row(node.title))
+                                .semantics { if (node.id == dropTarget) this.selected = true },
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        ) {
+                            if (node.isFolder && row.hasChildren) {
+                                Icon(if (row.expanded) Icons.Filled.ExpandMore else Icons.AutoMirrored.Filled.KeyboardArrowRight, null, Modifier.size(18.dp))
+                            } else {
+                                Spacer(Modifier.width(18.dp))
                             }
-                            .clickable {
+                            val icon = when {
+                                !node.isFolder -> Icons.Filled.Description
+                                node.parent == null -> Icons.AutoMirrored.Filled.MenuBook
+                                else -> Icons.Filled.Folder
+                            }
+                            // A book in its colour; chapters and documents of it in a lighter tone.
+                            val tint = com.stemaker.nibsync.library.BookColors.of(tree, node)?.let { Color(it).copy(alpha = if (node.parent == null) 1f else 0.7f) }
+                            Icon(icon, null, Modifier.size(18.dp), tint = tint ?: LocalContentColor.current)
+                            Text(node.title, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
+                            if (node.parent == null && bookAccounts != null) {
+                                Spacer(Modifier.weight(1f))
+                                BookAccountLabel(node, bookAccounts, strings)
+                            }
+                        }
+                        if (onAction != null) {
+                            DropdownMenu(expanded = menuFor == node.id, onDismissRequest = { menuFor = null }) {
+                                @Composable
+                                fun entry(label: String, tag: String, action: LibraryAction) = DropdownMenuItem(
+                                    text = { Text(label) },
+                                    onClick = { menuFor = null; onAction(action) },
+                                    modifier = Modifier.testTag(tag),
+                                )
                                 if (node.isFolder) {
-                                    onExpandedChange(if (node.id in expanded) expanded - node.id else expanded + node.id)
-                                } else {
-                                    onOpen(node.id)
+                                    entry(strings.newChapter, LibraryTags.NEW_CHAPTER, LibraryAction.NewChapter(node))
+                                    entry(strings.newDocument, LibraryTags.NEW_DOCUMENT, LibraryAction.NewDocument(node))
+                                }
+                                entry(strings.rename, LibraryTags.RENAME, LibraryAction.Rename(node))
+                                entry(strings.delete, LibraryTags.DELETE, LibraryAction.Delete(node))
+                                if (node.parent == null) {
+                                    Text(strings.bookColor, style = MaterialTheme.typography.labelMedium, modifier = Modifier.padding(start = 12.dp, top = 6.dp))
+                                    Row(Modifier.padding(horizontal = 8.dp, vertical = 4.dp)) {
+                                        for ((i, argb) in com.stemaker.nibsync.library.BookColors.PALETTE.withIndex()) {
+                                            Box(
+                                                Modifier
+                                                    .size(28.dp)
+                                                    .padding(3.dp)
+                                                    .border(2.dp, if (node.colorArgb == argb) MaterialTheme.colorScheme.primary else Color.Transparent, CircleShape)
+                                                    .padding(3.dp)
+                                                    .background(argb?.let { Color(it) } ?: MaterialTheme.colorScheme.onSurfaceVariant, CircleShape)
+                                                    .clickable { menuFor = null; onAction(LibraryAction.SetColor(node, argb)) }
+                                                    .testTag(LibraryTags.bookColor(i)),
+                                            )
+                                        }
+                                    }
                                 }
                             }
-                            .padding(start = (12 + row.depth * 18).dp, end = 12.dp, top = 6.dp, bottom = 6.dp)
-                            .testTag(LibraryTags.row(node.title))
-                            .semantics { if (node.id == dropTarget) this.selected = true },
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(6.dp),
-                    ) {
-                        if (node.isFolder && row.hasChildren) {
-                            Icon(if (row.expanded) Icons.Filled.ExpandMore else Icons.AutoMirrored.Filled.KeyboardArrowRight, null, Modifier.size(18.dp))
-                        } else {
-                            Spacer(Modifier.width(18.dp))
-                        }
-                        val icon = when {
-                            !node.isFolder -> Icons.Filled.Description
-                            node.parent == null -> Icons.AutoMirrored.Filled.MenuBook
-                            else -> Icons.Filled.Folder
-                        }
-                        Icon(icon, null, Modifier.size(18.dp))
-                        Text(node.title, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
-                        if (node.parent == null && bookAccounts != null) {
-                            Spacer(Modifier.weight(1f))
-                            BookAccountLabel(node, bookAccounts, strings)
-                        }
-                    }
-                    if (onAction != null) {
-                        DropdownMenu(expanded = menuFor == node.id, onDismissRequest = { menuFor = null }) {
-                            @Composable
-                            fun entry(label: String, tag: String, action: LibraryAction) = DropdownMenuItem(
-                                text = { Text(label) },
-                                onClick = { menuFor = null; onAction(action) },
-                                modifier = Modifier.testTag(tag),
-                            )
-                            if (node.isFolder) {
-                                entry(strings.newChapter, LibraryTags.NEW_CHAPTER, LibraryAction.NewChapter(node))
-                                entry(strings.newDocument, LibraryTags.NEW_DOCUMENT, LibraryAction.NewDocument(node))
-                            }
-                            entry(strings.rename, LibraryTags.RENAME, LibraryAction.Rename(node))
-                            entry(strings.delete, LibraryTags.DELETE, LibraryAction.Delete(node))
                         }
                     }
                 }

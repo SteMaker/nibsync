@@ -194,6 +194,10 @@ fun App(
                     libraryAction = null
                     appScope.launch { container.library.rename(action.node.id, title) }
                 }
+                is LibraryAction.SetColor -> LaunchedEffect(action) {
+                    libraryAction = null
+                    container.library.setColor(action.book.id, action.colorArgb)
+                }
                 is LibraryAction.Delete -> DeleteEntryDialog(action.node, strings, onDismiss = { libraryAction = null }) {
                     libraryAction = null
                     val gone = tree.descendantsOf(action.node.id) + action.node

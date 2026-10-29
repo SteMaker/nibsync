@@ -170,4 +170,32 @@ class LibraryPaneTest {
         assertThat(lib.tree.value[chapter.id]?.parent).isEqualTo(lib.tree.value.books.first { it.title == "Arbeit" }.id)
         runBlocking { container.closeAll() }
     }
+
+    @Test
+    fun searchFindsADocumentAndABookGetsAColour() = runComposeUiTest {
+        val root = tmp.root.toOkioPath()
+        val container = DesktopContainer(root)
+        val settings = Settings(container.fs, root / "settings.properties")
+        val (book, wanted) = runBlocking {
+            container.library.load("Buch", "Seite 1")
+            val book = container.library.tree.value.books.single()
+            val chapter = container.library.createFolder(book.id, "Projekte")
+            book to container.library.createDocument(chapter.id, "Kickoff Atlas", PageFormat())
+        }
+        setContent { App(container, settings, Strings(german = true)) }
+        waitUntil(timeoutMillis = 5000) { runCatching { onNodeWithTag(LibraryTags.row("Buch")).assertExists() }.isSuccess }
+
+        // A search shows matching documents (also inside closed chapters); a click opens one.
+        onNodeWithTag(LibraryTags.SEARCH).performTextInput("atlas")
+        onNodeWithTag(LibraryTags.SEARCH_RESULTS).assertExists()
+        onNodeWithTag(LibraryTags.row("Kickoff Atlas")).performClick()
+        waitUntil(timeoutMillis = 5000) { settings.lastDocument == wanted.id.asDocumentId }
+        onNodeWithTag(LibraryTags.SEARCH_RESULTS).assertDoesNotExist()
+
+        // The book's menu sets its colour.
+        onNodeWithTag(LibraryTags.row("Buch")).performMouseInput { rightClick() }
+        onNodeWithTag(LibraryTags.bookColor(4)).performClick()
+        waitUntil(timeoutMillis = 5000) { container.library.tree.value[book.id]?.colorArgb == com.stemaker.nibsync.library.BookColors.PALETTE[4] }
+        runBlocking { container.closeAll() }
+    }
 }

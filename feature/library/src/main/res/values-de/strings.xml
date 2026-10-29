@@ -27,4 +27,8 @@
     <string name="local_only">Nur auf diesem Gerät</string>
     <string name="sync_book_with">Mit „%1$s“ synchronisieren</string>
     <string name="open_todos">Offene ToDos</string>
+    <string name="search_documents">Dokumente suchen</string>
+    <string name="clear_search">Suche leeren</string>
+    <string name="no_documents_found">Keine Dokumente gefunden</string>
+    <string name="book_color">Farbe</string>
 </resources>

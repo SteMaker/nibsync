@@ -30,8 +30,9 @@
     <string name="resize_todo">Change size</string>
     <string name="delete_todo">Delete to-do</string>
     <string name="open_todos">Open to-dos</string>
-    <string name="no_open_todos">No open to-dos.</string>
+    <string name="no_open_todos">No open to-dos. New ones are made with the to-do tool in a note.</string>
     <string name="todo_done">Done</string>
     <string name="text_done">Done</string>
     <string name="eraser">Eraser</string>
+    <string name="all_done">All done</string>
 </resources>

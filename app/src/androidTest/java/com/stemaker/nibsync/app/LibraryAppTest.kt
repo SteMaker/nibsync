@@ -318,6 +318,21 @@ class LibraryAppTest {
     }
 
     @Test
+    fun searchFindsADocumentWithoutTheKeyboardComingUpBefore() {
+        val target = createDocumentThroughTheDrawer()
+        openDrawer()
+        // Only tapping the search brings up the field (and the keyboard).
+        compose.onNodeWithTag(LibraryTags.SEARCH).assertDoesNotExist()
+        compose.onNodeWithTag(LibraryTags.SEARCH_BUTTON).performClick()
+        compose.onNodeWithTag(LibraryTags.SEARCH).performTextInput(bookTitle.takeLast(6))
+        // The document is found through its book's name and opens.
+        val title = tree()[target]!!.title
+        compose.onNodeWithTag(LibraryTags.SEARCH_RESULTS).assertExists()
+        compose.onNodeWithTag(LibraryTags.row(title)).performClick()
+        waitUntil("document opened") { activity { it.documentId } == target.asDocumentId }
+    }
+
+    @Test
     fun nameFieldStartsEmptySoTypingGivesExactlyTheName() {
         openDrawer()
         compose.onNodeWithTag(LibraryTags.NEW_BOOK).performClick()

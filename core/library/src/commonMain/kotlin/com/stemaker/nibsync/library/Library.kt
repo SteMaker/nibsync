@@ -76,6 +76,14 @@ class Library(
         publish()
     }
 
+    /** Sets the colour of a book's icon (null: the default). */
+    suspend fun setColor(id: NodeId, colorArgb: Int?) = lock.withLock {
+        val node = requireNotNull(_tree.value[id]) { "Unknown node $id" }
+        if (node.colorArgb == colorArgb) return@withLock
+        store(node.copy(colorArgb = colorArgb, modifiedAtEpochMs = clock()))
+        publish()
+    }
+
     /**
      * Moves a chapter or document (with everything inside) into the folder [target], also into
      * another book. Books stay top level. Does nothing if [LibraryTree.canMove] says no.

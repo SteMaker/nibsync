@@ -97,6 +97,8 @@ class LibraryViewModel(
 
     suspend fun rename(id: NodeId, title: String) = library.rename(id, title)
 
+    suspend fun setColor(id: NodeId, colorArgb: Int?) = library.setColor(id, colorArgb)
+
     /** Opens [id] in the tree (e.g. a folder held under a dragged entry). */
     fun expand(id: NodeId) = _expanded.update { it + id }
 
