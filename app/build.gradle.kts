@@ -55,6 +55,7 @@ android {
 
 dependencies {
     implementation(project(":core:storage"))
+    implementation(project(":shared:theme"))
     implementation(project(":feature:canvas"))
     implementation(project(":feature:media"))
     implementation(project(":core:shapes"))

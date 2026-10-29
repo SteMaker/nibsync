@@ -1,5 +1,6 @@
 package com.stemaker.nibsync.app
 
+import com.stemaker.nibsync.theme.NibSyncTheme
 import android.annotation.SuppressLint
 import android.content.Intent
 import android.net.Uri
@@ -23,7 +24,6 @@ import androidx.compose.material3.ModalDrawerSheet
 import androidx.compose.material3.ModalNavigationDrawer
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.lightColorScheme
 import androidx.compose.material3.rememberDrawerState
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -178,7 +178,7 @@ class MainActivity : ComponentActivity() {
         val bookTitle = getString(R.string.default_book_title)
         val documentTitle = getString(R.string.default_document_title)
         setContent {
-            MaterialTheme(colorScheme = lightColorScheme(primary = Color(0xff1a3fa8))) {
+            NibSyncTheme {
                 val scope = rememberCoroutineScope()
                 val drawerState = rememberDrawerState(DrawerValue.Closed)
                 val libraryVm = viewModel { LibraryViewModel(container.library, container::beforeDelete) }

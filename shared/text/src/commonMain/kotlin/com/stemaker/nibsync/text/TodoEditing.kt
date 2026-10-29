@@ -80,14 +80,17 @@ class TodoEditing(private val session: DocumentSession) {
         )
     }
 
-    /** Starts a new, empty to-do at ([x], [y]) mm, handwritten or typed; stored once it has content. */
+    /**
+     * Starts a new, empty to-do at ([x], [y]) mm, handwritten or typed; stored once it has
+     * content. A typed one starts one line high and grows with its text; handwriting gets room.
+     */
     fun startNew(x: Float, y: Float, ink: Boolean, pageWidthMm: Float) {
         finish()
         saved = null
         val width = minOf(TodoItem.DEFAULT_WIDTH_MM, maxOf(TodoItem.MIN_WIDTH_MM, pageWidthMm - x - MARGIN_MM))
         val left = x.coerceIn(0f, maxOf(0f, pageWidthMm - width))
         _editing.value = TodoEdit(
-            ++key, null, null, left, maxOf(0f, y), width, TodoItem.DEFAULT_HEIGHT_MM,
+            ++key, null, null, left, maxOf(0f, y), width, if (ink) TodoItem.DEFAULT_HEIGHT_MM else TodoItem.MIN_HEIGHT_MM,
             text = if (ink) null else TextEditController.create(RichText.EMPTY),
             ink = emptyList(),
         )

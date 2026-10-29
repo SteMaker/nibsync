@@ -45,6 +45,11 @@ class PagePainter(private val text: DesktopTextLayout, private val media: MediaC
     /** Current title of a linked document (null: unknown here, the stored one is shown). */
     var titleOf: (DocumentId) -> String? = { null }
 
+    /** Page surroundings and selection, from the app theme. */
+    var desk = Color(0xffdcdfe2)
+    var shadow = Color(0x26000000)
+    var selection = Color(0xff4f6b80)
+
     /** Measures link labels in layout pixels (1 sp = 1 px), scaled down when drawn. */
     private val labels = TextMeasurer(createFontFamilyResolver(), Density(1f), LayoutDirection.Ltr)
 
@@ -61,13 +66,13 @@ class PagePainter(private val text: DesktopTextLayout, private val media: MediaC
     )
 
     fun draw(scope: DrawScope, doc: DocumentState, viewport: Viewport, hiddenTextBox: Any? = null, overlay: Overlay = Overlay()) = with(scope) {
-        drawRect(DESK)
+        drawRect(desk)
         if (!viewport.hasSize) return
         val t = viewport.documentToView
         val pageLeft = t.mapX(0f)
         val pageTop = t.mapY(0f)
         val pageSize = Size(viewport.pageWidthMm * t.scale, viewport.documentHeightMm * t.scale)
-        drawRect(SHADOW, Offset(pageLeft + 4f, pageTop + 4f), pageSize)
+        drawRect(shadow, Offset(pageLeft + 4f, pageTop + 4f), pageSize)
         drawRect(Color.White, Offset(pageLeft, pageTop), pageSize)
 
         val visible = viewport.visibleDocumentRect
@@ -181,7 +186,7 @@ class PagePainter(private val text: DesktopTextLayout, private val media: MediaC
         val size = Size(item.widthMm, item.heightMm)
         val corner = CornerRadius(1.5f)
         drawRoundRect(TODO_FILL, topLeft, size, corner)
-        drawRoundRect(if (editing) SELECTION else TODO_FRAME, topLeft, size, corner, style = StrokeStyle(if (editing) 0.4f else 0.3f))
+        drawRoundRect(if (editing) selection else TODO_FRAME, topLeft, size, corner, style = StrokeStyle(if (editing) 0.4f else 0.3f))
         val c = item.checkBounds
         val center = Offset((c.left + c.right) / 2, (c.top + c.bottom) / 2)
         val rim = TodoItem.CHECK_SIZE_MM * 0.16f
@@ -226,9 +231,9 @@ class PagePainter(private val text: DesktopTextLayout, private val media: MediaC
                 val pad = NoteController.SELECTION_PADDING_MM
                 r = com.stemaker.nibsync.model.geometry.Rect(f.left, f.top, f.left + pad + (f.width - 2 * pad) * gesture.factor + pad, f.top + pad + (f.height - 2 * pad) * gesture.factor + pad)
             }
-            drawRect(SELECTION, Offset(t.mapX(r.left), t.mapY(r.top)), Size(r.width * t.scale, r.height * t.scale), style = dash)
+            drawRect(selection, Offset(t.mapX(r.left), t.mapY(r.top)), Size(r.width * t.scale, r.height * t.scale), style = dash)
             if (overlay.resizable && gesture !is GesturePreview.Moving) {
-                drawCircle(SELECTION, HANDLE_RADIUS_PX, Offset(t.mapX(r.right), t.mapY(r.bottom)))
+                drawCircle(selection, HANDLE_RADIUS_PX, Offset(t.mapX(r.right), t.mapY(r.bottom)))
             }
         }
         when (gesture) {
@@ -238,7 +243,7 @@ class PagePainter(private val text: DesktopTextLayout, private val media: MediaC
                 for (i in p.indices step 2) {
                     if (i == 0) path.moveTo(t.mapX(p[i]), t.mapY(p[i + 1])) else path.lineTo(t.mapX(p[i]), t.mapY(p[i + 1]))
                 }
-                drawPath(path, SELECTION, style = dash)
+                drawPath(path, selection, style = dash)
             }
             is GesturePreview.Erasing -> drawCircle(ERASER, gesture.radiusMm * t.scale, Offset(t.mapX(gesture.x), t.mapY(gesture.y)), style = StrokeStyle(2f))
             else -> Unit
@@ -322,11 +327,8 @@ class PagePainter(private val text: DesktopTextLayout, private val media: MediaC
     }
 
     companion object {
-        val DESK = Color(0xffe0e0e0)
         const val HANDLE_RADIUS_PX = 9f
-        private val SELECTION = Color(0xff1a3fa8)
         private val ERASER = Color(0xff757575)
-        private val SHADOW = Color(0x22000000)
         private val PATTERN = Color(0xffb4c6e2)
         private val PLACEHOLDER = Color(0xffeceff1)
         private val OUTLINE = Color(0xffb0bec5)

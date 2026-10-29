@@ -1,5 +1,6 @@
 package com.stemaker.nibsync.desktop
 
+import com.stemaker.nibsync.theme.NibSyncTheme
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.foundation.draganddrop.dragAndDropTarget
 import androidx.compose.foundation.layout.Box
@@ -24,7 +25,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.VerticalDivider
-import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -81,7 +81,7 @@ fun App(
         DesktopCloudLogin.run(service, sync!!.clients, openBrowser, strings)
     },
 ) {
-    MaterialTheme(colorScheme = lightColorScheme(primary = Color(0xff1a3fa8))) {
+    NibSyncTheme {
         // Shortcuts also from here, so they work in tests without a window (the window passes
         // keys on first; a key is handled only once).
         Surface(Modifier.fillMaxSize().onPreviewKeyEvent(keys::onKey)) {
@@ -316,6 +316,11 @@ private fun DocumentPane(
     val media = remember(id) { MediaCache(scope) { File(container.repository.assetPath(id, it.sha256).toString()) } }
     val painter = remember(id) { PagePainter(textLayout, media) }
     painter.titleOf = { tree[NodeId(it.value)]?.title }
+    NibSyncTheme.colors.let { c ->
+        painter.desk = c.desk
+        painter.shadow = c.pageShadow
+        painter.selection = c.selection
+    }
     // Pictures that arrive with the sync get drawn once they are there.
     LaunchedEffect(id) { container.assetsArrivedFlow.collect { if (id in it) media.retryMissing() } }
     var message by remember(id) { mutableStateOf<String?>(null) }

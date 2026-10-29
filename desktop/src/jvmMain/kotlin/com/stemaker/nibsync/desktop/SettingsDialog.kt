@@ -5,6 +5,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.material3.OutlinedTextField
@@ -110,12 +111,31 @@ private fun PenWidthSettings(strings: Strings, widths: Map<BrushFamily, List<Flo
                         modifier = Modifier.width(100.dp).testTag(SettingsTags.penWidth(family, index)),
                     )
                 }
+                PenWidthPreview(family, widths[family] ?: PenWidths.DEFAULTS.getValue(family))
             }
         }
     }
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
         TextButton(onClick = { onChange(PenWidths.DEFAULTS); resets++ }, enabled = widths != PenWidths.DEFAULTS, modifier = Modifier.testTag(SettingsTags.PEN_WIDTHS_RESET)) {
             Text(strings.penWidthsReset)
+        }
+    }
+}
+
+/** The three widths as short strokes at about their real size on the screen. */
+@Composable
+private fun PenWidthPreview(family: BrushFamily, widths: List<Float>) {
+    val ink = if (family == BrushFamily.HIGHLIGHTER) MaterialTheme.colorScheme.tertiary.copy(alpha = 0.45f) else MaterialTheme.colorScheme.onSurface
+    androidx.compose.foundation.Canvas(Modifier.size(80.dp, 48.dp)) {
+        // On the PC a dp is about 1/96 inch.
+        val pxPerMm = density * 96f / 25.4f
+        widths.forEachIndexed { i, mm ->
+            val y = size.height * (i + 0.5f) / widths.size
+            val path = androidx.compose.ui.graphics.Path().apply {
+                moveTo(4f, y)
+                cubicTo(size.width * 0.35f, y - 5f, size.width * 0.65f, y + 5f, size.width - 4f, y)
+            }
+            drawPath(path, ink, style = androidx.compose.ui.graphics.drawscope.Stroke(width = (mm * pxPerMm).coerceAtLeast(1f), cap = androidx.compose.ui.graphics.StrokeCap.Round))
         }
     }
 }

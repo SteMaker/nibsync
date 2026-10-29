@@ -851,7 +851,6 @@ class NoteAppTest {
         // Near the bottom of the page view, where the keyboard comes up.
         tap(400f, view.height - 120f)
         waitUntil("editing a new text box") { editing() != null }
-        compose.onNodeWithTag(TextTags.EDITOR).performTextInput("Unten")
         fun keyboardShown(): Boolean {
             var shown = false
             scenario.onActivity {
@@ -863,10 +862,12 @@ class NoteAppTest {
         waitUntil("keyboard shown", timeoutMs = 10_000) { keyboardShown() }
         // The page scrolled so that the line is above the keyboard (the window got smaller, or
         // the keyboard covers the page's lower part).
+        // Right when the box opens, before anything is typed.
         waitUntil("line above the keyboard") {
             val e = editing() ?: return@waitUntil false
             view.viewport.documentToView.mapY(e.y + 6f) < view.height - view.viewport.bottomInsetPx
         }
+        compose.onNodeWithTag(TextTags.EDITOR).performTextInput("Unten")
         tapOutside()
         waitUntil("keyboard gone", timeoutMs = 10_000) { !keyboardShown() && view.viewport.bottomInsetPx == 0f }
         assertThat(textBoxes().single().text.plainText).isEqualTo("Unten")
@@ -903,8 +904,9 @@ class NoteAppTest {
         val expectedTop = locAfter[1] + view.viewport.documentToView.mapY(box.y)
         // Where the glyphs are: on the page (closed) vs. in the editor (screen shot).
         fun inkBounds(bmp: Bitmap, ox: Int, oy: Int): List<Int> {
-            val l0 = ox + t.mapX(box.x).toInt() - 20
-            val t0 = oy + t.mapY(box.y).toInt() - 20
+            // Just inside the box: the move handle above its corner is drawn dark too.
+            val l0 = ox + t.mapX(box.x).toInt() - 4
+            val t0 = oy + t.mapY(box.y).toInt() - 4
             // Only the first letters: the editor's cursor sits after the last one.
             val r0 = ox + t.mapX(box.x + 6f).toInt()
             val b0 = oy + t.mapY(box.y + box.heightMm).toInt() + 20

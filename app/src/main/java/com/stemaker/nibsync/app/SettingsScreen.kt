@@ -4,6 +4,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.OutlinedTextField
@@ -145,11 +146,31 @@ private fun PenWidthSettings(widths: Map<BrushFamily, List<Float>>, onChange: (M
                         modifier = Modifier.width(110.dp).testTag(SettingsTags.penWidth(family, index)),
                     )
                 }
+                PenWidthPreview(family, widths[family] ?: PenWidths.DEFAULTS.getValue(family))
             }
         }
     }
     TextButton(onClick = { onChange(PenWidths.DEFAULTS); resets++ }, enabled = widths != PenWidths.DEFAULTS, modifier = Modifier.testTag(SettingsTags.PEN_WIDTHS_RESET)) {
         Text(stringResource(R.string.pen_widths_reset))
+    }
+}
+
+/** The three widths as short strokes at their real size on the screen. */
+@Composable
+private fun PenWidthPreview(family: BrushFamily, widths: List<Float>) {
+    val ink = if (family == BrushFamily.HIGHLIGHTER) MaterialTheme.colorScheme.tertiary.copy(alpha = 0.45f) else MaterialTheme.colorScheme.onSurface
+    androidx.compose.foundation.Canvas(Modifier.size(96.dp, 48.dp)) {
+        // 160 dp are one inch.
+        val pxPerMm = density * 160f / 25.4f
+        val rows = widths.size
+        widths.forEachIndexed { i, mm ->
+            val y = size.height * (i + 0.5f) / rows
+            val path = androidx.compose.ui.graphics.Path().apply {
+                moveTo(4f, y)
+                cubicTo(size.width * 0.35f, y - 6f, size.width * 0.65f, y + 6f, size.width - 4f, y)
+            }
+            drawPath(path, ink, style = androidx.compose.ui.graphics.drawscope.Stroke(width = (mm * pxPerMm).coerceAtLeast(1f), cap = androidx.compose.ui.graphics.StrokeCap.Round))
+        }
     }
 }
 

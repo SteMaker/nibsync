@@ -6,7 +6,8 @@ import kotlin.math.min
 /**
  * Maps the endless page (document units: millimetres) onto a view (pixels).
  *
- * At [zoom] 1 the page width exactly fills the view width. Zooming in allows horizontal
+ * At [zoom] 1 the page width exactly fills the view width less [sideMarginPx] on both sides
+ * (where the desk shows). Zooming in allows horizontal
  * panning; zooming out centres the page horizontally. Vertically the page is endless: the
  * scrollable height is the written content plus [extraBottomFraction] of a screen, so the
  * page grows while writing near its end.
@@ -34,6 +35,8 @@ data class Viewport(
      * the document can scroll that much further, so its end can still be seen.
      */
     val bottomInsetPx: Float = 0f,
+    /** Desk left and right of the page at [zoom] 1. */
+    val sideMarginPx: Float = 0f,
 ) {
     init {
         require(pageWidthMm > 0f) { "pageWidthMm must be positive" }
@@ -44,7 +47,7 @@ data class Viewport(
 
     /** Pixels per millimetre. */
     val scale: Float
-        get() = if (viewWidthPx > 0f) viewWidthPx / pageWidthMm * zoom else 1f
+        get() = if (viewWidthPx > 0f) max(1f, viewWidthPx - 2 * sideMarginPx) / pageWidthMm * zoom else 1f
 
     val visibleWidthMm: Float get() = viewWidthPx / scale
     val visibleHeightMm: Float get() = viewHeightPx / scale

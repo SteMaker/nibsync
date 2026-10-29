@@ -24,7 +24,7 @@ sealed interface LinkElement : PageElement {
          * width; the label is drawn shortened if the real font is wider.
          */
         fun widthFor(label: String, heightMm: Float = HEIGHT_MM): Float =
-            minOf(MAX_WIDTH_MM, heightMm * 1.25f + label.length * fontFor(heightMm) * 0.56f)
+            minOf(MAX_WIDTH_MM, heightMm * 1.25f + label.length * fontFor(heightMm) * 0.62f)
     }
 }
 

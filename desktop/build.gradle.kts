@@ -28,6 +28,7 @@ kotlin {
             resources.srcDir(cloudClients)
             dependencies {
                 implementation(project(":shared:text"))
+                implementation(project(":shared:theme"))
                 implementation(project(":sync:client"))
                 implementation(project(":core:library"))
                 implementation(project(":core:document"))

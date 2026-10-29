@@ -1,5 +1,6 @@
 package com.stemaker.nibsync.library.ui
 
+import com.stemaker.nibsync.theme.NibSyncTheme
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.awaitEachGesture
@@ -233,7 +234,7 @@ fun LibraryDrawer(
                     .testTag(LibraryTags.TODOS),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Icon(Icons.Filled.TaskAlt, contentDescription = null, tint = Color(0xffd32f2f))
+                Icon(Icons.Filled.TaskAlt, contentDescription = null, tint = NibSyncTheme.colors.todo)
                 Spacer(Modifier.width(12.dp))
                 Text(stringResource(R.string.open_todos), style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
                 if (todoCount != null) Text(todoCount.toString(), style = MaterialTheme.typography.labelLarge)

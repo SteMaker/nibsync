@@ -35,6 +35,7 @@ dependencies {
     api(project(":core:document"))
     api(project(":core:library"))
     implementation(project(":ink:android"))
+    implementation(project(":shared:theme"))
     implementation(project(":core:shapes"))
     implementation(project(":ui:background"))
     api(project(":feature:text"))

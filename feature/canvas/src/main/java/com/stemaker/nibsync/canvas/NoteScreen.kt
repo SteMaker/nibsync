@@ -1,5 +1,7 @@
 package com.stemaker.nibsync.canvas
 
+import androidx.compose.ui.graphics.toArgb
+import com.stemaker.nibsync.theme.NibSyncTheme
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
@@ -260,8 +262,14 @@ fun NoteScreen(
         val pageHeightPx = viewport?.viewHeightPx
         LaunchedEffect(imeBottom > 0, keyboardOverlap, pageHeightPx, cursorMm) {
             val c = cursorMm ?: return@LaunchedEffect
-            if (imeBottom > 0) canvasView?.reveal(c.first, c.second)
+            val view = canvasView ?: return@LaunchedEffect
+            // Compose only sees the keyboard's inset edge-to-edge; when the window is resized
+            // for it instead, the view's own insets tell.
+            val keyboardUp = imeBottom > 0 ||
+                androidx.core.view.ViewCompat.getRootWindowInsets(view)?.isVisible(androidx.core.view.WindowInsetsCompat.Type.ime()) == true
+            if (keyboardUp) view.reveal(c.first, c.second)
         }
+        val chrome = NibSyncTheme.colors
         Row(Modifier.fillMaxSize()) {
             Box(
                 Modifier.weight(1f).fillMaxHeight().clipToBounds()
@@ -292,6 +300,7 @@ fun NoteScreen(
                         }
                     },
                     update = { view ->
+                        view.setChromeColors(chrome.desk.toArgb(), chrome.pageShadow.toArgb(), chrome.selection.toArgb())
                         view.pageFormat = document.meta.format
                         view.pageBackground = document.background
                         view.brush = tools.activeBrush
@@ -823,7 +832,7 @@ private fun ColorSwatch(argb: Int, selected: Boolean, description: String, modif
             .border(3.dp, ring, CircleShape)
             .padding(6.dp)
             .background(Color(argb), CircleShape)
-            .border(1.dp, Color(0x33000000), CircleShape)
+            .border(1.dp, MaterialTheme.colorScheme.outlineVariant, CircleShape)
             .clickable(role = Role.RadioButton, onClick = onClick)
             .semantics {
                 contentDescription = description

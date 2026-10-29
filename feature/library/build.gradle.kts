@@ -34,6 +34,7 @@ android {
 dependencies {
     api(project(":core:library"))
     implementation(project(":ui:background"))
+    implementation(project(":shared:theme"))
     implementation(libs.androidx.core.ktx)
     implementation(libs.kotlinx.coroutines.android)
     implementation(libs.androidx.lifecycle.viewmodel.compose)

@@ -217,6 +217,8 @@ class NoteCanvasView(context: Context) : FrameLayout(context) {
         viewWidthPx = 0f,
         viewHeightPx = 0f,
         minPageHeightMm = pageFormat.pageHeightMm,
+        // A little desk beside the paper, so it reads as a sheet (like on the PC).
+        sideMarginPx = PAGE_MARGIN_DP * resources.displayMetrics.density,
     )
         private set
 
@@ -231,7 +233,7 @@ class NoteCanvasView(context: Context) : FrameLayout(context) {
     private val documentToView = Matrix()
     private val pagePaint = Paint().apply { color = Color.WHITE }
     private val pageShadowPaint = Paint().apply { color = 0x22000000 }
-    private val deskColor = 0xffe0e0e0.toInt()
+    private var deskColor = 0xffdcdfe2.toInt()
     private val pageBreakPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Paint.Style.STROKE
         strokeWidth = 2f
@@ -280,7 +282,7 @@ class NoteCanvasView(context: Context) : FrameLayout(context) {
     private val selectionPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Paint.Style.STROKE
         strokeWidth = 3f
-        color = 0xff1a3fa8.toInt()
+        color = 0xff4f6b80.toInt()
         pathEffect = android.graphics.DashPathEffect(floatArrayOf(18f, 12f), 0f)
     }
     private val lassoDrawPath = android.graphics.Path()
@@ -289,7 +291,7 @@ class NoteCanvasView(context: Context) : FrameLayout(context) {
     private var resizePointerId = NO_POINTER
     private var resizeAnchorDist = 0f
     private var resizeFactor = 1f
-    private val handlePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = 0xff1a3fa8.toInt() }
+    private val handlePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = 0xff4f6b80.toInt() }
 
     // A tap on a to-do's check circle.
     private var checkPointerId = NO_POINTER
@@ -463,6 +465,16 @@ class NoteCanvasView(context: Context) : FrameLayout(context) {
     /** Scrolls as little as needed to show document y [topMm] to [bottomMm] above the keyboard. */
     fun reveal(topMm: Float, bottomMm: Float) {
         if (viewport.hasSize) setViewport(viewport.revealing(topMm - REVEAL_GAP_MM, bottomMm + REVEAL_GAP_MM))
+    }
+
+    /** Colours of the page surroundings from the app theme (ARGB). */
+    fun setChromeColors(desk: Int, pageShadow: Int, selection: Int) {
+        if (desk == deskColor && pageShadow == pageShadowPaint.color && selection == selectionPaint.color) return
+        deskColor = desk
+        pageShadowPaint.color = pageShadow
+        selectionPaint.color = selection
+        handlePaint.color = selection
+        invalidate()
     }
 
     override fun onDraw(canvas: Canvas) {
@@ -1283,6 +1295,9 @@ class NoteCanvasView(context: Context) : FrameLayout(context) {
 
         /** A pen touch at most this long (and short in distance) is a tap, not a dot. */
         const val TAP_MAX_MS = 300L
+
+        /** Desk left and right of the page at zoom 1. */
+        const val PAGE_MARGIN_DP = 14f
 
         /** Space kept around a line revealed above the keyboard. */
         const val REVEAL_GAP_MM = 4f
