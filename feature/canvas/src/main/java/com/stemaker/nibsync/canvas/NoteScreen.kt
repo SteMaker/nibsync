@@ -1,5 +1,9 @@
 package com.stemaker.nibsync.canvas
 
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.unit.IntSize
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.ui.graphics.toArgb
 import com.stemaker.nibsync.theme.NibSyncTheme
 import androidx.compose.foundation.background
@@ -128,6 +132,9 @@ object NoteScreenTags {
     const val BACKGROUND = "background"
     const val BACKGROUND_CONFIRM = "background-confirm"
     const val LASSO = "lasso"
+    const val ERASER = "eraser"
+    const val TEXT_DONE = "text-done"
+    const val SELECTION_BAR = "selection-bar"
     const val TEXT = "text-tool"
     const val INSERT = "insert"
     const val INSERT_FILE = "insert-file"
@@ -223,11 +230,12 @@ fun NoteScreen(
             onRedo = { viewModel.redo() },
             onPen = viewModel::selectPen,
             onEraser = viewModel::selectEraser,
-            hasSelection = selection.isNotEmpty(),
             canPaste = clip != null,
             onLasso = viewModel::selectLasso,
-            onDeleteSelection = viewModel::deleteSelection,
-            onCopySelection = viewModel::copySelection,
+            onColor = viewModel::selectColor,
+            onSize = viewModel::selectSize,
+            onEraserSize = viewModel::selectEraserSize,
+            onTodoInk = viewModel::selectTodoInk,
             onPaste = {
                 // Into the middle of what is visible, kept on the page.
                 canvasView?.viewport?.let { v ->
@@ -245,6 +253,7 @@ fun NoteScreen(
             onInsertNoteLink = onInsertNoteLink,
             textEditing = textEditing?.controller ?: todoEditing?.text,
             onTextDelete = { if (todoEditing != null) viewModel.deleteTodo() else viewModel.deleteText() },
+            onTextDone = viewModel::doneText,
             inkTodoOpen = todoEditing?.isInk == true,
             onDeleteTodo = viewModel::deleteTodo,
         )
@@ -343,43 +352,17 @@ fun NoteScreen(
                     )
                 }
                 if (v != null && v.hasSize) pageOverlay(v)
-            }
-            ToolSettingsBar(tools, onColor = viewModel::selectColor, onSize = viewModel::selectSize, onEraserSize = viewModel::selectEraserSize, onTodoInk = viewModel::selectTodoInk)
-        }
-    }
-}
-
-/**
- * Settings of the active tool on the right: colours and widths of the pen or highlighter, the
- * pixel eraser's sizes. Always the same width, so the page keeps its zoom when the tool changes.
- */
-@Composable
-private fun ToolSettingsBar(tools: ToolState, onColor: (Int) -> Unit, onSize: (Float) -> Unit, onEraserSize: (Float) -> Unit, onTodoInk: (Boolean) -> Unit) {
-    Surface(tonalElevation = 3.dp, modifier = Modifier.fillMaxHeight().width(TOOL_SETTINGS_WIDTH).testTag(NoteScreenTags.TOOL_SETTINGS)) {
-        Column(
-            Modifier.verticalScroll(rememberScrollState()).padding(vertical = 8.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(4.dp),
-        ) {
-            when (tools.tool) {
-                Tool.PEN -> PenOptions(tools, onColor, onSize)
-                Tool.ERASER -> EraserOptions(tools, onEraserSize)
-                Tool.TODO -> {
-                    // Typed or handwritten new to-dos; handwriting with the pen's colour and width.
-                    SettingsToggle(R.string.todo_keyboard, Icons.Filled.Keyboard, !tools.todoInk, NoteScreenTags.TODO_KEYBOARD) { onTodoInk(false) }
-                    SettingsToggle(R.string.todo_ink, Icons.Filled.Draw, tools.todoInk, NoteScreenTags.TODO_INK) { onTodoInk(true) }
-                    if (tools.todoInk) {
-                        HorizontalDivider(Modifier.width(36.dp).padding(vertical = 4.dp))
-                        PenOptions(tools, onColor, onSize)
+                if (v != null && v.hasSize && selection.isNotEmpty()) {
+                    val selected = document.elements.filter { it.id in selection }
+                    com.stemaker.nibsync.document.select.selectionBoundsOf(selected)?.let { bounds ->
+                        SelectionBar(bounds, v, onDelete = viewModel::deleteSelection, onCopy = viewModel::copySelection)
                     }
                 }
-                Tool.LASSO, Tool.TEXT -> Unit
             }
         }
     }
 }
 
-private val TOOL_SETTINGS_WIDTH = 60.dp
 
 /** Author of the preview of the to-do being edited (never stored). */
 private val PREVIEW_AUTHOR = com.stemaker.nibsync.model.DeviceId("preview")
@@ -539,11 +522,12 @@ private fun Toolbar(
     onRedo: () -> Unit,
     onPen: (BrushFamily) -> Unit,
     onEraser: (EraserMode) -> Unit,
-    hasSelection: Boolean,
     canPaste: Boolean,
     onLasso: () -> Unit,
-    onDeleteSelection: () -> Unit,
-    onCopySelection: () -> Unit,
+    onColor: (Int) -> Unit,
+    onSize: (Float) -> Unit,
+    onEraserSize: (Float) -> Unit,
+    onTodoInk: (Boolean) -> Unit,
     onPaste: () -> Unit,
     onText: () -> Unit,
     onTodo: (ink: Boolean) -> Unit,
@@ -553,18 +537,27 @@ private fun Toolbar(
     onInsertNoteLink: (() -> Unit)?,
     textEditing: com.stemaker.nibsync.text.TextEditController?,
     onTextDelete: () -> Unit,
+    onTextDone: () -> Unit,
     inkTodoOpen: Boolean,
     onDeleteTodo: () -> Unit,
 ) {
     Surface(tonalElevation = 3.dp, modifier = Modifier.fillMaxWidth().testTag(NoteScreenTags.TOOLBAR)) {
-        // Tools stay in place; only the middle part (pen options, text formatting) scrolls when
-        // it does not fit, so switching tools never moves the buttons.
+        // Tools stay in place; only the middle part (options of the active tool, text
+        // formatting) scrolls when it does not fit, so switching tools never moves the buttons.
         Row(
             modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(4.dp),
         ) {
             if (textEditing != null) {
+                // Editing text: done on the left, the formatting next to it.
+                val doneLabel = stringResource(R.string.text_done)
+                FilledTonalButton(onClick = onTextDone, modifier = Modifier.testTag(NoteScreenTags.TEXT_DONE)) {
+                    Icon(Icons.Filled.Check, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text(doneLabel)
+                }
+                Divider()
                 ScrollingRow(Modifier.weight(1f)) {
                     TextFormatActions(textEditing, onDelete = onTextDelete)
                 }
@@ -576,7 +569,6 @@ private fun Toolbar(
                             Icon(Icons.Filled.Menu, contentDescription = menuLabel)
                         }
                     }
-                    Divider()
                 }
                 val undoLabel = stringResource(R.string.undo)
                 WithTooltip(undoLabel) {
@@ -590,89 +582,112 @@ private fun Toolbar(
                         Icon(Icons.AutoMirrored.Filled.Redo, contentDescription = redoLabel)
                     }
                 }
-                Divider()
-                for (family in BrushFamily.entries) {
-                    val label = stringResource(penLabel(family))
-                    WithTooltip(label) {
-                        FilledIconToggleButton(
-                            checked = !tools.eraserActive && !tools.todoActive && tools.activePen == family,
-                            onCheckedChange = { onPen(family) },
-                            modifier = Modifier.testTag(NoteScreenTags.pen(family)),
-                        ) {
-                            Icon(penIcon(family), contentDescription = label)
-                        }
-                    }
-                }
-                for (mode in EraserMode.entries) {
-                    val label = stringResource(if (mode == EraserMode.OBJECT) R.string.eraser_object else R.string.eraser_pixel)
-                    WithTooltip(label) {
-                        FilledIconToggleButton(
-                            checked = tools.eraserActive && tools.eraserMode == mode,
-                            onCheckedChange = { onEraser(mode) },
-                            modifier = Modifier.testTag(NoteScreenTags.eraserMode(mode)),
-                        ) {
-                            Icon(eraserIcon(mode), contentDescription = label)
-                        }
-                    }
-                }
-                val lassoLabel = stringResource(R.string.lasso)
-                WithTooltip(lassoLabel) {
-                    FilledIconToggleButton(
-                        checked = tools.lassoActive,
-                        onCheckedChange = { onLasso() },
-                        modifier = Modifier.testTag(NoteScreenTags.LASSO),
-                    ) {
-                        Icon(Icons.Filled.HighlightAlt, contentDescription = lassoLabel)
-                    }
-                }
-                val textLabel = stringResource(R.string.text_tool)
-                WithTooltip(textLabel) {
-                    FilledIconToggleButton(
-                        checked = tools.textActive,
-                        onCheckedChange = { onText() },
-                        modifier = Modifier.testTag(NoteScreenTags.TEXT),
-                    ) {
-                        Icon(Icons.Filled.TextFields, contentDescription = textLabel)
-                    }
-                }
-                // Tapped with the pen, the to-do is handwritten; with a finger, it is typed.
-                val todoLabel = stringResource(R.string.todo_tool)
-                var pressedWithPen by remember { mutableStateOf(false) }
-                WithTooltip(todoLabel) {
-                    FilledIconToggleButton(
-                        checked = tools.todoActive,
-                        onCheckedChange = { onTodo(pressedWithPen) },
-                        modifier = Modifier
-                            .testTag(NoteScreenTags.TODO)
-                            .pointerInput(Unit) {
-                                awaitPointerEventScope {
-                                    while (true) {
-                                        val e = awaitPointerEvent(androidx.compose.ui.input.pointer.PointerEventPass.Initial)
-                                        if (e.type == androidx.compose.ui.input.pointer.PointerEventType.Press) {
-                                            pressedWithPen = e.changes.any { it.type == androidx.compose.ui.input.pointer.PointerType.Stylus }
-                                        }
-                                    }
-                                }
-                            },
-                    ) {
-                        Icon(Icons.Filled.TaskAlt, contentDescription = todoLabel)
-                    }
-                }
-                if (onInsertFile != null) InsertMenu(onInsertFile, onInsertFromClipboard, onInsertAnchor, onInsertNoteLink)
-                Divider()
-                // Colours and widths are in the tool settings bar on the right.
-                ScrollingRow(Modifier.weight(1f)) {
-                    if (tools.tool == Tool.LASSO) SelectionActions(hasSelection, canPaste, onDeleteSelection, onCopySelection, onPaste)
-                    if (inkTodoOpen) {
-                        val label = stringResource(R.string.delete_todo)
+                // Writing: the pens, each with its colour, and the eraser.
+                ToolGroup {
+                    for (family in BrushFamily.entries) {
+                        val label = stringResource(penLabel(family))
                         WithTooltip(label) {
-                            IconButton(onClick = onDeleteTodo, modifier = Modifier.testTag(NoteScreenTags.DELETE_TODO)) {
-                                Icon(Icons.Filled.Delete, contentDescription = label)
+                            FilledIconToggleButton(
+                                checked = !tools.eraserActive && !tools.todoActive && tools.activePen == family,
+                                onCheckedChange = { onPen(family) },
+                                modifier = Modifier.testTag(NoteScreenTags.pen(family)),
+                            ) {
+                                PenIcon(penIcon(family), tools.pens.getValue(family).colorArgb, label)
                             }
                         }
                     }
+                    val eraserLabel = stringResource(R.string.eraser)
+                    WithTooltip(eraserLabel) {
+                        FilledIconToggleButton(
+                            checked = tools.eraserActive,
+                            onCheckedChange = { onEraser(tools.eraserMode) },
+                            modifier = Modifier.testTag(NoteScreenTags.ERASER),
+                        ) {
+                            Icon(eraserIcon(tools.eraserMode), contentDescription = eraserLabel)
+                        }
+                    }
+                }
+                // Placing things: selection, text, to-dos and inserted content.
+                ToolGroup {
+                    val lassoLabel = stringResource(R.string.lasso)
+                    WithTooltip(lassoLabel) {
+                        FilledIconToggleButton(
+                            checked = tools.lassoActive,
+                            onCheckedChange = { onLasso() },
+                            modifier = Modifier.testTag(NoteScreenTags.LASSO),
+                        ) {
+                            Icon(Icons.Filled.HighlightAlt, contentDescription = lassoLabel)
+                        }
+                    }
+                    val textLabel = stringResource(R.string.text_tool)
+                    WithTooltip(textLabel) {
+                        FilledIconToggleButton(
+                            checked = tools.textActive,
+                            onCheckedChange = { onText() },
+                            modifier = Modifier.testTag(NoteScreenTags.TEXT),
+                        ) {
+                            Icon(Icons.Filled.TextFields, contentDescription = textLabel)
+                        }
+                    }
+                    // Tapped with the pen, the to-do is handwritten; with a finger, it is typed.
+                    val todoLabel = stringResource(R.string.todo_tool)
+                    var pressedWithPen by remember { mutableStateOf(false) }
+                    WithTooltip(todoLabel) {
+                        FilledIconToggleButton(
+                            checked = tools.todoActive,
+                            onCheckedChange = { onTodo(pressedWithPen) },
+                            modifier = Modifier
+                                .testTag(NoteScreenTags.TODO)
+                                .pointerInput(Unit) {
+                                    awaitPointerEventScope {
+                                        while (true) {
+                                            val e = awaitPointerEvent(androidx.compose.ui.input.pointer.PointerEventPass.Initial)
+                                            if (e.type == androidx.compose.ui.input.pointer.PointerEventType.Press) {
+                                                pressedWithPen = e.changes.any { it.type == androidx.compose.ui.input.pointer.PointerType.Stylus }
+                                            }
+                                        }
+                                    }
+                                },
+                        ) {
+                            Icon(Icons.Filled.TaskAlt, contentDescription = todoLabel)
+                        }
+                    }
+                    if (onInsertFile != null) InsertMenu(onInsertFile, onInsertFromClipboard, onInsertAnchor, onInsertNoteLink)
                 }
                 Divider()
+                // Options of the active tool, right next to the tools.
+                ScrollingRow(Modifier.weight(1f).testTag(NoteScreenTags.TOOL_SETTINGS)) {
+                    when (tools.tool) {
+                        Tool.PEN -> PenOptions(tools, onColor, onSize)
+                        Tool.ERASER -> EraserOptions(tools, onEraser, onEraserSize)
+                        Tool.TODO -> {
+                            // Typed or handwritten new to-dos; handwriting with the pen's colour and width.
+                            SettingsToggle(R.string.todo_keyboard, Icons.Filled.Keyboard, !tools.todoInk, NoteScreenTags.TODO_KEYBOARD) { onTodoInk(false) }
+                            SettingsToggle(R.string.todo_ink, Icons.Filled.Draw, tools.todoInk, NoteScreenTags.TODO_INK) { onTodoInk(true) }
+                            if (tools.todoInk) {
+                                Divider()
+                                PenOptions(tools, onColor, onSize)
+                            }
+                            if (inkTodoOpen) {
+                                val label = stringResource(R.string.delete_todo)
+                                WithTooltip(label) {
+                                    IconButton(onClick = onDeleteTodo, modifier = Modifier.testTag(NoteScreenTags.DELETE_TODO)) {
+                                        Icon(Icons.Filled.Delete, contentDescription = label)
+                                    }
+                                }
+                            }
+                        }
+                        Tool.LASSO -> {
+                            val label = stringResource(R.string.paste)
+                            WithTooltip(label) {
+                                IconButton(onClick = onPaste, enabled = canPaste, modifier = Modifier.testTag(NoteScreenTags.PASTE)) {
+                                    Icon(Icons.Filled.ContentPaste, contentDescription = label)
+                                }
+                            }
+                        }
+                        Tool.TEXT -> Unit
+                    }
+                }
                 val backgroundLabel = stringResource(BackgroundR.string.background_paper)
                 WithTooltip(backgroundLabel) {
                     IconButton(onClick = onBackground, modifier = Modifier.testTag(NoteScreenTags.BACKGROUND)) {
@@ -681,6 +696,70 @@ private fun Toolbar(
                 }
             }
             toolbarEnd()
+        }
+    }
+}
+
+/** Buttons that belong together, on a common rounded background. */
+@Composable
+private fun ToolGroup(content: @Composable () -> Unit) {
+    Surface(color = MaterialTheme.colorScheme.surfaceContainerHighest, shape = RoundedCornerShape(24.dp)) {
+        Row(Modifier.padding(horizontal = 2.dp), verticalAlignment = Alignment.CenterVertically) { content() }
+    }
+}
+
+/** A pen's icon with a dot of the colour it writes in. */
+@Composable
+private fun PenIcon(icon: ImageVector, colorArgb: Int, label: String) {
+    Box {
+        Icon(icon, contentDescription = label)
+        Box(
+            Modifier
+                .align(Alignment.BottomEnd)
+                .offset(x = 3.dp, y = 3.dp)
+                .size(9.dp)
+                .background(Color(colorArgb).copy(alpha = 1f), CircleShape)
+                .border(1.dp, MaterialTheme.colorScheme.surface, CircleShape),
+        )
+    }
+}
+
+/**
+ * Actions for the selection, floating just above it on the page (below it when there is no
+ * room above).
+ */
+@Composable
+private fun SelectionBar(bounds: com.stemaker.nibsync.model.geometry.Rect, viewport: Viewport, onDelete: () -> Unit, onCopy: () -> Unit) {
+    val t = viewport.documentToView
+    val density = androidx.compose.ui.platform.LocalDensity.current
+    var size by remember { mutableStateOf(IntSize.Zero) }
+    val gap = with(density) { 12.dp.roundToPx() }
+    val centerX = (t.mapX(bounds.left) + t.mapX(bounds.right)) / 2
+    val above = t.mapY(bounds.top) - size.height - gap
+    val y = if (above >= gap) above else t.mapY(bounds.bottom) + gap
+    val x = (centerX - size.width / 2).coerceIn(gap.toFloat(), maxOf(gap.toFloat(), viewport.viewWidthPx - size.width - gap))
+    Surface(
+        shape = RoundedCornerShape(24.dp),
+        tonalElevation = 6.dp,
+        shadowElevation = 6.dp,
+        modifier = Modifier
+            .offset { IntOffset(x.roundToInt(), y.roundToInt()) }
+            .onSizeChanged { size = it }
+            .testTag(NoteScreenTags.SELECTION_BAR),
+    ) {
+        Row(Modifier.padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+            val deleteLabel = stringResource(R.string.delete_selection)
+            WithTooltip(deleteLabel) {
+                IconButton(onClick = onDelete, modifier = Modifier.testTag(NoteScreenTags.DELETE_SELECTION)) {
+                    Icon(Icons.Filled.Delete, contentDescription = deleteLabel)
+                }
+            }
+            val copyLabel = stringResource(R.string.copy_selection)
+            WithTooltip(copyLabel) {
+                IconButton(onClick = onCopy, modifier = Modifier.testTag(NoteScreenTags.COPY_SELECTION)) {
+                    Icon(Icons.Filled.ContentCopy, contentDescription = copyLabel)
+                }
+            }
         }
     }
 }
@@ -696,7 +775,7 @@ private fun PenOptions(tools: ToolState, onColor: (Int) -> Unit, onSize: (Float)
             onClick = { onColor(argb) },
         )
     }
-    HorizontalDivider(Modifier.width(36.dp).padding(vertical = 4.dp))
+    Divider()
     tools.sizes(tools.activePen).forEachIndexed { index, mm ->
         SizeDot(
             diameter = (8 + index * 6).dp,
@@ -709,34 +788,22 @@ private fun PenOptions(tools: ToolState, onColor: (Int) -> Unit, onSize: (Float)
 }
 
 @Composable
-private fun SelectionActions(
-    hasSelection: Boolean,
-    canPaste: Boolean,
-    onDelete: () -> Unit,
-    onCopy: () -> Unit,
-    onPaste: () -> Unit,
-) {
-    val actions = listOf(
-        Triple(R.string.delete_selection, Icons.Filled.Delete, NoteScreenTags.DELETE_SELECTION) to (hasSelection to onDelete),
-        Triple(R.string.copy_selection, Icons.Filled.ContentCopy, NoteScreenTags.COPY_SELECTION) to (hasSelection to onCopy),
-        Triple(R.string.paste, Icons.Filled.ContentPaste, NoteScreenTags.PASTE) to (canPaste to onPaste),
-    )
-    for ((look, behaviour) in actions) {
-        val (labelRes, icon, tag) = look
-        val (enabled, onClick) = behaviour
-        val label = stringResource(labelRes)
+private fun EraserOptions(tools: ToolState, onEraser: (EraserMode) -> Unit, onEraserSize: (Float) -> Unit) {
+    for (mode in EraserMode.entries) {
+        val label = stringResource(if (mode == EraserMode.OBJECT) R.string.eraser_object else R.string.eraser_pixel)
         WithTooltip(label) {
-            IconButton(onClick = onClick, enabled = enabled, modifier = Modifier.testTag(tag)) {
-                Icon(icon, contentDescription = label)
+            FilledIconToggleButton(
+                checked = tools.eraserMode == mode,
+                onCheckedChange = { onEraser(mode) },
+                modifier = Modifier.testTag(NoteScreenTags.eraserMode(mode)),
+            ) {
+                Icon(eraserIcon(mode), contentDescription = label)
             }
         }
     }
-}
-
-@Composable
-private fun EraserOptions(tools: ToolState, onEraserSize: (Float) -> Unit) {
     // The object eraser has a fixed tip; only the pixel eraser offers sizes.
     if (tools.eraserMode != EraserMode.PIXEL) return
+    Divider()
     PenPalette.eraserSizes.forEachIndexed { index, mm ->
         SizeDot(
             diameter = (8 + index * 6).dp,

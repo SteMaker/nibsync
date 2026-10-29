@@ -85,12 +85,12 @@ class TextEditingUiTest {
         editor.performTextInput("Hallo Welt")
         // Select "Welt", then the tool bar's bold button: the selection stays and gets bold.
         editor.performTextInputSelection(TextRange(6, 10))
-        onNodeWithTag(TextTags.BOLD).performClick()
+        onNodeWithTag(TextTags.BOLD).performScrollTo().performClick()
         editor.assertIsFocused()
         // A line and an indented bullet list below it.
         editor.performTextInputSelection(TextRange(10))
         editor.performKeyInput { pressKey(Key.Enter) }
-        onNodeWithTag(TextTags.BULLETS).performClick()
+        onNodeWithTag(TextTags.BULLETS).performScrollTo().performClick()
         editor.performTextInput("Punkt eins")
         editor.performKeyInput { pressKey(Key.Enter) }
         onNodeWithTag(TextTags.INDENT).performScrollTo().performClick()
@@ -128,10 +128,10 @@ class TextEditingUiTest {
         editor.performTextInput("klein gross")
         // "gross" two steps larger (12 -> 14 -> 18 pt), "klein" one step smaller (10 pt).
         editor.performTextInputSelection(TextRange(6, 11))
-        onNodeWithTag(TextTags.GROW).performClick()
-        onNodeWithTag(TextTags.GROW).performClick()
+        onNodeWithTag(TextTags.GROW).performScrollTo().performClick()
+        onNodeWithTag(TextTags.GROW).performScrollTo().performClick()
         editor.performTextInputSelection(TextRange(0, 5))
-        onNodeWithTag(TextTags.SHRINK).performClick()
+        onNodeWithTag(TextTags.SHRINK).performScrollTo().performClick()
         editor.assertIsFocused()
         editor.performKeyInput { pressKey(Key.Escape) }
         waitUntil(timeoutMillis = 5000) { onAllNodesWithTag(TextTags.EDITOR).fetchSemanticsNodes().isEmpty() }
@@ -155,7 +155,7 @@ class TextEditingUiTest {
         val editor = onNodeWithTag(TextTags.EDITOR)
         editor.performTextInput("Titel")
         editor.performKeyInput { pressKey(Key.Enter) }
-        onNodeWithTag(TextTags.BULLETS).performClick()
+        onNodeWithTag(TextTags.BULLETS).performScrollTo().performClick()
         waitForIdle()
         editor.performTextInput("Punkt eins")
         editor.performKeyInput { pressKey(Key.Enter) }
@@ -206,12 +206,12 @@ class TextEditingUiTest {
         val editor = onNodeWithTag(TextTags.EDITOR)
         editor.performTextInput("Titel")
         // The style menu makes the whole line a heading; the button then names it.
-        onNodeWithTag(TextTags.PRESET).performClick()
+        onNodeWithTag(TextTags.PRESET).performScrollTo().performClick()
         onNodeWithTag(TextTags.preset(TextPreset.HEADING_2)).performClick()
         editor.assertIsFocused()
         onNodeWithTag(TextTags.PRESET).assertTextContains("Überschrift 2")
         editor.performKeyInput { pressKey(Key.Enter) }
-        onNodeWithTag(TextTags.PRESET).performClick()
+        onNodeWithTag(TextTags.PRESET).performScrollTo().performClick()
         onNodeWithTag(TextTags.preset(TextPreset.NORMAL)).performClick()
         // A list item with a further line (Shift+Enter), then the next item (Enter).
         onNodeWithTag(TextTags.BULLETS).performScrollTo().performClick()

@@ -1,5 +1,10 @@
 package com.stemaker.nibsync.desktop
 
+import androidx.compose.foundation.layout.offset
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -105,6 +110,9 @@ object ToolbarTags {
     const val TEXT = "tool-text"
     fun pen(family: BrushFamily) = "pen-${family.name}"
     fun eraser(mode: EraserMode) = "eraser-${mode.name}"
+    const val ERASER = "tool-eraser"
+    const val TEXT_DONE = "text-done"
+    const val SELECTION_BAR = "selection-bar"
     const val LASSO = "tool-lasso"
     const val TODO = "tool-todo"
     const val TODO_KEYBOARD = "todo-keyboard"
@@ -157,6 +165,8 @@ fun NoteToolbar(
     editing: TextEditController?,
     onDeleteText: () -> Unit,
     tools: ToolbarTools? = null,
+    /** Ends text editing ("Done"). */
+    onDoneText: () -> Unit = {},
     /** Items at the right end, e.g. the sync status. */
     end: @Composable () -> Unit = {},
 ) {
@@ -169,12 +179,18 @@ fun NoteToolbar(
             Action(strings.undo, Icons.AutoMirrored.Filled.Undo, canUndo, ToolbarTags.UNDO, onUndo)
             Action(strings.redo, Icons.AutoMirrored.Filled.Redo, canRedo, ToolbarTags.REDO, onRedo)
             // While a text box is open only its formatting is shown (the tool bar would get too
-            // wide otherwise); Esc or a click beside the box brings the tools back.
+            // wide otherwise); "Done", Esc or a click beside the box brings the tools back.
             if (editing == null && tools != null) {
                 ToolButtons(strings, tools)
                 ToolOptions(strings, tools)
             }
             if (editing != null) {
+                Divider()
+                FilledTonalButton(onClick = onDoneText, modifier = NotFocusable.testTag(ToolbarTags.TEXT_DONE)) {
+                    Icon(Icons.Filled.Check, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text(strings.textDone)
+                }
                 Divider()
                 PresetMenu(strings, editing)
                 Divider()
@@ -202,31 +218,59 @@ fun NoteToolbar(
 @Composable
 private fun ToolButtons(strings: Strings, t: ToolbarTools) {
     val s = t.state
-    Divider()
-    Toggle(strings.toolText, Icons.Filled.TextFields, s.tool == DesktopTool.TEXT, ToolbarTags.TEXT) { t.onTool(DesktopTool.TEXT) }
-    for (family in BrushFamily.entries) {
-        val (label, icon) = when (family) {
-            BrushFamily.BALLPOINT -> strings.penBallpoint to Icons.Filled.Draw
-            BrushFamily.FOUNTAIN_PEN -> strings.penFountain to Icons.Filled.HistoryEdu
-            BrushFamily.HIGHLIGHTER -> strings.penHighlighter to Icons.Filled.BorderColor
+    // Writing: the pens, each with its colour, and the eraser.
+    ToolGroup {
+        for (family in BrushFamily.entries) {
+            val (label, icon) = when (family) {
+                BrushFamily.BALLPOINT -> strings.penBallpoint to Icons.Filled.Draw
+                BrushFamily.FOUNTAIN_PEN -> strings.penFountain to Icons.Filled.HistoryEdu
+                BrushFamily.HIGHLIGHTER -> strings.penHighlighter to Icons.Filled.BorderColor
+            }
+            WithTooltip(label) {
+                FilledIconToggleButton(
+                    checked = s.tool == DesktopTool.PEN && s.pen == family,
+                    onCheckedChange = { t.onPen(family) },
+                    modifier = NotFocusable.testTag(ToolbarTags.pen(family)),
+                ) {
+                    Box {
+                        Icon(icon, contentDescription = label)
+                        Box(
+                            Modifier
+                                .align(Alignment.BottomEnd)
+                                .offset(x = 3.dp, y = 3.dp)
+                                .size(9.dp)
+                                .background(Color(s.pens.getValue(family).colorArgb).copy(alpha = 1f), CircleShape)
+                                .border(1.dp, MaterialTheme.colorScheme.surface, CircleShape),
+                        )
+                    }
+                }
+            }
         }
-        Toggle(label, icon, s.tool == DesktopTool.PEN && s.pen == family, ToolbarTags.pen(family)) { t.onPen(family) }
+        Toggle(strings.eraser, eraserIcon(s.eraserMode), s.tool == DesktopTool.ERASER, ToolbarTags.ERASER) { t.onEraser(s.eraserMode) }
     }
-    for (mode in EraserMode.entries) {
-        val label = if (mode == EraserMode.OBJECT) strings.eraserObject else strings.eraserPixel
-        Toggle(label, eraserIcon(mode), s.tool == DesktopTool.ERASER && s.eraserMode == mode, ToolbarTags.eraser(mode)) { t.onEraser(mode) }
+    // Placing things: text, selection, to-dos and inserted content.
+    ToolGroup {
+        Toggle(strings.toolText, Icons.Filled.TextFields, s.tool == DesktopTool.TEXT, ToolbarTags.TEXT) { t.onTool(DesktopTool.TEXT) }
+        Toggle(strings.lasso, Icons.Filled.HighlightAlt, s.tool == DesktopTool.LASSO, ToolbarTags.LASSO) { t.onTool(DesktopTool.LASSO) }
+        // A pen of a graphics tablet writes the to-do by hand, the mouse types it.
+        var pressedWithPen by remember { mutableStateOf(false) }
+        Box(
+            Modifier.onPointerEvent(PointerEventType.Press, PointerEventPass.Initial) { e ->
+                pressedWithPen = e.changes.any { it.type == PointerType.Stylus }
+            },
+        ) {
+            Toggle(strings.toolTodo, Icons.Filled.TaskAlt, s.tool == DesktopTool.TODO, ToolbarTags.TODO) { t.onTodo(pressedWithPen) }
+        }
+        InsertMenu(strings, t)
     }
-    Toggle(strings.lasso, Icons.Filled.HighlightAlt, s.tool == DesktopTool.LASSO, ToolbarTags.LASSO) { t.onTool(DesktopTool.LASSO) }
-    // A pen of a graphics tablet writes the to-do by hand, the mouse types it.
-    var pressedWithPen by remember { mutableStateOf(false) }
-    Box(
-        Modifier.onPointerEvent(PointerEventType.Press, PointerEventPass.Initial) { e ->
-            pressedWithPen = e.changes.any { it.type == PointerType.Stylus }
-        },
-    ) {
-        Toggle(strings.toolTodo, Icons.Filled.TaskAlt, s.tool == DesktopTool.TODO, ToolbarTags.TODO) { t.onTodo(pressedWithPen) }
+}
+
+/** Buttons that belong together, on a common rounded background. */
+@Composable
+private fun ToolGroup(content: @Composable () -> Unit) {
+    Surface(color = MaterialTheme.colorScheme.surfaceContainerHighest, shape = RoundedCornerShape(24.dp)) {
+        Row(Modifier.padding(horizontal = 2.dp), verticalAlignment = Alignment.CenterVertically) { content() }
     }
-    InsertMenu(strings, t)
 }
 
 /** Insert: a picture or file, an anchor, a link to a note. */
@@ -258,61 +302,76 @@ private fun InsertMenu(strings: Strings, t: ToolbarTools) {
     }
 }
 
-/** Actions of the active tool in the tool bar (the lasso's); colours and widths are on the right. */
+/** Options of the active tool, right next to the tools: colours, widths, eraser modes, paste. */
 @Composable
 private fun ToolOptions(strings: Strings, t: ToolbarTools) {
-    if (t.state.tool != DesktopTool.LASSO) return
-    Divider()
-    Action(strings.deleteSelection, Icons.Filled.Delete, t.hasSelection, ToolbarTags.DELETE_SELECTION, t.onDeleteSelection)
-    Action(strings.copySelection, Icons.Filled.ContentCopy, t.hasSelection, ToolbarTags.COPY_SELECTION, t.onCopySelection)
-    Action(strings.cutSelection, Icons.Filled.ContentCut, t.hasSelection, ToolbarTags.CUT_SELECTION, t.onCutSelection)
-    Action(strings.paste, Icons.Filled.ContentPaste, t.canPaste, ToolbarTags.PASTE, t.onPaste)
-}
-
-/**
- * Settings of the active tool on the right of the page: colours and widths of the pen or
- * highlighter, the pixel eraser's sizes. Always the same width, so the page does not move.
- */
-@Composable
-fun ToolSettingsBar(strings: Strings, t: ToolbarTools) {
     val s = t.state
-    Surface(tonalElevation = 2.dp, modifier = Modifier.fillMaxHeight().width(52.dp).testTag(ToolbarTags.TOOL_SETTINGS)) {
-        Column(
-            Modifier.verticalScroll(rememberScrollState()).padding(vertical = 8.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(4.dp),
-        ) {
-            when (s.tool) {
-                DesktopTool.PEN -> {
-                    DesktopPalette.colors(s.pen).forEachIndexed { i, argb ->
-                        Swatch(argb, s.choice.colorArgb == argb, strings.color(i + 1), ToolbarTags.color(i)) { t.onColor(argb) }
-                    }
-                    HorizontalDivider(Modifier.width(30.dp).padding(vertical = 4.dp))
-                    s.sizes(s.pen).forEachIndexed { i, mm ->
-                        Dot((8 + i * 5).dp, s.choice.sizeMm == mm, strings.width(mm), ToolbarTags.size(i)) { t.onSize(mm) }
-                    }
+    Divider()
+    Row(NotFocusable.testTag(ToolbarTags.TOOL_SETTINGS), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+        when (s.tool) {
+            DesktopTool.PEN -> PenOptions(strings, t)
+            DesktopTool.ERASER -> {
+                for (mode in EraserMode.entries) {
+                    val label = if (mode == EraserMode.OBJECT) strings.eraserObject else strings.eraserPixel
+                    Toggle(label, eraserIcon(mode), s.eraserMode == mode, ToolbarTags.eraser(mode)) { t.onEraser(mode) }
                 }
-                DesktopTool.ERASER -> if (s.eraserMode == EraserMode.PIXEL) {
+                // The object eraser has a fixed tip; only the pixel eraser offers sizes.
+                if (s.eraserMode == EraserMode.PIXEL) {
+                    Divider()
                     DesktopPalette.eraserSizes.forEachIndexed { i, mm ->
                         Dot((8 + i * 5).dp, s.eraserSizeMm == mm, strings.width(mm), ToolbarTags.eraserSize(i)) { t.onEraserSize(mm) }
                     }
                 }
-                DesktopTool.TODO -> {
-                    Toggle(strings.todoKeyboard, Icons.Filled.Keyboard, !s.todoInk, ToolbarTags.TODO_KEYBOARD) { t.onTodoInk(false) }
-                    Toggle(strings.todoInk, Icons.Filled.Draw, s.todoInk, ToolbarTags.TODO_INK) { t.onTodoInk(true) }
-                    if (s.todoInk) {
-                        HorizontalDivider(Modifier.width(30.dp).padding(vertical = 4.dp))
-                        DesktopPalette.colors(s.pen).forEachIndexed { i, argb ->
-                            Swatch(argb, s.choice.colorArgb == argb, strings.color(i + 1), ToolbarTags.color(i)) { t.onColor(argb) }
-                        }
-                        HorizontalDivider(Modifier.width(30.dp).padding(vertical = 4.dp))
-                        s.sizes(s.pen).forEachIndexed { i, mm ->
-                            Dot((8 + i * 5).dp, s.choice.sizeMm == mm, strings.width(mm), ToolbarTags.size(i)) { t.onSize(mm) }
-                        }
-                    }
-                }
-                DesktopTool.LASSO, DesktopTool.TEXT -> Unit
             }
+            DesktopTool.TODO -> {
+                Toggle(strings.todoKeyboard, Icons.Filled.Keyboard, !s.todoInk, ToolbarTags.TODO_KEYBOARD) { t.onTodoInk(false) }
+                Toggle(strings.todoInk, Icons.Filled.Draw, s.todoInk, ToolbarTags.TODO_INK) { t.onTodoInk(true) }
+                if (s.todoInk) {
+                    Divider()
+                    PenOptions(strings, t)
+                }
+            }
+            DesktopTool.LASSO -> Action(strings.paste, Icons.Filled.ContentPaste, t.canPaste, ToolbarTags.PASTE, t.onPaste)
+            DesktopTool.TEXT -> Unit
+        }
+    }
+}
+
+@Composable
+private fun PenOptions(strings: Strings, t: ToolbarTools) {
+    val s = t.state
+    DesktopPalette.colors(s.pen).forEachIndexed { i, argb ->
+        Swatch(argb, s.choice.colorArgb == argb, strings.color(i + 1), ToolbarTags.color(i)) { t.onColor(argb) }
+    }
+    Divider()
+    s.sizes(s.pen).forEachIndexed { i, mm ->
+        Dot((8 + i * 5).dp, s.choice.sizeMm == mm, strings.width(mm), ToolbarTags.size(i)) { t.onSize(mm) }
+    }
+}
+
+/** Actions for the selection, floating just above it on the page (below it without room above). */
+@Composable
+fun SelectionBar(strings: Strings, frame: com.stemaker.nibsync.model.geometry.Rect, viewport: com.stemaker.nibsync.model.geometry.Viewport, t: ToolbarTools) {
+    val tr = viewport.documentToView
+    var size by remember { mutableStateOf(androidx.compose.ui.unit.IntSize.Zero) }
+    val gap = 10f
+    val centerX = (tr.mapX(frame.left) + tr.mapX(frame.right)) / 2
+    val above = tr.mapY(frame.top) - size.height - gap
+    val y = if (above >= gap) above else tr.mapY(frame.bottom) + gap
+    val x = (centerX - size.width / 2).coerceIn(gap, maxOf(gap, viewport.viewWidthPx - size.width - gap))
+    Surface(
+        shape = RoundedCornerShape(20.dp),
+        tonalElevation = 6.dp,
+        shadowElevation = 6.dp,
+        modifier = Modifier
+            .offset { androidx.compose.ui.unit.IntOffset(x.toInt(), y.toInt()) }
+            .onSizeChanged { size = it }
+            .testTag(ToolbarTags.SELECTION_BAR),
+    ) {
+        Row(Modifier.padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+            Action(strings.deleteSelection, Icons.Filled.Delete, true, ToolbarTags.DELETE_SELECTION, t.onDeleteSelection)
+            Action(strings.copySelection, Icons.Filled.ContentCopy, true, ToolbarTags.COPY_SELECTION, t.onCopySelection)
+            Action(strings.cutSelection, Icons.Filled.ContentCut, true, ToolbarTags.CUT_SELECTION, t.onCutSelection)
         }
     }
 }

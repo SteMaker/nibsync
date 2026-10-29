@@ -27,6 +27,8 @@ class Strings(private val german: Boolean = Locale.getDefault().language == "de"
     val textGrow = if (german) "Schrift größer" else "Larger text"
     val textShrink = if (german) "Schrift kleiner" else "Smaller text"
     val textStyle = if (german) "Stil" else "Style"
+    val textDone = if (german) "Fertig" else "Done"
+    val eraser = if (german) "Radierer" else "Eraser"
     fun preset(preset: TextPreset) = when (preset) {
         TextPreset.NORMAL -> "Normal"
         TextPreset.HEADING_1 -> if (german) "Überschrift 1" else "Heading 1"

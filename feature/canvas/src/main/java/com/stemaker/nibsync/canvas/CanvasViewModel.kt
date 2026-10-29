@@ -449,6 +449,12 @@ class CanvasViewModel(
         todo.finish()
     }
 
+    /** "Done" while editing text: stores the box or to-do and goes back to the previous tool. */
+    fun doneText() {
+        finishText()
+        leaveTemporaryMode()
+    }
+
     /** Deletes the edited box and leaves text mode. */
     fun deleteText() {
         if (text.delete()) leaveTemporaryMode()

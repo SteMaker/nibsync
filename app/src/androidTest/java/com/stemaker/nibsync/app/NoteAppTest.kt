@@ -283,14 +283,14 @@ class NoteAppTest {
     @Test
     fun selectedPenColorAndWidthAreUsed() {
         compose.onNodeWithTag(NoteScreenTags.pen(BrushFamily.BALLPOINT)).performClick()
-        // Colours and widths are in the settings bar on the right, not in the tool bar.
+        // Colours and widths are the pen's options in the tool bar; the page takes the full width.
         val inSettings = hasAnyAncestor(hasTestTag(NoteScreenTags.TOOL_SETTINGS))
         compose.onNode(hasTestTag(NoteScreenTags.color(2)) and inSettings).assertExists()
         compose.onNode(hasTestTag(NoteScreenTags.size(2)) and inSettings).assertExists()
-        compose.onNode(hasTestTag(NoteScreenTags.color(0)) and hasAnyAncestor(hasTestTag(NoteScreenTags.TOOLBAR))).assertDoesNotExist()
-        val settings = compose.onNodeWithTag(NoteScreenTags.TOOL_SETTINGS).fetchSemanticsNode().boundsInRoot
+        compose.onNode(hasTestTag(NoteScreenTags.TOOL_SETTINGS) and hasAnyAncestor(hasTestTag(NoteScreenTags.TOOLBAR))).assertExists()
+        val toolbar = compose.onNodeWithTag(NoteScreenTags.TOOLBAR).fetchSemanticsNode().boundsInRoot
         val canvas = compose.onNodeWithTag(NoteScreenTags.CANVAS).fetchSemanticsNode().boundsInRoot
-        assertThat(settings.left).isAtLeast(canvas.right - 1f)
+        assertThat(canvas.width).isWithin(1f).of(toolbar.width)
         compose.onNodeWithTag(NoteScreenTags.color(2)).performClick()
         compose.onNodeWithTag(NoteScreenTags.size(2)).performClick()
         drag(line(100f, 300f, 500f, 300f))
@@ -484,6 +484,8 @@ class NoteAppTest {
         waitForStrokes(2)
         val lower = strokes().maxBy { it.bounds.top }
 
+        compose.onNodeWithTag(NoteScreenTags.ERASER).performClick()
+
         compose.onNodeWithTag(NoteScreenTags.eraserMode(com.stemaker.nibsync.document.erase.EraserMode.OBJECT)).performClick()
         drag(line(500f, 250f, 520f, 400f))
         waitForStrokes(1)
@@ -503,6 +505,8 @@ class NoteAppTest {
         drag(line(200f, 300f, 900f, 300f))
         waitForStrokes(1)
         val original = strokes().single()
+
+        compose.onNodeWithTag(NoteScreenTags.ERASER).performClick()
 
         compose.onNodeWithTag(NoteScreenTags.eraserMode(com.stemaker.nibsync.document.erase.EraserMode.PIXEL)).performClick()
         compose.onNodeWithTag(NoteScreenTags.eraserSize(1)).performClick() // 5 mm
@@ -525,6 +529,7 @@ class NoteAppTest {
     fun erasingDoesNotScrollOrDraw() {
         drag(line(200f, 300f, 900f, 300f))
         waitForStrokes(1)
+        compose.onNodeWithTag(NoteScreenTags.ERASER).performClick()
         compose.onNodeWithTag(NoteScreenTags.eraserMode(com.stemaker.nibsync.document.erase.EraserMode.OBJECT)).performClick()
         val scrollBefore = checkNotNull(canvas()).viewport.scrollYMm
         drag(line(300f, 700f, 800f, 750f)) // erasing empty paper
@@ -588,6 +593,7 @@ class NoteAppTest {
     fun undoRevertsAnEraseInOneStep() {
         drag(line(200f, 300f, 900f, 300f))
         waitForStrokes(1)
+        compose.onNodeWithTag(NoteScreenTags.ERASER).performClick()
         compose.onNodeWithTag(NoteScreenTags.eraserMode(com.stemaker.nibsync.document.erase.EraserMode.PIXEL)).performClick()
         drag(line(400f, 200f, 400f, 400f))
         drag(line(700f, 200f, 700f, 400f))
@@ -623,10 +629,11 @@ class NoteAppTest {
     @Test
     fun lassoSelectsAndDeletes() {
         compose.onNodeWithTag(NoteScreenTags.LASSO).performClick()
-        compose.onNodeWithTag(NoteScreenTags.DELETE_SELECTION).assertIsNotEnabled()
+        compose.onNodeWithTag(NoteScreenTags.DELETE_SELECTION).assertDoesNotExist()
         compose.onNodeWithTag(NoteScreenTags.pen(BrushFamily.FOUNTAIN_PEN)).performClick()
         val (_, lower) = drawTwoLinesAndLassoTheUpperOne()
-        compose.onNodeWithTag(NoteScreenTags.DELETE_SELECTION).assertIsEnabled().performClick()
+        // Delete is in the bar floating at the selection.
+        compose.onNode(hasTestTag(NoteScreenTags.DELETE_SELECTION) and hasAnyAncestor(hasTestTag(NoteScreenTags.SELECTION_BAR))).performClick()
         waitForStrokes(1)
         assertThat(strokes().single()).isEqualTo(lower)
         compose.onNodeWithTag(NoteScreenTags.UNDO).performClick()
@@ -687,7 +694,7 @@ class NoteAppTest {
         drawTwoLinesAndLassoTheUpperOne()
         drag(listOf(900f to 900f, 901f to 900f))
         waitUntil("cleared") { selection().isEmpty() }
-        compose.onNodeWithTag(NoteScreenTags.DELETE_SELECTION).assertIsNotEnabled()
+        compose.onNodeWithTag(NoteScreenTags.DELETE_SELECTION).assertDoesNotExist()
     }
 
     // ---- text boxes -----------------------------------------------------------------------

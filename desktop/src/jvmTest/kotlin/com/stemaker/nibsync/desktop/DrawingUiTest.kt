@@ -40,9 +40,9 @@ class DrawingUiTest {
         val session = runBlocking { container.openSession(docId) }
 
         onNodeWithTag(ToolbarTags.pen(BrushFamily.BALLPOINT)).performClick()
-        // Colours and widths are in the settings bar right of the page.
+        // Colours and widths are the pen's options in the tool bar, above the page.
         onNode(hasTestTag(ToolbarTags.color(2)) and hasAnyAncestor(hasTestTag(ToolbarTags.TOOL_SETTINGS))).assertExists()
-        assert(onNodeWithTag(ToolbarTags.TOOL_SETTINGS).fetchSemanticsNode().boundsInRoot.left >= onNodeWithTag("page").fetchSemanticsNode().boundsInRoot.right - 1f)
+        assert(onNodeWithTag(ToolbarTags.TOOL_SETTINGS).fetchSemanticsNode().boundsInRoot.bottom <= onNodeWithTag("page").fetchSemanticsNode().boundsInRoot.top + 1f)
         onNodeWithTag(ToolbarTags.color(2)).performClick()
         onNodeWithTag("page").performMouseInput {
             moveTo(Offset(300f, 300f))

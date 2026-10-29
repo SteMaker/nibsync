@@ -32,4 +32,6 @@
     <string name="open_todos">Offene ToDos</string>
     <string name="no_open_todos">Keine offenen ToDos.</string>
     <string name="todo_done">Erledigt</string>
+    <string name="text_done">Fertig</string>
+    <string name="eraser">Radierer</string>
 </resources>

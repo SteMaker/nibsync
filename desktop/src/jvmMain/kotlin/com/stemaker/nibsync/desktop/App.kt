@@ -466,6 +466,10 @@ private fun DocumentPane(
             editing = editing?.controller ?: todoEdit?.text,
             onDeleteText = { if (todoEdit != null) controller.todo.delete() else controller.text.delete() },
             tools = toolbarTools,
+            onDoneText = {
+                controller.text.finish()
+                controller.todo.finish()
+            },
             end = { if (sync != null) SyncStatusIcon(sync, strings) },
         )
         Row(Modifier.weight(1f).fillMaxWidth()) {
@@ -524,6 +528,9 @@ private fun DocumentPane(
                         onEditingChange = { titleEditing.value = it },
                     )
                 }
+                if (viewport.hasSize && selection.isNotEmpty() && gesture !is GesturePreview.Moving && gesture !is GesturePreview.Resizing) {
+                    controller.selectionFrame()?.let { SelectionBar(strings, it, viewport, toolbarTools) }
+                }
                 DocumentPath(header.path, Modifier.align(Alignment.BottomEnd))
                 message?.let { text ->
                     LaunchedEffect(text) {
@@ -539,8 +546,6 @@ private fun DocumentPane(
                     }
                 }
             }
-            // The text tool shows its formatting in the tool bar; settings only for drawing tools.
-            ToolSettingsBar(strings, toolbarTools)
         }
     }
 }

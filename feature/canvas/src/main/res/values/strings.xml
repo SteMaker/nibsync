@@ -32,4 +32,6 @@
     <string name="open_todos">Open to-dos</string>
     <string name="no_open_todos">No open to-dos.</string>
     <string name="todo_done">Done</string>
+    <string name="text_done">Done</string>
+    <string name="eraser">Eraser</string>
 </resources>
