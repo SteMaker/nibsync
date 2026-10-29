@@ -35,4 +35,20 @@
     <string name="text_done">Fertig</string>
     <string name="eraser">Radierer</string>
     <string name="all_done">Alles erledigt</string>
+    <string name="insert_table">Tabelle…</string>
+    <string name="insert_table_title">Tabelle einfügen</string>
+    <string name="table_header_row">Erste Zeile als Kopfzeile</string>
+    <string name="table">Tabelle</string>
+    <string name="table_row_above">Zeile darüber einfügen</string>
+    <string name="table_row_below">Zeile darunter einfügen</string>
+    <string name="table_column_left">Spalte links einfügen</string>
+    <string name="table_column_right">Spalte rechts einfügen</string>
+    <string name="table_join_right">Mit rechter Zelle verbinden</string>
+    <string name="table_join_down">Mit unterer Zelle verbinden</string>
+    <string name="table_split">Verbindung aufheben</string>
+    <string name="table_delete_row">Zeile löschen</string>
+    <string name="table_delete_column">Spalte löschen</string>
+    <string name="table_header_toggle">Kopfzeile ein/aus</string>
+    <string name="table_column_width">Spaltenbreite</string>
+    <string name="cancel">Abbrechen</string>
 </resources>

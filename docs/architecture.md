@@ -194,6 +194,31 @@ Pictures start at their 150 dpi print size, at most 80 % of the page width, cent
 - Sync: assets are uploaded before the log that refers to them and downloaded when a
   document folder changed; pasting into another document copies the files along.
 
+## Tables
+
+A `TableElement` (core/model) has columns (stable `colId`, width) and rows (stable `rowId`),
+a header flag, the cells' content (`TableCell`: rich text and its laid-out height, so sizes are
+known without a text engine) and joined areas (`CellMerge`, given by their corner ids: a row or
+column inserted inside makes the area grow; a deleted corner shrinks it, see `TableEditing`).
+`TableGeometry` lays it out: a row is as high as its highest single cell; a joined cell taller
+than its rows stretches the last one. Content of a joined area is its top left cell's.
+
+- Ops: `AddTables` (type 9) adds the structure with the content of that time; `SetTableCells`
+  (type 10) sets cells of a table by `tableId`. Each cell is a register (highest stamp wins), so
+  two devices editing different cells never conflict and a cell edit survives a concurrent
+  structure change (remove + add, same `tableId`). `DocumentState` shows tables with their
+  registers applied; a copy is a new table (new `tableId`). Older versions skip both ops.
+- `DocumentSession.replaceTable` changes structure and cells in one undo step (`Edit.Steps`),
+  e.g. joining cells moves the other cell's text into this one.
+- `TableEditing` (shared/text) does the editing on both platforms: one cell at a time in a
+  `TextEditController`, Tab / Shift+Tab (Tab in the last cell adds a row), rows and columns,
+  join right / down, split, header row, column widths and scaling (texts measured anew).
+- UI: Insert > Table… (`TableSizeDialog`, grid up to 8 x 8), a tap or click into a cell opens
+  it, the tool bar shows "Done", a "Table" menu and the text formatting. Column widths: drag
+  the border (PC) or the handle above it (tablet). Tables lie on the TEXT layer on white, the
+  header row tinted; lasso, copy and undo work as for other elements, and on the PC the
+  selection's corner scales a table.
+
 ## Anchors and links to notes
 
 An `Anchor` is a named place in a document (a small flag, 30 % smaller than a link; its name shows only while it is selected, `labelBounds`); a `NoteLink` leads to a
@@ -370,6 +395,7 @@ boxes the same way.
 | H ✅ | Undo/redo | tool bar buttons, Ctrl+Z / Ctrl+Y / Ctrl+Shift+Z; history per open document and app run |
 | M ✅ | Pictures (PNG, JPEG, SVG) with scaling, PDFs as links | `FileElement`, assets, `feature/media`, insert menu |
 | T ✅ | Text boxes with formatting (bold, italic, font, size, lists) | `TextBox`, `feature/text`, text tool in `NoteScreen` |
+| TB ✅ | Tables: typed cells, rows / columns, joined cells, header, sync per cell | `TableElement`, `TableEditing`, `TableRenderer` / `PagePainter` |
 | S ✅ | Several sync accounts (Nextcloud, OneDrive, Google Drive), one per book | `sync/client` (`SyncAccount`, `BookAccounts`), `BookScope` in `SyncEngine`; settings "Accounts" |
 | Q ✅ | To-dos (typed or handwritten), tick off on the page or in the generated "Open to-dos" page | `TodoItem`, `TodoEditing`, `TodoIndex`; to-do tool in both apps |
 | L ✅ | Any file as a link; anchors and links to notes | `MediaFiles.fileType`, `Anchor`/`NoteLink`, `LinkTargets`, insert menu |

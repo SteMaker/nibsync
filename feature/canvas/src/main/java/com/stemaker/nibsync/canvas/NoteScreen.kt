@@ -1,5 +1,12 @@
 package com.stemaker.nibsync.canvas
 
+import androidx.compose.ui.input.key.type
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.isShiftPressed
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material.icons.filled.SwapHoriz
+import androidx.compose.material.icons.filled.TableChart
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.material.icons.filled.Check
@@ -135,6 +142,11 @@ object NoteScreenTags {
     const val ERASER = "eraser"
     const val TEXT_DONE = "text-done"
     const val SELECTION_BAR = "selection-bar"
+    const val INSERT_TABLE = "insert-table"
+    const val TABLE_MENU = "table-menu"
+    const val TABLE_CELL = "table-cell-editor"
+    fun tableAction(name: String) = "table-$name"
+    fun columnHandle(index: Int) = "table-column-$index"
     const val TEXT = "text-tool"
     const val INSERT = "insert"
     const val INSERT_FILE = "insert-file"
@@ -193,6 +205,8 @@ fun NoteScreen(
     var choosingBackground by remember { mutableStateOf(false) }
     val textEditing by viewModel.textEditing.collectAsStateWithLifecycle()
     val todoEditing by viewModel.todoEditing.collectAsStateWithLifecycle()
+    val tableEditing by viewModel.tableEditing.collectAsStateWithLifecycle()
+    var choosingTableSize by remember { mutableStateOf(false) }
     var viewport by remember { mutableStateOf<Viewport?>(null) }
     val doneTasks = remember(document) { document.todos.filter { document.isDone(it.taskId) }.mapTo(HashSet()) { it.taskId } }
 
@@ -200,6 +214,13 @@ fun NoteScreen(
     todoEditing?.text?.let { controller ->
         LaunchedEffect(todoEditing?.key) {
             snapshotFlow { controller.contentVersion }.drop(1).debounce(TEXT_SAVE_DELAY_MS).collect { viewModel.saveTodo() }
+        }
+    }
+
+    // Store a table cell while typing, too.
+    tableEditing?.let { edit ->
+        LaunchedEffect(edit.key) {
+            snapshotFlow { edit.controller.contentVersion }.drop(1).debounce(TEXT_SAVE_DELAY_MS).collect { viewModel.tables.save() }
         }
     }
 
@@ -216,6 +237,21 @@ fun NoteScreen(
             onDismiss = { choosingBackground = false },
             onConfirm = { choosingBackground = false; viewModel.setBackground(it) },
         )
+    }
+
+    if (choosingTableSize) {
+        com.stemaker.nibsync.theme.TableSizeDialog(
+            title = stringResource(R.string.insert_table_title),
+            headerLabel = stringResource(R.string.table_header_row),
+            confirmLabel = stringResource(R.string.insert),
+            dismissLabel = stringResource(R.string.cancel),
+            onDismiss = { choosingTableSize = false },
+        ) { rows, columns, header ->
+            choosingTableSize = false
+            val r = (viewport ?: canvasView?.viewport)?.visibleDocumentRect
+            val pageWidth = document.meta.format.widthMm
+            viewModel.insertTable(r?.let { (it.left + it.right) / 2 } ?: (pageWidth / 2), r?.let { it.top + (it.bottom - it.top) / 5 } ?: 20f, rows, columns, header)
+        }
     }
 
     Column(modifier.fillMaxSize()) {
@@ -251,8 +287,19 @@ fun NoteScreen(
             onInsertFromClipboard = onInsertFromClipboard,
             onInsertAnchor = onInsertAnchor,
             onInsertNoteLink = onInsertNoteLink,
-            textEditing = textEditing?.controller ?: todoEditing?.text,
-            onTextDelete = { if (todoEditing != null) viewModel.deleteTodo() else viewModel.deleteText() },
+            onInsertTable = { choosingTableSize = true },
+            textEditing = textEditing?.controller ?: todoEditing?.text ?: tableEditing?.controller,
+            table = if (tableEditing != null) viewModel.tables else null,
+            onTextDelete = {
+                when {
+                    todoEditing != null -> viewModel.deleteTodo()
+                    tableEditing != null -> {
+                        viewModel.tables.deleteTable()
+                        viewModel.doneText()
+                    }
+                    else -> viewModel.deleteText()
+                }
+            },
             onTextDone = viewModel::doneText,
             inkTodoOpen = todoEditing?.isInk == true,
             onDeleteTodo = viewModel::deleteTodo,
@@ -266,7 +313,7 @@ fun NoteScreen(
         var pageBottomInWindow by remember { mutableFloatStateOf(0f) }
         val keyboardOverlap = if (imeBottom > 0) maxOf(0f, pageBottomInWindow - (windowHeight - imeBottom)) else 0f
         var cursorMm by remember { mutableStateOf<Pair<Float, Float>?>(null) }
-        if (textEditing == null && todoEditing?.text == null) cursorMm = null
+        if (textEditing == null && todoEditing?.text == null && tableEditing == null) cursorMm = null
         LaunchedEffect(keyboardOverlap) { canvasView?.setBottomInset(keyboardOverlap) }
         val pageHeightPx = viewport?.viewHeightPx
         LaunchedEffect(imeBottom > 0, keyboardOverlap, pageHeightPx, cursorMm) {
@@ -324,6 +371,8 @@ fun NoteScreen(
                         view.setFiles(document.files)
                         view.setLinks(document.links)
                         view.editingTextBox = textEditing?.boxId
+                        view.setTables(document.tables)
+                        view.editingTableCell = tableEditing?.let { it.tableId to it.cell }
                         view.setTodos(document.todos, doneTasks)
                         view.openTodo = todoEditing?.preview(PREVIEW_AUTHOR)
                         view.openTodoTyped = todoEditing?.text != null
@@ -348,6 +397,22 @@ fun NoteScreen(
                         onCursor = { top, bottom ->
                             val y = todo.y + com.stemaker.nibsync.model.TodoItem.PADDING_MM
                             cursorMm = y + top to y + bottom
+                        },
+                    )
+                }
+                val tableEdit = tableEditing
+                val editedTable = tableEdit?.let { e -> document.tables.firstOrNull { it.tableId == e.tableId } }
+                if (tableEdit != null && editedTable != null && v != null && v.hasSize) {
+                    TableCellOverlay(
+                        tableEdit, editedTable, v,
+                        onMove = { viewModel.tables.move(it) },
+                        onColumnWidth = viewModel::setColumnWidth,
+                        onCursor = { top, bottom ->
+                            val area = editedTable.geometry.areaOf(tableEdit.cell)
+                            if (area != null) {
+                                val y = editedTable.y + com.stemaker.nibsync.text.TableText.contentRect(editedTable, area).top
+                                cursorMm = y + top to y + bottom
+                            }
                         },
                     )
                 }
@@ -535,7 +600,9 @@ private fun Toolbar(
     onInsertFromClipboard: (() -> Unit)?,
     onInsertAnchor: (() -> Unit)?,
     onInsertNoteLink: (() -> Unit)?,
+    onInsertTable: () -> Unit,
     textEditing: com.stemaker.nibsync.text.TextEditController?,
+    table: com.stemaker.nibsync.text.TableEditing?,
     onTextDelete: () -> Unit,
     onTextDone: () -> Unit,
     inkTodoOpen: Boolean,
@@ -559,6 +626,10 @@ private fun Toolbar(
                 }
                 Divider()
                 ScrollingRow(Modifier.weight(1f)) {
+                    if (table != null) {
+                        TableMenu(table)
+                        Divider()
+                    }
                     TextFormatActions(textEditing, onDelete = onTextDelete)
                 }
             } else {
@@ -652,7 +723,7 @@ private fun Toolbar(
                             Icon(Icons.Filled.TaskAlt, contentDescription = todoLabel)
                         }
                     }
-                    if (onInsertFile != null) InsertMenu(onInsertFile, onInsertFromClipboard, onInsertAnchor, onInsertNoteLink)
+                    if (onInsertFile != null) InsertMenu(onInsertFile, onInsertFromClipboard, onInsertAnchor, onInsertNoteLink, onInsertTable)
                 }
                 Divider()
                 // Options of the active tool, right next to the tools.
@@ -831,7 +902,7 @@ private fun WithTooltip(text: String, content: @Composable () -> Unit) {
 
 /** "Insert" button: pick a picture or file, take one from the clipboard, set an anchor or link a note. */
 @Composable
-private fun InsertMenu(onInsertFile: () -> Unit, onInsertFromClipboard: (() -> Unit)?, onInsertAnchor: (() -> Unit)?, onInsertNoteLink: (() -> Unit)?) {
+private fun InsertMenu(onInsertFile: () -> Unit, onInsertFromClipboard: (() -> Unit)?, onInsertAnchor: (() -> Unit)?, onInsertNoteLink: (() -> Unit)?, onInsertTable: () -> Unit) {
     var open by remember { mutableStateOf(false) }
     val label = stringResource(R.string.insert)
     Box {
@@ -853,6 +924,12 @@ private fun InsertMenu(onInsertFile: () -> Unit, onInsertFromClipboard: (() -> U
                 enabled = onInsertFromClipboard != null,
                 onClick = { open = false; onInsertFromClipboard?.invoke() },
                 modifier = Modifier.testTag(NoteScreenTags.INSERT_CLIPBOARD),
+            )
+            DropdownMenuItem(
+                text = { Text(stringResource(R.string.insert_table)) },
+                leadingIcon = { Icon(Icons.Filled.TableChart, contentDescription = null) },
+                onClick = { open = false; onInsertTable() },
+                modifier = Modifier.testTag(NoteScreenTags.INSERT_TABLE),
             )
             if (onInsertAnchor != null) {
                 DropdownMenuItem(
@@ -960,4 +1037,112 @@ private fun BackgroundDialog(initial: BackgroundSpec, onDismiss: () -> Unit, onC
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(android.R.string.cancel)) } },
     )
+}
+
+/** "Table" menu while a cell is open: rows, columns, joined cells, header. */
+@Composable
+private fun TableMenu(table: com.stemaker.nibsync.text.TableEditing) {
+    var open by remember { mutableStateOf(false) }
+    Box {
+        OutlinedButton(onClick = { open = true }, modifier = Modifier.testTag(NoteScreenTags.TABLE_MENU)) {
+            Icon(Icons.Filled.TableChart, contentDescription = null, modifier = Modifier.size(18.dp))
+            Spacer(Modifier.width(6.dp))
+            Text(stringResource(R.string.table))
+        }
+        // Not focusable: the editor keeps the focus and with it the cursor.
+        DropdownMenu(expanded = open, onDismissRequest = { open = false }, properties = androidx.compose.ui.window.PopupProperties(focusable = false)) {
+            @Composable
+            fun item(label: Int, name: String, action: () -> Unit) = DropdownMenuItem(
+                text = { Text(stringResource(label)) },
+                onClick = { open = false; action() },
+                modifier = Modifier.testTag(NoteScreenTags.tableAction(name)),
+            )
+            item(R.string.table_row_above, "row-above") { table.insertRow(below = false) }
+            item(R.string.table_row_below, "row-below") { table.insertRow(below = true) }
+            item(R.string.table_column_left, "column-left") { table.insertColumn(right = false) }
+            item(R.string.table_column_right, "column-right") { table.insertColumn(right = true) }
+            HorizontalDivider()
+            item(R.string.table_join_right, "join-right") { table.join(right = true) }
+            item(R.string.table_join_down, "join-down") { table.join(right = false) }
+            item(R.string.table_split, "split") { table.split() }
+            HorizontalDivider()
+            item(R.string.table_delete_row, "delete-row") { table.deleteRow() }
+            item(R.string.table_delete_column, "delete-column") { table.deleteColumn() }
+            item(R.string.table_header_toggle, "header") { table.toggleHeader() }
+        }
+    }
+}
+
+/**
+ * Over the open table: the editor of the cell (Tab and Shift+Tab of a hardware keyboard go to
+ * the next and previous cell) and a handle on each column border to change its width.
+ */
+@Composable
+private fun TableCellOverlay(
+    edit: com.stemaker.nibsync.text.TableEdit,
+    table: com.stemaker.nibsync.model.TableElement,
+    viewport: Viewport,
+    onMove: (com.stemaker.nibsync.text.CellMove) -> Unit,
+    onColumnWidth: (com.stemaker.nibsync.model.StrokeId, Float) -> Unit,
+    onCursor: (Float, Float) -> Unit,
+) {
+    val area = table.geometry.areaOf(edit.cell) ?: return
+    val content = com.stemaker.nibsync.text.TableText.contentRect(table, area)
+    val cell = table.geometry.rect(area)
+    val t = viewport.documentToView
+    val scale by rememberUpdatedState(viewport.scale)
+    val density = androidx.compose.ui.platform.LocalDensity.current
+    val accent = MaterialTheme.colorScheme.primary
+    val focus = remember(edit.key) { FocusRequester() }
+    LaunchedEffect(edit.key) { focus.requestFocus() }
+    Box(
+        Modifier
+            .offset { IntOffset(t.mapX(table.x + cell.left).roundToInt(), t.mapY(table.y + cell.top).roundToInt()) }
+            .size(with(density) { (cell.width * viewport.scale).toDp() }, with(density) { (cell.height * viewport.scale).toDp() })
+            .border(2.dp, accent.copy(alpha = 0.7f)),
+    )
+    Box(Modifier.offset { IntOffset(t.mapX(table.x + content.left).roundToInt(), t.mapY(table.y + content.top).roundToInt()) }) {
+        com.stemaker.nibsync.text.TextBoxEditor(
+            controller = edit.controller,
+            widthMm = content.width,
+            pxPerMm = viewport.scale,
+            modifier = Modifier
+                .focusRequester(focus)
+                .testTag(NoteScreenTags.TABLE_CELL)
+                .onPreviewKeyEvent { e ->
+                    if (e.type != androidx.compose.ui.input.key.KeyEventType.KeyDown || e.key != androidx.compose.ui.input.key.Key.Tab) return@onPreviewKeyEvent false
+                    onMove(if (e.isShiftPressed) com.stemaker.nibsync.text.CellMove.PREVIOUS else com.stemaker.nibsync.text.CellMove.NEXT)
+                    true
+                },
+            onCursor = onCursor,
+        )
+    }
+    // A handle above each column border: dragging it changes that column's width.
+    table.columns.forEachIndexed { i, column ->
+        var drag by remember(table.id, i) { mutableStateOf(0f) }
+        val x = table.x + table.geometry.columnX[i + 1]
+        Box(
+            Modifier
+                .offset { IntOffset((t.mapX(x) + drag).roundToInt() - with(density) { 12.dp.roundToPx() }, t.mapY(table.y).roundToInt() - with(density) { 30.dp.roundToPx() }) }
+                .size(24.dp, 22.dp)
+                .background(accent, RoundedCornerShape(6.dp))
+                .testTag(NoteScreenTags.columnHandle(i))
+                .pointerInput(table.id, i) {
+                    detectHorizontalDragGestures(
+                        onDragEnd = {
+                            val dx = drag / scale
+                            drag = 0f
+                            if (kotlin.math.abs(dx) > 0.2f) onColumnWidth(column.colId, column.widthMm + dx)
+                        },
+                        onDragCancel = { drag = 0f },
+                    ) { change, amount ->
+                        change.consume()
+                        drag += amount
+                    }
+                },
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(Icons.Filled.SwapHoriz, contentDescription = stringResource(R.string.table_column_width), tint = MaterialTheme.colorScheme.onPrimary, modifier = Modifier.size(16.dp))
+        }
+    }
 }

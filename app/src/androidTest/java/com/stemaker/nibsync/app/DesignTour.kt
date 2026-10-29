@@ -273,6 +273,24 @@ class DesignTour {
         compose.onNodeWithTag(NoteScreenTags.pen(BrushFamily.HIGHLIGHTER)).performClick()
         shot("07-highlighter")
 
+        // The table further down: shown, then a cell opened with the pen.
+        scenario.onActivity { it.canvasView?.revealY(200f) }
+        shot("13-table")
+        val tv = checkNotNull(activity { it.canvasView })
+        val table = activity { it.session }!!.state.value.tables.single()
+        val area = table.geometry.areaAt(1, 1)
+        val cell = table.geometry.rect(area)
+        val tt = tv.viewport.documentToView
+        compose.onNodeWithTag(NoteScreenTags.pen(BrushFamily.FOUNTAIN_PEN)).performClick()
+        stylus(listOf(tt.mapX(table.x + cell.left + 4f) to tt.mapY(table.y + cell.top + 3f), tt.mapX(table.x + cell.left + 4f) to tt.mapY(table.y + cell.top + 3f)))
+        waitUntil { activity { it.canvasViewModel?.tableEditing?.value } != null }
+        shot("14-table-editing")
+        compose.onNodeWithTag(NoteScreenTags.TABLE_MENU).performClick()
+        shot("15-table-menu")
+        back()
+        compose.onNodeWithTag(NoteScreenTags.TEXT_DONE).performClick()
+        scenario.onActivity { it.canvasView?.revealY(0f) }
+
         compose.onNodeWithTag(NoteScreenTags.BACKGROUND).performClick()
         shot("08-background-dialog")
         back()

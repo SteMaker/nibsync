@@ -1,5 +1,6 @@
 package com.stemaker.nibsync.canvas
 
+import com.stemaker.nibsync.model.TableElement
 import android.annotation.SuppressLint
 import android.content.Context
 import android.graphics.Canvas
@@ -142,6 +143,27 @@ class NoteCanvasView(context: Context) : FrameLayout(context) {
 
     /** Draws to-dos; shares the text layout with the text boxes. */
     private val todoRenderer = TodoRenderer(textRenderer)
+    private val tableRenderer = TableRenderer(textRenderer)
+
+    /** Tables shown, back to front. */
+    var tables: List<TableElement> = emptyList()
+        private set
+
+    /** The table cell being typed in an editor over the page (table id, cell): its text is not drawn. */
+    var editingTableCell: Pair<StrokeId, com.stemaker.nibsync.model.CellKey>? = null
+        set(value) {
+            if (field != value) {
+                field = value
+                invalidate()
+            }
+        }
+
+    fun setTables(list: List<TableElement>) {
+        if (list === tables) return
+        tables = list
+        updateContentBottom()
+        invalidate()
+    }
 
     /** To-dos currently shown, back to front, and the tasks among them that are done. */
     var todos: List<TodoItem> = emptyList()
@@ -424,6 +446,7 @@ class NoteCanvasView(context: Context) : FrameLayout(context) {
             files.maxOfOrNull { it.bounds.bottom } ?: 0f,
             links.maxOfOrNull { it.bounds.bottom } ?: 0f,
             todos.maxOfOrNull { it.bounds.bottom } ?: 0f,
+            tables.maxOfOrNull { it.bounds.bottom } ?: 0f,
         )
         if (bottom != viewport.contentBottomMm) setViewport(viewport.withContentBottom(bottom))
     }
@@ -507,6 +530,7 @@ class NoteCanvasView(context: Context) : FrameLayout(context) {
                     drawFiles(this, Layer.TEXT, visible, moving)
                     drawLinks(this, visible, moving)
                     drawTextBoxes(this, visible, moving)
+                    drawTables(this, visible, moving)
                     textDrawn = true
                 }
                 if (moving && stroke.id in selection) {
@@ -519,6 +543,7 @@ class NoteCanvasView(context: Context) : FrameLayout(context) {
                 drawFiles(this, Layer.TEXT, visible, moving)
                 drawLinks(this, visible, moving)
                 drawTextBoxes(this, visible, moving)
+                drawTables(this, visible, moving)
             }
             drawTodos(this, visible, moving)
         }
@@ -572,6 +597,17 @@ class NoteCanvasView(context: Context) : FrameLayout(context) {
                 canvas.withTranslation(moveDx, moveDy) { linkRenderer.draw(this, link, viewport.scale, selected = true) }
             } else if (link.selectedBounds.intersects(visible)) {
                 linkRenderer.draw(canvas, link, viewport.scale, selected = link.id in selection)
+            }
+        }
+    }
+
+    private fun drawTables(canvas: Canvas, visible: com.stemaker.nibsync.model.geometry.Rect, moving: Boolean) {
+        for (table in tables) {
+            val hidden = editingTableCell?.takeIf { it.first == table.tableId }?.second
+            if (moving && table.id in selection) {
+                canvas.withTranslation(moveDx, moveDy) { tableRenderer.draw(this, table, hidden) }
+            } else if (table.bounds.intersects(visible)) {
+                tableRenderer.draw(canvas, table, hidden)
             }
         }
     }
@@ -863,7 +899,7 @@ class NoteCanvasView(context: Context) : FrameLayout(context) {
 
     private fun selectionBounds(): com.stemaker.nibsync.model.geometry.Rect? {
         if (selection.isEmpty()) return null
-        val selected = strokes.filter { it.id in selection } + textBoxes.filter { it.id in selection } +
+        val selected = strokes.filter { it.id in selection } + textBoxes.filter { it.id in selection } + tables.filter { it.id in selection } +
             todos.filter { it.id in selection } + links.filter { it.id in selection } + files.filter { it.id in selection }.map { f ->
                 if (resizePointerId != NO_POINTER) scaledForPreview(f) else f
             }
@@ -1197,6 +1233,7 @@ class NoteCanvasView(context: Context) : FrameLayout(context) {
         val tolerance = TEXT_TAP_TOLERANCE_DP * resources.displayMetrics.density / viewport.scale
         if (capturedPoints.any { abs(it.x - first.x) > tolerance || abs(it.y - first.y) > tolerance }) return null
         val onElement = textBoxes.any { it.bounds.contains(first.x, first.y) } || files.any { it.bounds.contains(first.x, first.y) } ||
+            tables.any { it.bounds.contains(first.x, first.y) } ||
             links.any { it.bounds.contains(first.x, first.y) } || todos.any { it.bounds.contains(first.x, first.y) }
         return if (onElement) first.x to first.y else null
     }

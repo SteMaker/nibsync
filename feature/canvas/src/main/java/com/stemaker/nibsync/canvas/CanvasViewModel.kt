@@ -1,5 +1,8 @@
 package com.stemaker.nibsync.canvas
 
+import com.stemaker.nibsync.model.TableElement
+import com.stemaker.nibsync.text.TableEdit
+import com.stemaker.nibsync.text.TableEditing
 import androidx.lifecycle.ViewModel
 import com.stemaker.nibsync.document.DocumentSession
 import com.stemaker.nibsync.document.DocumentState
@@ -252,6 +255,12 @@ class CanvasViewModel(
 
     private val todo = TodoEditing(session)
 
+    /** Tables: the cell being typed, rows, columns and joined cells. */
+    val tables = TableEditing(session)
+
+    /** The table cell being edited, or null. */
+    val tableEditing: StateFlow<TableEdit?> = tables.editing
+
     /** The to-do being written or typed, or null. */
     val todoEditing: StateFlow<TodoEdit?> = todo.editing
 
@@ -261,6 +270,7 @@ class CanvasViewModel(
         set(value) {
             text.measureText = value
             todo.measureText = value
+            tables.measureText = value
         }
 
     /** The to-do tool; new to-dos are handwritten with [ink] (chosen with the pen), else typed. */
@@ -377,7 +387,7 @@ class CanvasViewModel(
     fun tapAt(x: Float, y: Float) {
         val hit = tappableAt(x, y)
         val open = todo.editing.value
-        val textWasOpen = text.editing.value != null
+        val textWasOpen = text.editing.value != null || tables.editing.value != null
         // A tap into the open to-do keeps it open.
         if (open != null && hit is TodoItem && hit.id == open.itemId) return
         finishText()
@@ -393,6 +403,15 @@ class CanvasViewModel(
             // A tap selects an anchor (to move it); a tap on the selected anchor renames it.
             is Anchor -> if (_selection.value == setOf(hit.id)) editAnchor(hit) else selectTemporarily(setOf(hit.id))
             is ImageElement -> selectTemporarily(setOf(hit.id))
+            is TableElement -> if (_tools.value.tool == Tool.LASSO && !lassoByTap) {
+                selectTemporarily(setOf(hit.id))
+            } else {
+                hit.geometry.areaAtPoint(x - hit.x, y - hit.y)?.let { area ->
+                    enterTextMode()
+                    clearSelection()
+                    tables.open(hit, hit.geometry.key(area))
+                }
+            }
             else -> {
                 clearSelection()
                 if (_tools.value.tool == Tool.TODO && open == null && !todoByTap) {
@@ -447,6 +466,23 @@ class CanvasViewModel(
     fun finishText() {
         text.finish()
         todo.finish()
+        tables.finish()
+    }
+
+    /** Adds a table of [rows] x [columns] centred at [cx] with its top at [top] mm and opens its first cell. */
+    fun insertTable(cx: Float, top: Float, rows: Int, columns: Int, header: Boolean) {
+        finishText()
+        clearSelection()
+        enterTextMode()
+        val pageWidth = session.state.value.meta.format.widthMm
+        val width = minOf(TableElement.DEFAULT_WIDTH_MM, pageWidth - 10f)
+        tables.insert(cx - width / 2, top, rows, columns, header, pageWidth)
+    }
+
+    /** Sets the width of a column of the open table (its border was dragged). */
+    fun setColumnWidth(colId: StrokeId, widthMm: Float) {
+        val t = tables.table() ?: return
+        tables.setColumnWidth(t, colId, widthMm)
     }
 
     /** "Done" while editing text: stores the box or to-do and goes back to the previous tool. */

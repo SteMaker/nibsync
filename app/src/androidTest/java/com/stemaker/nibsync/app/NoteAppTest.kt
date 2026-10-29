@@ -881,6 +881,39 @@ class NoteAppTest {
     }
 
     @Test
+    fun aTableIsInsertedTypedGrownAndOpenedWithThePen() {
+        compose.onNodeWithTag(NoteScreenTags.INSERT).performClick()
+        compose.onNodeWithTag(NoteScreenTags.INSERT_TABLE).performClick()
+        compose.onNodeWithTag(com.stemaker.nibsync.theme.TableSizeTags.cell(2, 2)).performClick()
+        compose.onNodeWithTag(com.stemaker.nibsync.theme.TableSizeTags.CONFIRM).performClick()
+        waitUntil("first cell open") { compose.onAllNodesWithTag(NoteScreenTags.TABLE_CELL).fetchSemanticsNodes().isNotEmpty() }
+        compose.onNodeWithTag(NoteScreenTags.TABLE_CELL).performTextInput("Kopf")
+        // A row below, from the table menu.
+        compose.onNodeWithTag(NoteScreenTags.TABLE_MENU).performClick()
+        compose.onNodeWithTag(NoteScreenTags.tableAction("row-below")).performClick()
+        waitUntil("three rows") { session().state.value.tables.singleOrNull()?.rows?.size == 3 }
+        val table = session().state.value.tables.single()
+        val k = com.stemaker.nibsync.model.CellKey(table.rows[0].rowId, table.columns[0].colId)
+        assertThat(table.cell(k).text.plainText).isEqualTo("Kopf")
+        compose.onNodeWithTag(NoteScreenTags.TEXT_DONE).performClick()
+        waitUntil("editing ended") { compose.onAllNodesWithTag(NoteScreenTags.TABLE_CELL).fetchSemanticsNodes().isEmpty() }
+
+        // A pen tap into the lower right cell opens it.
+        val t = checkNotNull(canvas()).viewport.documentToView
+        val g = table.geometry
+        val r = g.rect(g.areaAt(2, 1))
+        tap(t.mapX(table.x + r.left + 5f), t.mapY(table.y + r.top + 3f))
+        waitUntil("cell open") { compose.onAllNodesWithTag(NoteScreenTags.TABLE_CELL).fetchSemanticsNodes().isNotEmpty() }
+        compose.onNodeWithTag(NoteScreenTags.TABLE_CELL).performTextInput("unten")
+        compose.onNodeWithTag(NoteScreenTags.TEXT_DONE).performClick()
+        waitUntil("stored") {
+            val now = session().state.value.tables.single()
+            now.cell(com.stemaker.nibsync.model.CellKey(now.rows[2].rowId, now.columns[1].colId)).text.plainText == "unten"
+        }
+        assertThat(strokes()).isEmpty()
+    }
+
+    @Test
     fun emptyBoxLeavesNothingBehind() {
         newTextBox()
         tapOutside()

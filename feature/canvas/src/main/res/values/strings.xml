@@ -35,4 +35,20 @@
     <string name="text_done">Done</string>
     <string name="eraser">Eraser</string>
     <string name="all_done">All done</string>
+    <string name="insert_table">Table…</string>
+    <string name="insert_table_title">Insert table</string>
+    <string name="table_header_row">First row as header</string>
+    <string name="table">Table</string>
+    <string name="table_row_above">Insert row above</string>
+    <string name="table_row_below">Insert row below</string>
+    <string name="table_column_left">Insert column left</string>
+    <string name="table_column_right">Insert column right</string>
+    <string name="table_join_right">Join with cell to the right</string>
+    <string name="table_join_down">Join with cell below</string>
+    <string name="table_split">Split cells</string>
+    <string name="table_delete_row">Delete row</string>
+    <string name="table_delete_column">Delete column</string>
+    <string name="table_header_toggle">Header row on/off</string>
+    <string name="table_column_width">Column width</string>
+    <string name="cancel">Cancel</string>
 </resources>
