@@ -114,11 +114,20 @@ class DesignTourPc {
             container.flushOpenSessions()
         }
         settings.lastDocument = main
-        val scene = ImageComposeScene(1600, 1000, Density(1f)) { App(container, settings, Strings(german = true)) }
-        var time = 0L
-        repeat(80) { scene.render(time); time += 50_000_000L; Thread.sleep(40) }
-        File(outDir, "pc-01-note.png").writeBytes(scene.render(time).encodeToData(EncodedImageFormat.PNG)!!.bytes)
-        scene.close()
+        // Every colour scheme, light, and the chosen ones dark (NIBSYNC_TOUR_PALETTES=1).
+        val variants = if (System.getenv("NIBSYNC_TOUR_PALETTES") == "1") {
+            com.stemaker.nibsync.theme.NibSyncPalette.entries.map { it to false } + com.stemaker.nibsync.theme.NibSyncPalette.entries.map { it to true }
+        } else {
+            listOf(com.stemaker.nibsync.theme.NibSyncPalette.GREY to false)
+        }
+        for ((palette, dark) in variants) {
+            val scene = ImageComposeScene(1600, 1000, Density(1f)) { App(container, settings, Strings(german = true), palette = palette, dark = dark) }
+            var time = 0L
+            repeat(80) { scene.render(time); time += 50_000_000L; Thread.sleep(30) }
+            val name = if (variants.size == 1) "pc-01-note" else "pc-${palette.name.lowercase()}${if (dark) "-dark" else ""}"
+            File(outDir, "$name.png").writeBytes(scene.render(time).encodeToData(EncodedImageFormat.PNG)!!.bytes)
+            scene.close()
+        }
         runBlocking { container.closeAll() }
     }
 }

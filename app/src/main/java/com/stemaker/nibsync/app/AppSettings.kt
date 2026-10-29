@@ -4,6 +4,8 @@ import android.content.Context
 import androidx.core.content.edit
 import com.stemaker.nibsync.model.DocumentId
 import com.stemaker.nibsync.model.PenPreferences
+import com.stemaker.nibsync.theme.NibSyncPalette
+import com.stemaker.nibsync.theme.ThemeMode
 
 /** Device-local preferences (not synced). */
 class AppSettings(context: Context) {
@@ -44,7 +46,19 @@ class AppSettings(context: Context) {
             value.toStrings().forEach { (k, v) -> putString(k, v) }
         }
 
+    /** Light, dark or as the system is set. */
+    var themeMode: ThemeMode
+        get() = ThemeMode.of(prefs.getString(KEY_THEME_MODE, null))
+        set(value) = prefs.edit { putString(KEY_THEME_MODE, value.name) }
+
+    /** Colour scheme of the app. */
+    var palette: NibSyncPalette
+        get() = NibSyncPalette.of(prefs.getString(KEY_PALETTE, null))
+        set(value) = prefs.edit { putString(KEY_PALETTE, value.name) }
+
     private companion object {
+        const val KEY_THEME_MODE = "themeMode"
+        const val KEY_PALETTE = "palette"
         const val KEY_LAST_BOOK_ACCOUNT = "lastBookAccount"
         const val KEY_DRAW_WITH_FINGER = "drawWithFinger"
         const val KEY_LAST_DOCUMENT = "lastDocument"

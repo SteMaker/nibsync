@@ -1,5 +1,7 @@
 package com.stemaker.nibsync.desktop
 
+import com.stemaker.nibsync.theme.NibSyncPalette
+import com.stemaker.nibsync.theme.ThemeMode
 import com.stemaker.nibsync.model.DocumentId
 import com.stemaker.nibsync.model.PenPreferences
 import okio.FileSystem
@@ -44,6 +46,22 @@ class Settings(private val fs: FileSystem, private val file: Path) {
         }
 
     /** Pen widths from the settings, the last pen and its width. */
+    /** Light, dark or as the system is set. */
+    var themeMode: ThemeMode
+        get() = ThemeMode.of(props.getProperty(THEME_MODE))
+        set(value) {
+            props.setProperty(THEME_MODE, value.name)
+            save()
+        }
+
+    /** Colour scheme of the app. */
+    var palette: NibSyncPalette
+        get() = NibSyncPalette.of(props.getProperty(PALETTE))
+        set(value) {
+            props.setProperty(PALETTE, value.name)
+            save()
+        }
+
     var pens: PenPreferences
         get() = PenPreferences.fromStrings(props::getProperty)
         set(value) {
@@ -61,6 +79,8 @@ class Settings(private val fs: FileSystem, private val file: Path) {
         const val LAST_DOCUMENT = "lastDocument"
         const val LAST_BOOK_ACCOUNT = "lastBookAccount"
         const val SHOW_TITLE = "showTitle"
+        const val THEME_MODE = "themeMode"
+        const val PALETTE = "palette"
         const val SHOW_CREATED = "showCreated"
     }
 }

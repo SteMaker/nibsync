@@ -8,8 +8,10 @@ feature/library/  Library drawer (tree of books/chapters/documents), LibraryView
 feature/canvas/   Endless page (NoteCanvasView), tool bar (Compose), CanvasViewModel
 shared/text/      KMP (Android + PC): text model <-> editor conversion, editor controller,
                   paragraph layout, embedded fonts
-shared/theme/     KMP (Android + PC): NibSyncTheme (neutral greys, light and dark) and the
-                  page chrome colours (desk, shadow, selection, to-do mark)
+shared/theme/     KMP (Android + PC): NibSyncTheme with colour schemes (NibSyncPalette: grey
+                  default, tinted ones, stronger blue and red), light / dark / system
+                  (ThemeMode, a setting on both platforms), page chrome colours, the shared
+                  appearance settings panel
 feature/text/     Android text boxes: page renderer, format bar
 feature/media/    Pictures and file links: type detection, sizing, rendering (AndroidSVG)
 desktop/          PC app (Linux, Windows, later macOS): Compose Multiplatform for Desktop

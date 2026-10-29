@@ -69,4 +69,16 @@
     <string name="note_link_where">Wohin soll der Link führen?</string>
     <string name="note_top">Anfang der Notiz</string>
     <string name="note_not_found">Die verlinkte Notiz gibt es hier nicht (gelöscht oder noch nicht synchronisiert).</string>
+    <string name="settings_appearance">Darstellung</string>
+    <string name="theme_system">Wie System</string>
+    <string name="theme_light">Hell</string>
+    <string name="theme_dark">Dunkel</string>
+    <string name="palette_grey">Grau</string>
+    <string name="palette_slate">Schieferblau</string>
+    <string name="palette_petrol">Petrol</string>
+    <string name="palette_sage">Salbei</string>
+    <string name="palette_warm">Warmgrau</string>
+    <string name="palette_ink">Tinte</string>
+    <string name="palette_blue">Blau</string>
+    <string name="palette_red">Rot</string>
 </resources>

@@ -70,4 +70,16 @@
     <string name="note_link_where">Where should the link lead?</string>
     <string name="note_top">Top of the note</string>
     <string name="note_not_found">The linked note is not here (deleted or not synced yet).</string>
+    <string name="settings_appearance">Appearance</string>
+    <string name="theme_system">As the system</string>
+    <string name="theme_light">Light</string>
+    <string name="theme_dark">Dark</string>
+    <string name="palette_grey">Grey</string>
+    <string name="palette_slate">Slate blue</string>
+    <string name="palette_petrol">Petrol</string>
+    <string name="palette_sage">Sage</string>
+    <string name="palette_warm">Warm grey</string>
+    <string name="palette_ink">Ink</string>
+    <string name="palette_blue">Blue</string>
+    <string name="palette_red">Red</string>
 </resources>

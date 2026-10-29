@@ -80,8 +80,13 @@ fun App(
     cloudLogin: suspend (com.stemaker.nibsync.sync.client.SyncService) -> com.stemaker.nibsync.sync.client.SyncConfig = { service ->
         DesktopCloudLogin.run(service, sync!!.clients, openBrowser, strings)
     },
+    /** Fixed colours instead of the settings' (screen shots). */
+    palette: com.stemaker.nibsync.theme.NibSyncPalette? = null,
+    dark: Boolean? = null,
 ) {
-    NibSyncTheme {
+    var themeMode by remember { mutableStateOf(settings.themeMode) }
+    var chosenPalette by remember { mutableStateOf(settings.palette) }
+    NibSyncTheme(dark = dark ?: themeMode.isDark(), palette = palette ?: chosenPalette) {
         // Shortcuts also from here, so they work in tests without a window (the window passes
         // keys on first; a key is handled only once).
         Surface(Modifier.fillMaxSize().onPreviewKeyEvent(keys::onKey)) {
@@ -124,6 +129,10 @@ fun App(
                     onShowCreated = { showCreated = it; settings.showCreated = it },
                     penWidths = penWidths,
                     onPenWidths = { penWidths = it; settings.pens = settings.pens.copy(widths = it) },
+                    themeMode = themeMode,
+                    onThemeMode = { themeMode = it; settings.themeMode = it },
+                    palette = chosenPalette,
+                    onPalette = { chosenPalette = it; settings.palette = it },
                 )
                 SettingsDialog(sync, display, strings, openBrowser, cloudLogin = cloudLogin, onClose = { showSettings = false })
             }

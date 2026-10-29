@@ -1,6 +1,8 @@
 package com.stemaker.nibsync.desktop
 
 import com.stemaker.nibsync.text.TextPreset
+import com.stemaker.nibsync.theme.NibSyncPalette
+import com.stemaker.nibsync.theme.ThemeMode
 import java.util.Locale
 
 /** UI texts: German for German systems, English otherwise (like values/ and values-de/ on Android). */
@@ -28,6 +30,22 @@ class Strings(private val german: Boolean = Locale.getDefault().language == "de"
     val textShrink = if (german) "Schrift kleiner" else "Smaller text"
     val textStyle = if (german) "Stil" else "Style"
     val textDone = if (german) "Fertig" else "Done"
+    val settingsAppearance = if (german) "Darstellung" else "Appearance"
+    fun themeMode(mode: ThemeMode) = when (mode) {
+        ThemeMode.SYSTEM -> if (german) "Wie System" else "As the system"
+        ThemeMode.LIGHT -> if (german) "Hell" else "Light"
+        ThemeMode.DARK -> if (german) "Dunkel" else "Dark"
+    }
+    fun palette(p: NibSyncPalette) = when (p) {
+        NibSyncPalette.GREY -> if (german) "Grau" else "Grey"
+        NibSyncPalette.SLATE -> if (german) "Schieferblau" else "Slate blue"
+        NibSyncPalette.PETROL -> "Petrol"
+        NibSyncPalette.SAGE -> if (german) "Salbei" else "Sage"
+        NibSyncPalette.WARM -> if (german) "Warmgrau" else "Warm grey"
+        NibSyncPalette.INK -> if (german) "Tinte" else "Ink"
+        NibSyncPalette.BLUE -> if (german) "Blau" else "Blue"
+        NibSyncPalette.RED -> if (german) "Rot" else "Red"
+    }
     val searchDocuments = if (german) "Dokumente suchen" else "Search documents"
     val clearSearch = if (german) "Suche leeren" else "Clear search"
     val noDocumentsFound = if (german) "Keine Dokumente gefunden" else "No documents found"

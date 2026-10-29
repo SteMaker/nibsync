@@ -106,4 +106,25 @@ class SettingsUiTest {
         runBlocking { container.closeAll() }
         scope.cancel()
     }
+
+    @Test
+    fun darkModeAndColourSchemeAreChosenAndKept() = runComposeUiTest {
+        val root = tmp.root.toOkioPath()
+        val container = DesktopContainer(root)
+        val settings = Settings(container.fs, root / "settings.properties")
+        setContent {
+            App(container, settings, Strings(german = true))
+        }
+        waitUntil(timeoutMillis = 5000) { onAllNodesWithTag(LibraryTags.SETTINGS).fetchSemanticsNodes().isNotEmpty() }
+        onNodeWithTag(LibraryTags.SETTINGS).performClick()
+        onNodeWithTag(com.stemaker.nibsync.theme.AppearanceTags.mode(com.stemaker.nibsync.theme.ThemeMode.DARK)).performClick()
+        onNodeWithTag(com.stemaker.nibsync.theme.AppearanceTags.palette(com.stemaker.nibsync.theme.NibSyncPalette.INK)).performClick()
+        waitForIdle()
+        // Stored for the next start.
+        val again = Settings(container.fs, root / "settings.properties")
+        assert(again.themeMode == com.stemaker.nibsync.theme.ThemeMode.DARK)
+        assert(again.palette == com.stemaker.nibsync.theme.NibSyncPalette.INK)
+        onNodeWithTag(SettingsTags.CLOSE).performClick()
+        runBlocking { container.closeAll() }
+    }
 }

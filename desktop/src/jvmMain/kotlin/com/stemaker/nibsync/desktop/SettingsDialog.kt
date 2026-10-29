@@ -1,5 +1,8 @@
 package com.stemaker.nibsync.desktop
 
+import com.stemaker.nibsync.theme.AppearanceSettings
+import com.stemaker.nibsync.theme.NibSyncPalette
+import com.stemaker.nibsync.theme.ThemeMode
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -50,6 +53,10 @@ class DisplaySettings(
     val onShowCreated: (Boolean) -> Unit,
     val penWidths: Map<BrushFamily, List<Float>> = PenWidths.DEFAULTS,
     val onPenWidths: (Map<BrushFamily, List<Float>>) -> Unit = {},
+    val themeMode: ThemeMode = ThemeMode.SYSTEM,
+    val onThemeMode: (ThemeMode) -> Unit = {},
+    val palette: NibSyncPalette = NibSyncPalette.GREY,
+    val onPalette: (NibSyncPalette) -> Unit = {},
 )
 
 /** App settings, grouped in sections; new settings get their own section here. */
@@ -70,6 +77,8 @@ fun SettingsDialog(
                     Text(strings.settingsSync, style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary)
                     AccountSettings(sync, strings, openBrowser, cloudLogin)
                 }
+                Text(strings.settingsAppearance, style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary)
+                AppearanceSettings(display.themeMode, display.onThemeMode, display.palette, display.onPalette, strings::themeMode, strings::palette)
                 Text(strings.settingsDisplay, style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary)
                 SwitchLine(strings.showTitle, display.showTitle, display.onShowTitle, SettingsTags.SHOW_TITLE)
                 SwitchLine(strings.showCreated, display.showCreated, display.onShowCreated, SettingsTags.SHOW_CREATED)

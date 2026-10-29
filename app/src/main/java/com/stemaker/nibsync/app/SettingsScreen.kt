@@ -1,5 +1,8 @@
 package com.stemaker.nibsync.app
 
+import com.stemaker.nibsync.theme.AppearanceSettings
+import com.stemaker.nibsync.theme.NibSyncPalette
+import com.stemaker.nibsync.theme.ThemeMode
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -71,6 +74,10 @@ fun SettingsScreen(
     onShowTitle: (Boolean) -> Unit,
     showCreated: Boolean,
     onShowCreated: (Boolean) -> Unit,
+    themeMode: ThemeMode,
+    onThemeMode: (ThemeMode) -> Unit,
+    palette: NibSyncPalette,
+    onPalette: (NibSyncPalette) -> Unit,
     penWidths: Map<BrushFamily, List<Float>>,
     onPenWidths: (Map<BrushFamily, List<Float>>) -> Unit,
     onClose: () -> Unit,
@@ -95,6 +102,16 @@ fun SettingsScreen(
             ) {
                 Column(Modifier.widthIn(max = 640.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     Section(stringResource(R.string.settings_sync)) { AccountSettings(sync, cloudLogin) }
+                    HorizontalDivider()
+                    Section(stringResource(R.string.settings_appearance)) {
+                        val modes = mapOf(
+                            ThemeMode.SYSTEM to stringResource(R.string.theme_system),
+                            ThemeMode.LIGHT to stringResource(R.string.theme_light),
+                            ThemeMode.DARK to stringResource(R.string.theme_dark),
+                        )
+                        val names = NibSyncPalette.entries.associateWith { stringResource(paletteName(it)) }
+                        AppearanceSettings(themeMode, onThemeMode, palette, onPalette, { modes.getValue(it) }, { names.getValue(it) })
+                    }
                     HorizontalDivider()
                     Section(stringResource(R.string.settings_display)) {
                         SwitchLine(stringResource(R.string.page_breaks), showPageBreaks, onShowPageBreaks, SettingsTags.PAGE_BREAKS)
@@ -153,6 +170,17 @@ private fun PenWidthSettings(widths: Map<BrushFamily, List<Float>>, onChange: (M
     TextButton(onClick = { onChange(PenWidths.DEFAULTS); resets++ }, enabled = widths != PenWidths.DEFAULTS, modifier = Modifier.testTag(SettingsTags.PEN_WIDTHS_RESET)) {
         Text(stringResource(R.string.pen_widths_reset))
     }
+}
+
+private fun paletteName(p: NibSyncPalette) = when (p) {
+    NibSyncPalette.GREY -> R.string.palette_grey
+    NibSyncPalette.SLATE -> R.string.palette_slate
+    NibSyncPalette.PETROL -> R.string.palette_petrol
+    NibSyncPalette.SAGE -> R.string.palette_sage
+    NibSyncPalette.WARM -> R.string.palette_warm
+    NibSyncPalette.INK -> R.string.palette_ink
+    NibSyncPalette.BLUE -> R.string.palette_blue
+    NibSyncPalette.RED -> R.string.palette_red
 }
 
 /** The three widths as short strokes at their real size on the screen. */

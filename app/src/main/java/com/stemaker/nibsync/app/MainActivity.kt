@@ -27,6 +27,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.rememberDrawerState
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -178,7 +179,17 @@ class MainActivity : ComponentActivity() {
         val bookTitle = getString(R.string.default_book_title)
         val documentTitle = getString(R.string.default_document_title)
         setContent {
-            NibSyncTheme {
+            var themeMode by remember { mutableStateOf(settings.themeMode) }
+            var palette by remember { mutableStateOf(settings.palette) }
+            val dark = themeMode.isDark()
+            // Status and navigation bar icons readable on the app's own light or dark colours.
+            SideEffect {
+                androidx.core.view.WindowCompat.getInsetsController(window, window.decorView).run {
+                    isAppearanceLightStatusBars = !dark
+                    isAppearanceLightNavigationBars = !dark
+                }
+            }
+            NibSyncTheme(dark = dark, palette = palette) {
                 val scope = rememberCoroutineScope()
                 val drawerState = rememberDrawerState(DrawerValue.Closed)
                 val libraryVm = viewModel { LibraryViewModel(container.library, container::beforeDelete) }
@@ -213,6 +224,16 @@ class MainActivity : ComponentActivity() {
                         onShowCreated = {
                             showCreated = it
                             settings.showCreated = it
+                        },
+                        themeMode = themeMode,
+                        onThemeMode = {
+                            themeMode = it
+                            settings.themeMode = it
+                        },
+                        palette = palette,
+                        onPalette = {
+                            palette = it
+                            settings.palette = it
                         },
                         penWidths = penWidths,
                         onPenWidths = {
