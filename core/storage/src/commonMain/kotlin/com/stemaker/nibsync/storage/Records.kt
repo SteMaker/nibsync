@@ -38,6 +38,8 @@ internal data class OpRecord(
     @SerialName("o") val todos: List<TodoRecord> = emptyList(),
     @SerialName("td") val todoDone: TodoDoneRecord? = null,
     @SerialName("n") val links: List<LinkRecord> = emptyList(),
+    @SerialName("tb") val tables: List<TableRecord> = emptyList(),
+    @SerialName("tc") val tableCells: TableCellsRecord? = null,
 ) {
     companion object {
         const val TYPE_ADD = 1
@@ -48,6 +50,8 @@ internal data class OpRecord(
         const val TYPE_ADD_TODOS = 6
         const val TYPE_TODO_DONE = 7
         const val TYPE_ADD_LINKS = 8
+        const val TYPE_ADD_TABLES = 9
+        const val TYPE_TABLE_CELLS = 10
     }
 }
 
@@ -118,6 +122,56 @@ internal data class TodoRecord(
     @SerialName("a") val author: String,
     @SerialName("p") val paragraphs: List<ParagraphRecord>? = null,
     @SerialName("s") val strokes: List<StrokeRecord>? = null,
+)
+
+/**
+ * A table: [columns] with their widths, [rows] by id, the [cells] holding content and the
+ * joined areas [merges]; positions and sizes in position steps.
+ */
+@Serializable
+internal data class TableRecord(
+    @SerialName("id") val id: String,
+    @SerialName("k") val table: String,
+    @SerialName("x") val x: Int,
+    @SerialName("y") val y: Int,
+    @SerialName("cols") val columns: List<ColumnRecord>,
+    @SerialName("rows") val rows: List<String>,
+    @SerialName("hd") val header: Boolean = false,
+    @SerialName("cl") val cells: List<CellRecord> = emptyList(),
+    @SerialName("mg") val merges: List<MergeRecord> = emptyList(),
+    @SerialName("ts") val createdAtEpochMs: Long,
+    @SerialName("a") val author: String,
+)
+
+@Serializable
+internal data class ColumnRecord(
+    @SerialName("i") val id: String,
+    @SerialName("w") val width: Int,
+)
+
+/** Content of the cell in row [row], column [column]; [height] of its text in position steps. */
+@Serializable
+internal data class CellRecord(
+    @SerialName("r") val row: String,
+    @SerialName("c") val column: String,
+    @SerialName("p") val paragraphs: List<ParagraphRecord>,
+    @SerialName("h") val height: Int = 0,
+)
+
+/** Cells joined from row [fromRow], column [fromColumn] to row [toRow], column [toColumn]. */
+@Serializable
+internal data class MergeRecord(
+    @SerialName("r0") val fromRow: String,
+    @SerialName("c0") val fromColumn: String,
+    @SerialName("r1") val toRow: String,
+    @SerialName("c1") val toColumn: String,
+)
+
+/** New content of cells of the table [table]. */
+@Serializable
+internal data class TableCellsRecord(
+    @SerialName("k") val table: String,
+    @SerialName("cl") val cells: List<CellRecord>,
 )
 
 /** Done state of the to-do task [task]. */

@@ -97,6 +97,39 @@ class GoldenFormatTest {
         ),
     )
 
+    // Added in format version 1 later on (op types 9 and 10); older readers skip them.
+    private val tableOps = run {
+        fun id(s: String) = com.stemaker.nibsync.model.StrokeId(s)
+        val r1 = id("51515151-5151-4515-8515-515151515151")
+        val r2 = id("52525252-5252-4525-8525-525252525252")
+        val c1 = id("61616161-6161-4616-8616-616161616161")
+        val c2 = id("62626262-6262-4626-8626-626262626262")
+        val table = id("71717171-7171-4717-8717-717171717171")
+        listOf(
+            com.stemaker.nibsync.document.DocumentOp.AddTables(
+                com.stemaker.nibsync.document.OpStamp(11, DEV_A),
+                listOf(
+                    com.stemaker.nibsync.model.TableElement(
+                        id("70707070-7070-4707-8707-707070707070"), table, 10f, 30f,
+                        listOf(com.stemaker.nibsync.model.TableColumn(c1, 40f), com.stemaker.nibsync.model.TableColumn(c2, 55.5f)),
+                        listOf(com.stemaker.nibsync.model.TableRow(r1), com.stemaker.nibsync.model.TableRow(r2)),
+                        header = true,
+                        cells = mapOf(
+                            com.stemaker.nibsync.model.CellKey(r1, c1) to com.stemaker.nibsync.model.TableCell(com.stemaker.nibsync.model.RichText.plain("Zusammen"), 5f),
+                        ),
+                        // The header row's two cells joined.
+                        merges = listOf(com.stemaker.nibsync.model.CellMerge(r1, c1, r1, c2)),
+                        createdAtEpochMs = 1_700_000_000_004, author = DEV_A,
+                    ),
+                ),
+            ),
+            com.stemaker.nibsync.document.DocumentOp.SetTableCells(
+                com.stemaker.nibsync.document.OpStamp(12, DEV_B), table,
+                listOf(com.stemaker.nibsync.document.CellUpdate(com.stemaker.nibsync.model.CellKey(r2, c2), com.stemaker.nibsync.model.TableCell(com.stemaker.nibsync.model.RichText.plain("42"), 5f))),
+            ),
+        )
+    }
+
     private val goldenDir = "src/jvmTest/resources/golden".toPath()
 
     private fun encodedLog(ops: List<com.stemaker.nibsync.document.DocumentOp> = this.ops): okio.ByteString {
@@ -132,6 +165,14 @@ class GoldenFormatTest {
         FileSystem.SYSTEM.write(goldenDir / "ops-v1-todos.oplog") { write(encodedLog(todoOps)) }
         FileSystem.SYSTEM.write(goldenDir / "ops-v1-links.oplog") { write(encodedLog(linkOps)) }
         FileSystem.SYSTEM.write(goldenDir / "ops-v1-continued-line.oplog") { write(encodedLog(continuedLineOps)) }
+        FileSystem.SYSTEM.write(goldenDir / "ops-v1-tables.oplog") { write(encodedLog(tableOps)) }
+    }
+
+    @Test
+    fun tableOpsAreStable() {
+        val golden = golden("ops-v1-tables.oplog")
+        assertThat(OpLogCodec.read(Buffer().write(golden)).ops).isEqualTo(tableOps)
+        assertThat(encodedLog(tableOps).hex()).isEqualTo(golden.hex())
     }
 
     @Test

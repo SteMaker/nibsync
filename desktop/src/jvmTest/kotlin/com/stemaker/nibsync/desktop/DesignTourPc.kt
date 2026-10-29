@@ -61,6 +61,7 @@ class DesignTourPc {
         val blue = BrushSpec(BrushFamily.BALLPOINT, 0xff1a3fa8.toInt(), 0.5f)
         val marker = BrushSpec(BrushFamily.HIGHLIGHTER, 0x66ffeb3b, 5f)
         var main = DocumentId("tour-placeholder")
+        var planId = DocumentId("tour-placeholder")
         runBlocking {
             lib.load("Notizen", "Notizen")
             val work = lib.createBook("Arbeit")
@@ -108,7 +109,28 @@ class DesignTourPc {
             drafts += TodoDraft(20f, 162f, 110f, TodoItem.MIN_HEIGHT_MM, TodoContent.Text(RichText.plain("Angebot an Lieferanten schicken")))
             drafts += TodoDraft(20f, 180f, 110f, TodoItem.MIN_HEIGHT_MM, TodoContent.Text(RichText.plain("Termin Testgruppe festlegen")))
             drafts += NoteLinkDraft(20f, 202f, ideas.id.asDocumentId, null, "Ideensammlung", null)
+            // A table with a header row and two joined cells.
+            run {
+                fun id(n: Int) = StrokeId("tour-table-$n")
+                val cols = listOf(TableColumn(id(1), 60f), TableColumn(id(2), 35f), TableColumn(id(3), 35f))
+                val rows = listOf(TableRow(id(4)), TableRow(id(5)), TableRow(id(6)), TableRow(id(7)))
+                fun cell(r: Int, c: Int, t: String) = CellKey(rows[r].rowId, cols[c].colId) to TableCell(RichText.plain(t), 5f)
+                drafts += TableDraft(
+                    20f, 214f, cols, rows, header = true,
+                    cells = mapOf(
+                        cell(0, 0, "Arbeitspaket"), cell(0, 1, "Wer"), cell(0, 2, "Bis"),
+                        cell(1, 0, "Prototyp"), cell(1, 1, "Anna"), cell(1, 2, "30.11."),
+                        cell(2, 0, "Testgruppe"), cell(2, 1, "Ben und Carla (gemeinsam)"),
+                        cell(3, 0, "Budget"), cell(3, 1, "Dora"), cell(3, 2, "offen"),
+                    ),
+                    merges = listOf(CellMerge(rows[2].rowId, cols[1].colId, rows[2].rowId, cols[2].colId)),
+                )
+            }
             s.replaceElements(emptySet(), drafts)
+            // The table again, alone at the top of its own document, for a close look.
+            val plan = lib.createDocument(projects.id, "Planung", PageFormat(), lined)
+            container.openSession(plan.id.asDocumentId).replaceElements(emptySet(), listOf((drafts.last() as TableDraft).copy(y = 40f)))
+            planId = plan.id.asDocumentId
             val done = s.state.value.todos.first { (it.content as TodoContent.Text).text.plainText.startsWith("Termin") }
             s.setTodoDone(done.taskId, true)
             container.flushOpenSessions()
@@ -128,6 +150,12 @@ class DesignTourPc {
             File(outDir, "$name.png").writeBytes(scene.render(time).encodeToData(EncodedImageFormat.PNG)!!.bytes)
             scene.close()
         }
+        settings.lastDocument = planId
+        val tableScene = ImageComposeScene(1600, 1000, Density(1f)) { App(container, settings, Strings(german = true), palette = com.stemaker.nibsync.theme.NibSyncPalette.GREY, dark = false) }
+        var t2 = 0L
+        repeat(80) { tableScene.render(t2); t2 += 50_000_000L; Thread.sleep(30) }
+        File(outDir, "pc-02-table.png").writeBytes(tableScene.render(t2).encodeToData(EncodedImageFormat.PNG)!!.bytes)
+        tableScene.close()
         runBlocking { container.closeAll() }
     }
 }

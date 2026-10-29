@@ -7,6 +7,7 @@ import com.stemaker.nibsync.model.Stroke
 import com.stemaker.nibsync.model.StrokeDraft
 import com.stemaker.nibsync.model.StrokeId
 import com.stemaker.nibsync.model.TodoDraft
+import com.stemaker.nibsync.model.TableDraft
 import com.stemaker.nibsync.model.AnchorDraft
 import com.stemaker.nibsync.model.toDraft
 import com.stemaker.nibsync.model.geometry.Rect
@@ -125,6 +126,7 @@ class ClipContent private constructor(val drafts: List<ElementDraft>, val width:
                 when (val d = e.translated(-cx, -cy)) {
                     is TodoDraft -> d.copy(taskId = null)
                     is AnchorDraft -> d.copy(anchorId = null)
+                    is TableDraft -> d.copy(tableId = null)
                     else -> d
                 }
             }

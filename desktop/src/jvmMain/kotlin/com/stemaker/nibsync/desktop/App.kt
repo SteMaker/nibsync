@@ -364,6 +364,8 @@ private fun DocumentPane(
     val titleEditing = remember(id) { mutableStateOf(false) }
     val headerState = remember(id) { DocumentHeaderState() }
     val todoEdit by controller.todo.editing.collectAsState()
+    val tableEdit by controller.table.editing.collectAsState()
+    var tableDialog by remember { mutableStateOf(false) }
     val tools by controller.tools.collectAsState()
     val selection by controller.selection.collectAsState()
     val gesture by controller.gesture.collectAsState()
@@ -437,7 +439,21 @@ private fun DocumentPane(
             onTodoInk = controller::selectTodoInk,
             onInsertAnchor = { anchorDialog = AnchorDialog(null) },
             onInsertNoteLink = { linkDialog = true },
+            onInsertTable = { tableDialog = true },
         )
+        if (tableDialog) {
+            com.stemaker.nibsync.theme.TableSizeDialog(
+                title = strings.insertTable,
+                headerLabel = strings.tableHeader,
+                confirmLabel = strings.insert,
+                dismissLabel = strings.cancel,
+                onDismiss = { tableDialog = false },
+            ) { rows, columns, header ->
+                tableDialog = false
+                val r = viewport.visibleDocumentRect
+                controller.insertTable((r.left + r.right) / 2, r.top + (r.bottom - r.top) / 4, rows, columns, header, viewport.pageWidthMm)
+            }
+        }
         anchorDialog?.let { dialog ->
             val anchor = dialog.anchor
             LibraryNameDialog(
@@ -476,12 +492,20 @@ private fun DocumentPane(
             canRedo = canRedo,
             onUndo = { controller.undo() },
             onRedo = { controller.redo() },
-            editing = editing?.controller ?: todoEdit?.text,
-            onDeleteText = { if (todoEdit != null) controller.todo.delete() else controller.text.delete() },
+            editing = editing?.controller ?: todoEdit?.text ?: tableEdit?.controller,
+            onDeleteText = {
+                when {
+                    todoEdit != null -> controller.todo.delete()
+                    tableEdit != null -> controller.table.deleteTable()
+                    else -> controller.text.delete()
+                }
+            },
+            table = if (tableEdit != null) controller.table else null,
             tools = toolbarTools,
             onDoneText = {
                 controller.text.finish()
                 controller.todo.finish()
+                controller.table.finish()
             },
             end = { if (sync != null) SyncStatusIcon(sync, strings) },
         )
@@ -521,6 +545,7 @@ private fun DocumentPane(
                         resizable = controller.resizable() != null,
                         todo = todoEdit?.preview(s.device),
                         todoInEditor = todoEdit?.text != null,
+                        tableCell = tableEdit?.let { it.tableId to it.cell },
                     ),
                 )
                 editing?.let { e ->
@@ -528,6 +553,10 @@ private fun DocumentPane(
                 }
                 todoEdit?.let { e ->
                     if (viewport.hasSize) TodoOverlay(e, viewport, strings, controller)
+                }
+                tableEdit?.let { e ->
+                    val t = doc.tables.firstOrNull { it.tableId == e.tableId }
+                    if (viewport.hasSize && t != null) TableCellOverlay(e, t, viewport, controller)
                 }
                 if (viewport.hasSize) {
                     DocumentHeader(

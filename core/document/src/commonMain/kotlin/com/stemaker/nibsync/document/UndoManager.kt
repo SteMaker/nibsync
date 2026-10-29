@@ -18,6 +18,12 @@ sealed interface Edit {
 
     /** A to-do task was ticked off or reopened ([done]); it was [was] before. */
     data class TodoDone(val taskId: StrokeId, val done: Boolean, val was: Boolean) : Edit
+
+    /** Cells of the table [tableId] got [cells]; they held [was] before. */
+    data class TableCells(val tableId: StrokeId, val cells: List<CellUpdate>, val was: List<CellUpdate>) : Edit
+
+    /** Several edits made as one step (e.g. joining table cells: structure and content). */
+    data class Steps(val edits: List<Edit>) : Edit
 }
 
 /**
@@ -77,6 +83,8 @@ class UndoManager(private val ids: IdGenerator, private val maxDepth: Int = 200)
         is Edit.Removed -> Edit.Added(restore(edit.strokes))
         is Edit.Replaced -> Edit.Replaced(removed = edit.added.map(::current), added = restore(edit.removed))
         is Edit.TodoDone -> Edit.TodoDone(edit.taskId, done = edit.was, was = edit.done)
+        is Edit.TableCells -> Edit.TableCells(edit.tableId, cells = edit.was, was = edit.cells)
+        is Edit.Steps -> Edit.Steps(edit.edits.asReversed().map(::invert))
     }
 
     private fun restore(strokes: List<PageElement>): List<PageElement> = strokes.map(::current).map { old ->

@@ -1,5 +1,9 @@
 package com.stemaker.nibsync.desktop
 
+import androidx.compose.ui.input.key.type
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.isShiftPressed
+import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.gestures.detectDragGestures
@@ -41,6 +45,7 @@ import kotlin.math.roundToInt
 object OverlayTags {
     const val MOVE = "move-text"
     const val RESIZE = "resize-text"
+    const val TABLE_CELL = "table-cell-editor"
 }
 
 /** Idle time after typing before the text box is stored. */
@@ -99,6 +104,46 @@ fun TextBoxOverlay(editing: TextEditing, viewport: Viewport, strings: Strings, c
                         change.consume()
                         controller.text.resize(dx / scale)
                     }
+                },
+        )
+    }
+}
+
+/**
+ * The editor over the table cell being typed, at the page zoom: Tab and Shift+Tab go to the next
+ * and previous cell (Tab in the last one adds a row), Esc ends editing.
+ */
+@Composable
+fun TableCellOverlay(edit: com.stemaker.nibsync.text.TableEdit, table: com.stemaker.nibsync.model.TableElement, viewport: Viewport, controller: NoteController) {
+    val area = table.geometry.areaOf(edit.cell) ?: return
+    val content = com.stemaker.nibsync.text.TableText.contentRect(table, area)
+    val cell = table.geometry.rect(area)
+    val t = viewport.documentToView
+    val focus = remember(edit.key) { FocusRequester() }
+    LaunchedEffect(edit.key) {
+        focus.requestFocus()
+        snapshotFlow { edit.controller.contentVersion }.drop(1).debounce(SAVE_DELAY_MS).collect { controller.table.save() }
+    }
+    val accent = MaterialTheme.colorScheme.primary
+    // The open cell framed in the accent colour.
+    Box(
+        Modifier
+            .offset { IntOffset(t.mapX(table.x + cell.left).roundToInt(), t.mapY(table.y + cell.top).roundToInt()) }
+            .size(with(androidx.compose.ui.platform.LocalDensity.current) { (cell.width * viewport.scale).toDp() }, with(androidx.compose.ui.platform.LocalDensity.current) { (cell.height * viewport.scale).toDp() })
+            .border(2.dp, accent.copy(alpha = 0.7f)),
+    )
+    Box(Modifier.offset { IntOffset(t.mapX(table.x + content.left).roundToInt(), t.mapY(table.y + content.top).roundToInt()) }) {
+        com.stemaker.nibsync.text.TextBoxEditor(
+            controller = edit.controller,
+            widthMm = content.width,
+            pxPerMm = viewport.scale,
+            modifier = Modifier
+                .focusRequester(focus)
+                .testTag(OverlayTags.TABLE_CELL)
+                .onPreviewKeyEvent { e ->
+                    if (e.type != androidx.compose.ui.input.key.KeyEventType.KeyDown || e.key != androidx.compose.ui.input.key.Key.Tab) return@onPreviewKeyEvent false
+                    controller.table.move(if (e.isShiftPressed) com.stemaker.nibsync.text.CellMove.PREVIOUS else com.stemaker.nibsync.text.CellMove.NEXT)
+                    true
                 },
         )
     }

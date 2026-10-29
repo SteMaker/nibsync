@@ -24,6 +24,8 @@ import com.stemaker.nibsync.model.AnchorDraft
 import com.stemaker.nibsync.model.LinkElement
 import com.stemaker.nibsync.model.NoteLink
 import com.stemaker.nibsync.model.NoteLinkDraft
+import com.stemaker.nibsync.model.TableDraft
+import com.stemaker.nibsync.model.TableElement
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.channels.Channel
@@ -142,6 +144,19 @@ class DocumentSession(
             createdAtEpochMs = clock(),
             author = device,
         )
+        is TableDraft -> TableElement(
+            id = ids.newStrokeId(),
+            tableId = draft.tableId ?: ids.newStrokeId(),
+            x = Quantization.quantizePosition(draft.x),
+            y = Quantization.quantizePosition(draft.y),
+            columns = draft.columns.map { it.copy(widthMm = Quantization.quantizePosition(it.widthMm)) },
+            rows = draft.rows,
+            header = draft.header,
+            cells = draft.cells.mapValues { (_, c) -> c.copy(heightMm = Quantization.quantizePosition(c.heightMm)) },
+            merges = draft.merges,
+            createdAtEpochMs = clock(),
+            author = device,
+        )
         is NoteLinkDraft -> NoteLink(
             id = ids.newStrokeId(),
             x = Quantization.quantizePosition(draft.x),
@@ -222,6 +237,45 @@ class DocumentSession(
         if (was != done) applyEdit(Edit.TodoDone(taskId, done, was), record = true)
     }
 
+    /**
+     * Sets the content of cells of the table [tableId] in one undo step. Cells that already hold
+     * the same content are left out; nothing happens if none changes.
+     */
+    fun setTableCells(tableId: StrokeId, updates: List<CellUpdate>) {
+        val table = _state.value.tables.firstOrNull { it.tableId == tableId } ?: return
+        val quantized = updates.map { it.copy(cell = it.cell.copy(heightMm = Quantization.quantizePosition(it.cell.heightMm))) }
+        val changed = quantized.filter { table.cell(it.key) != it.cell }
+        if (changed.isEmpty()) return
+        val was = changed.map { CellUpdate(it.key, table.cell(it.key)) }
+        applyEdit(Edit.TableCells(tableId, changed, was), record = true)
+    }
+
+    /**
+     * Replaces the table element [replaces] by [draft] (same table id: moved, resized or its rows
+     * and columns changed) and sets [cells] of it, all in one undo step. Returns the new element.
+     */
+    fun replaceTable(replaces: StrokeId, draft: TableDraft, cells: List<CellUpdate>): TableElement {
+        val current = _state.value
+        val removed = listOfNotNull(current.element(replaces))
+        val table = newElement(draft) as TableElement
+        val structure = if (removed.isEmpty()) Edit.Added(listOf(table)) else Edit.Replaced(removed, listOf(table))
+        applyEdit(structure, record = false)
+        val quantized = cells.map { it.copy(cell = it.cell.copy(heightMm = Quantization.quantizePosition(it.cell.heightMm))) }
+        val now = _state.value.tables.first { it.id == table.id }
+        val changed = quantized.filter { now.cell(it.key) != it.cell }
+        val steps = if (changed.isEmpty()) {
+            structure
+        } else {
+            val cellEdit = Edit.TableCells(table.tableId, changed, changed.map { CellUpdate(it.key, now.cell(it.key)) })
+            applyEdit(cellEdit, record = false)
+            Edit.Steps(listOf(structure, cellEdit))
+        }
+        undo.record(steps)
+        _canUndo.value = undo.canUndo
+        _canRedo.value = undo.canRedo
+        return _state.value.tables.first { it.id == table.id }
+    }
+
     /** Changes the paper pattern. It is a document setting, not an edit: undo does not revert it. */
     fun setBackground(background: BackgroundSpec) {
         if (background == _state.value.background) return
@@ -268,7 +322,7 @@ class DocumentSession(
         pending.trySend(Pending.Write(op))
     }
 
-    /** One add op per element kind: strokes, text boxes, files, to-dos, anchors and links. */
+    /** One add op per element kind: strokes, text boxes, files, to-dos, anchors and links, tables. */
     private fun emitAdd(elements: List<PageElement>) {
         val strokes = elements.filterIsInstance<Stroke>()
         val boxes = elements.filterIsInstance<TextBox>()
@@ -280,6 +334,8 @@ class DocumentSession(
         if (todos.isNotEmpty()) emit { DocumentOp.AddTodos(it, todos) }
         val links = elements.filterIsInstance<LinkElement>()
         if (links.isNotEmpty()) emit { DocumentOp.AddLinks(it, links) }
+        val tables = elements.filterIsInstance<TableElement>()
+        if (tables.isNotEmpty()) emit { DocumentOp.AddTables(it, tables) }
     }
 
     private fun applyEdit(edit: Edit, record: Boolean) {
@@ -291,6 +347,8 @@ class DocumentSession(
                 emitAdd(edit.added)
             }
             is Edit.TodoDone -> emit { DocumentOp.SetTodoDone(it, edit.taskId, edit.done) }
+            is Edit.TableCells -> emit { DocumentOp.SetTableCells(it, edit.tableId, edit.cells) }
+            is Edit.Steps -> edit.edits.forEach { applyEdit(it, record = false) }
         }
         if (record) undo.record(edit)
         _canUndo.value = undo.canUndo

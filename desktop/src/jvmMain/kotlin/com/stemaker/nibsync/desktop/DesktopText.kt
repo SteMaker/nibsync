@@ -47,6 +47,16 @@ class DesktopTextLayout {
         return layout(text, widthMm).also { todoCache[id] = Triple(text, widthMm, it) }
     }
 
+    private val cellCache = HashMap<Pair<StrokeId, com.stemaker.nibsync.model.CellKey>, Triple<RichText, Float, TextLayoutResult>>()
+
+    /** Layout of a table cell's text in its content width, cached per table and cell. */
+    fun layoutOf(tableId: StrokeId, cell: com.stemaker.nibsync.model.CellKey, text: RichText, widthMm: Float): TextLayoutResult {
+        val k = tableId to cell
+        cellCache[k]?.let { (t, w, result) -> if (t == text && w == widthMm) return result }
+        if (cellCache.size > MAX_CELLS) cellCache.clear()
+        return layout(text, widthMm).also { cellCache[k] = Triple(text, widthMm, it) }
+    }
+
     fun retainOnly(ids: Set<StrokeId>) {
         cache.keys.retainAll(ids)
         todoCache.keys.retainAll(ids)
@@ -54,5 +64,6 @@ class DesktopTextLayout {
 
     companion object {
         const val LAYOUT_PX_PER_MM = 20f
+        private const val MAX_CELLS = 2000
     }
 }

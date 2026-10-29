@@ -1,5 +1,12 @@
 package com.stemaker.nibsync.storage
 
+import com.stemaker.nibsync.document.CellUpdate
+import com.stemaker.nibsync.model.CellKey
+import com.stemaker.nibsync.model.CellMerge
+import com.stemaker.nibsync.model.TableCell
+import com.stemaker.nibsync.model.TableColumn
+import com.stemaker.nibsync.model.TableElement
+import com.stemaker.nibsync.model.TableRow
 import com.stemaker.nibsync.document.DocumentOp
 import com.stemaker.nibsync.document.OpStamp
 import com.stemaker.nibsync.model.Anchor
@@ -96,6 +103,18 @@ internal fun DocumentOp.toRecord(): OpRecord = when (this) {
         type = OpRecord.TYPE_ADD_LINKS,
         links = elements.map { it.toRecord() },
     )
+    is DocumentOp.AddTables -> OpRecord(
+        counter = stamp.counter,
+        device = stamp.device.value,
+        type = OpRecord.TYPE_ADD_TABLES,
+        tables = tables.map { it.toRecord() },
+    )
+    is DocumentOp.SetTableCells -> OpRecord(
+        counter = stamp.counter,
+        device = stamp.device.value,
+        type = OpRecord.TYPE_TABLE_CELLS,
+        tableCells = TableCellsRecord(tableId.value, cells.map { it.key.toRecord(it.cell) }),
+    )
     is DocumentOp.SetTodoDone -> OpRecord(
         counter = stamp.counter,
         device = stamp.device.value,
@@ -127,6 +146,10 @@ internal fun OpRecord.toDomain(): DocumentOp? {
         OpRecord.TYPE_ADD_TODOS -> DocumentOp.AddTodos(stamp, todos.mapNotNull { it.toDomain() })
         OpRecord.TYPE_TODO_DONE -> todoDone?.let { DocumentOp.SetTodoDone(stamp, StrokeId(it.task), it.done) }
         OpRecord.TYPE_ADD_LINKS -> DocumentOp.AddLinks(stamp, links.mapNotNull { it.toDomain() })
+        OpRecord.TYPE_ADD_TABLES -> DocumentOp.AddTables(stamp, tables.mapNotNull { it.toDomain() })
+        OpRecord.TYPE_TABLE_CELLS -> tableCells?.let { r ->
+            DocumentOp.SetTableCells(stamp, StrokeId(r.table), r.cells.map { c -> CellUpdate(c.key(), c.toCell()) })
+        }
         else -> null
     }
 }
@@ -189,6 +212,51 @@ private fun List<ParagraphRecord>.toRichText(): RichText {
     }
     // Texts stored before pasted line breaks were removed may still hold some.
     return if (paragraphs.isEmpty()) RichText.EMPTY else RichText(paragraphs).withoutStrayBreaks()
+}
+
+internal fun TableElement.toRecord(): TableRecord {
+    val p = Quantization::positionToSteps
+    return TableRecord(
+        id = id.value,
+        table = tableId.value,
+        x = p(x),
+        y = p(y),
+        columns = columns.map { ColumnRecord(it.colId.value, p(it.widthMm)) },
+        rows = rows.map { it.rowId.value },
+        header = header,
+        // Empty cells are left out; sorted by position so the encoding is stable.
+        cells = rows.flatMap { r -> columns.map { c -> CellKey(r.rowId, c.colId) } }
+            .mapNotNull { k -> cells[k]?.takeIf { !it.isEmpty }?.let { k.toRecord(it) } },
+        merges = merges.map { MergeRecord(it.fromRowId.value, it.fromColId.value, it.toRowId.value, it.toColId.value) },
+        createdAtEpochMs = createdAtEpochMs,
+        author = author.value,
+    )
+}
+
+private fun CellKey.toRecord(cell: TableCell) =
+    CellRecord(rowId.value, colId.value, cell.text.toRecords(), Quantization.positionToSteps(cell.heightMm))
+
+private fun CellRecord.key() = CellKey(StrokeId(row), StrokeId(column))
+
+private fun CellRecord.toCell() = TableCell(paragraphs.toRichText(), Quantization.stepsToPosition(height).coerceAtLeast(0f))
+
+/** Invalid records (no rows or columns, a non-positive width) are skipped. */
+internal fun TableRecord.toDomain(): TableElement? {
+    val q = Quantization::stepsToPosition
+    if (columns.isEmpty() || rows.isEmpty() || columns.any { it.width <= 0 }) return null
+    return TableElement(
+        id = StrokeId(id),
+        tableId = StrokeId(table),
+        x = q(x),
+        y = q(y),
+        columns = columns.map { TableColumn(StrokeId(it.id), q(it.width)) },
+        rows = rows.map { TableRow(StrokeId(it)) },
+        header = header,
+        cells = cells.associate { it.key() to it.toCell() },
+        merges = merges.map { CellMerge(StrokeId(it.fromRow), StrokeId(it.fromColumn), StrokeId(it.toRow), StrokeId(it.toColumn)) },
+        createdAtEpochMs = createdAtEpochMs,
+        author = DeviceId(author),
+    )
 }
 
 internal fun TodoItem.toRecord(): TodoRecord {

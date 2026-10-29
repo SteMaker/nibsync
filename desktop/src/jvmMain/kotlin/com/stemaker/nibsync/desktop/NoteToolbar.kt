@@ -1,5 +1,6 @@
 package com.stemaker.nibsync.desktop
 
+import androidx.compose.material.icons.filled.TableChart
 import androidx.compose.foundation.layout.offset
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -112,6 +113,9 @@ object ToolbarTags {
     fun eraser(mode: EraserMode) = "eraser-${mode.name}"
     const val ERASER = "tool-eraser"
     const val TEXT_DONE = "text-done"
+    const val INSERT_TABLE = "insert-table"
+    const val TABLE_MENU = "table-menu"
+    fun tableAction(name: String) = "table-$name"
     const val SELECTION_BAR = "selection-bar"
     const val LASSO = "tool-lasso"
     const val TODO = "tool-todo"
@@ -152,6 +156,7 @@ class ToolbarTools(
     val onTodoInk: (Boolean) -> Unit = {},
     val onInsertAnchor: () -> Unit = {},
     val onInsertNoteLink: () -> Unit = {},
+    val onInsertTable: () -> Unit = {},
 )
 
 /** Tool bar above the page: undo/redo, and text formatting while a box is open. */
@@ -167,6 +172,8 @@ fun NoteToolbar(
     tools: ToolbarTools? = null,
     /** Ends text editing ("Done"). */
     onDoneText: () -> Unit = {},
+    /** The table whose cell is being edited: its rows, columns and joined cells. */
+    table: com.stemaker.nibsync.text.TableEditing? = null,
     /** Items at the right end, e.g. the sync status. */
     end: @Composable () -> Unit = {},
 ) {
@@ -207,7 +214,11 @@ fun NoteToolbar(
                 Action(strings.outdent, Icons.AutoMirrored.Filled.FormatIndentDecrease, editing.canOutdent, TextTags.OUTDENT, editing::outdent)
                 Action(strings.indent, Icons.AutoMirrored.Filled.FormatIndentIncrease, editing.canIndent, TextTags.INDENT, editing::indent)
                 Divider()
-                Action(strings.deleteTextBox, Icons.Filled.Delete, true, TextTags.DELETE, onDeleteText)
+                if (table != null) {
+                    TableMenu(strings, table)
+                    Divider()
+                }
+                Action(if (table != null) strings.deleteTable else strings.deleteTextBox, Icons.Filled.Delete, true, TextTags.DELETE, onDeleteText)
             }
             end()
         }
@@ -291,6 +302,12 @@ private fun InsertMenu(strings: Strings, t: ToolbarTools) {
                 leadingIcon = { Icon(Icons.Filled.Flag, contentDescription = null) },
                 onClick = { open = false; t.onInsertAnchor() },
                 modifier = Modifier.testTag(ToolbarTags.INSERT_ANCHOR),
+            )
+            DropdownMenuItem(
+                text = { Text(strings.insertTable) },
+                leadingIcon = { Icon(Icons.Filled.TableChart, contentDescription = null) },
+                onClick = { open = false; t.onInsertTable() },
+                modifier = Modifier.testTag(ToolbarTags.INSERT_TABLE),
             )
             DropdownMenuItem(
                 text = { Text(strings.insertNoteLink) },
@@ -512,4 +529,37 @@ private fun Divider() {
     Spacer(Modifier.width(4.dp))
     VerticalDivider(Modifier.height(28.dp))
     Spacer(Modifier.width(4.dp))
+}
+
+/** "Table" menu while a cell is open: rows, columns, joined cells, header. */
+@Composable
+private fun TableMenu(strings: Strings, table: com.stemaker.nibsync.text.TableEditing) {
+    var open by remember { mutableStateOf(false) }
+    Box {
+        OutlinedButton(onClick = { open = true }, modifier = NotFocusable.testTag(ToolbarTags.TABLE_MENU)) {
+            Icon(Icons.Filled.TableChart, contentDescription = null, modifier = Modifier.size(18.dp))
+            Spacer(Modifier.width(6.dp))
+            Text(strings.table)
+        }
+        DropdownMenu(expanded = open, onDismissRequest = { open = false }, properties = PopupProperties(focusable = false)) {
+            @Composable
+            fun item(label: String, name: String, action: () -> Unit) = DropdownMenuItem(
+                text = { Text(label) },
+                onClick = { open = false; action() },
+                modifier = NotFocusable.testTag(ToolbarTags.tableAction(name)),
+            )
+            item(strings.rowAbove, "row-above") { table.insertRow(below = false) }
+            item(strings.rowBelow, "row-below") { table.insertRow(below = true) }
+            item(strings.columnLeft, "column-left") { table.insertColumn(right = false) }
+            item(strings.columnRight, "column-right") { table.insertColumn(right = true) }
+            HorizontalDivider()
+            item(strings.joinRight, "join-right") { table.join(right = true) }
+            item(strings.joinDown, "join-down") { table.join(right = false) }
+            item(strings.splitCells, "split") { table.split() }
+            HorizontalDivider()
+            item(strings.deleteRow, "delete-row") { table.deleteRow() }
+            item(strings.deleteColumn, "delete-column") { table.deleteColumn() }
+            item(strings.headerRow, "header") { table.toggleHeader() }
+        }
+    }
 }

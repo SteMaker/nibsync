@@ -1,5 +1,6 @@
 package com.stemaker.nibsync.desktop
 
+import com.stemaker.nibsync.model.TableElement
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
@@ -63,6 +64,8 @@ class PagePainter(private val text: DesktopTextLayout, private val media: MediaC
         val todo: TodoItem? = null,
         /** Its text is typed in an editor over the page, so only frame and circle are drawn. */
         val todoInEditor: Boolean = false,
+        /** The table cell being typed in an editor over the page (table id, cell): its text is not drawn. */
+        val tableCell: Pair<StrokeId, com.stemaker.nibsync.model.CellKey>? = null,
     )
 
     fun draw(scope: DrawScope, doc: DocumentState, viewport: Viewport, hiddenTextBox: Any? = null, overlay: Overlay = Overlay()) = with(scope) {
@@ -91,14 +94,15 @@ class PagePainter(private val text: DesktopTextLayout, private val media: MediaC
             for (element in elements) {
                 val selected = element.id in overlay.selection
                 when {
-                    selected && gesture is GesturePreview.Moving -> translate(gesture.dx, gesture.dy) { drawElement(this, element, hiddenTextBox, doc, selected) }
-                    selected && gesture is GesturePreview.Resizing && element is com.stemaker.nibsync.model.FileElement -> withTransform({
-                        translate(element.x, element.y)
+                    selected && gesture is GesturePreview.Moving -> translate(gesture.dx, gesture.dy) { drawElement(this, element, hiddenTextBox, doc, selected, overlay.tableCell) }
+                    selected && gesture is GesturePreview.Resizing && (element is com.stemaker.nibsync.model.FileElement || element is TableElement) -> withTransform({
+                        val origin = Offset(element.bounds.left, element.bounds.top)
+                        translate(origin.x, origin.y)
                         scale(gesture.factor, gesture.factor, pivot = Offset.Zero)
-                        translate(-element.x, -element.y)
-                    }) { drawElement(this, element, hiddenTextBox, doc, selected) }
+                        translate(-origin.x, -origin.y)
+                    }) { drawElement(this, element, hiddenTextBox, doc, selected, overlay.tableCell) }
                     element is TodoItem && element.id == overlay.todo?.id -> Unit
-                    (if (selected) element.selectedBounds else element.bounds).intersects(visible) -> drawElement(this, element, hiddenTextBox, doc, selected)
+                    (if (selected) element.selectedBounds else element.bounds).intersects(visible) -> drawElement(this, element, hiddenTextBox, doc, selected, overlay.tableCell)
                 }
             }
             overlay.todo?.let { drawTodo(this, it, doc.isDone(it.taskId), content = !overlay.todoInEditor, editing = true) }
@@ -107,7 +111,14 @@ class PagePainter(private val text: DesktopTextLayout, private val media: MediaC
         drawOverlay(this, viewport, overlay)
     }
 
-    private fun drawElement(scope: DrawScope, element: com.stemaker.nibsync.model.PageElement, hiddenTextBox: Any?, doc: DocumentState, selected: Boolean) {
+    private fun drawElement(
+        scope: DrawScope,
+        element: com.stemaker.nibsync.model.PageElement,
+        hiddenTextBox: Any?,
+        doc: DocumentState,
+        selected: Boolean,
+        tableCell: Pair<StrokeId, com.stemaker.nibsync.model.CellKey>? = null,
+    ) {
         when (element) {
             is Stroke -> StrokePainter.draw(scope, element)
             is TextBox -> if (element.id != hiddenTextBox) drawTextBox(scope, element)
@@ -116,6 +127,7 @@ class PagePainter(private val text: DesktopTextLayout, private val media: MediaC
             is TodoItem -> drawTodo(scope, element, doc.isDone(element.taskId))
             is Anchor -> drawAnchor(scope, element, selected)
             is NoteLink -> drawNoteLink(scope, element)
+            is TableElement -> drawTable(scope, element, tableCell?.takeIf { it.first == element.tableId }?.second)
         }
     }
 
@@ -237,6 +249,13 @@ class PagePainter(private val text: DesktopTextLayout, private val media: MediaC
             }
         }
         when (gesture) {
+            is GesturePreview.ColumnBorder -> drawLine(
+                selection,
+                Offset(t.mapX(gesture.x), t.mapY(gesture.top)),
+                Offset(t.mapX(gesture.x), t.mapY(gesture.bottom)),
+                strokeWidth = 2f,
+                pathEffect = androidx.compose.ui.graphics.PathEffect.dashPathEffect(floatArrayOf(8f, 6f)),
+            )
             is GesturePreview.Lassoing -> {
                 val path = androidx.compose.ui.graphics.Path()
                 val p = gesture.path
@@ -277,6 +296,31 @@ class PagePainter(private val text: DesktopTextLayout, private val media: MediaC
             scale(f, f, pivot = Offset.Zero)
         }) {
             drawText(layout)
+        }
+    }
+
+    /** A table: tinted header row, the cells' texts (not [hidden], being typed) and the grid. */
+    private fun drawTable(scope: DrawScope, table: TableElement, hidden: com.stemaker.nibsync.model.CellKey?) = with(scope) {
+        val g = table.geometry
+        // On white, so the paper's lines do not run through the cells.
+        drawRect(Color.White, Offset(table.x, table.y), Size(g.widthMm, g.heightMm))
+        if (table.header) drawRect(TABLE_HEADER, Offset(table.x, table.y), Size(g.widthMm, g.rowHeights[0]))
+        val f = 1f / DesktopTextLayout.LAYOUT_PX_PER_MM
+        for (area in g.areas) {
+            val key = g.key(area)
+            if (key == hidden) continue
+            val shown = com.stemaker.nibsync.text.TableText.shown(table, area)
+            if (shown.isBlank) continue
+            val r = com.stemaker.nibsync.text.TableText.contentRect(table, area)
+            val layout = text.layoutOf(table.tableId, key, shown, r.width)
+            withTransform({
+                translate(table.x + r.left, table.y + r.top)
+                scale(f, f, pivot = Offset.Zero)
+            }) { drawText(layout) }
+        }
+        for (area in g.areas) {
+            val r = g.rect(area)
+            drawRect(TABLE_LINE, Offset(table.x + r.left, table.y + r.top), Size(r.width, r.height), style = StrokeStyle(TABLE_LINE_MM))
         }
     }
 
@@ -331,6 +375,9 @@ class PagePainter(private val text: DesktopTextLayout, private val media: MediaC
         private val ERASER = Color(0xff757575)
         private val PATTERN = Color(0xffb4c6e2)
         private val PLACEHOLDER = Color(0xffeceff1)
+        private val TABLE_LINE = Color(0xff8a9099)
+        private val TABLE_HEADER = Color(0xffe9edf1)
+        private const val TABLE_LINE_MM = 0.25f
         private val OUTLINE = Color(0xffb0bec5)
         private val LINK_FILL = Color(0xfff5f7fa)
         private val BADGE = Color(0xffd32f2f)

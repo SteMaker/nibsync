@@ -1,5 +1,12 @@
 package com.stemaker.nibsync.app
 
+import com.stemaker.nibsync.model.CellMerge
+import com.stemaker.nibsync.model.TableDraft
+import com.stemaker.nibsync.model.TableCell
+import com.stemaker.nibsync.model.CellKey
+import com.stemaker.nibsync.model.TableRow
+import com.stemaker.nibsync.model.TableColumn
+import com.stemaker.nibsync.model.StrokeId
 import android.content.Intent
 import android.graphics.Bitmap
 import android.os.SystemClock
@@ -212,6 +219,23 @@ class DesignTour {
             drafts += TodoDraft(20f, 162f, 110f, TodoItem.MIN_HEIGHT_MM, TodoContent.Text(RichText.plain("Angebot an Lieferanten schicken")))
             drafts += TodoDraft(20f, 180f, 110f, TodoItem.MIN_HEIGHT_MM, TodoContent.Text(RichText.plain("Termin Testgruppe festlegen")))
             drafts += NoteLinkDraft(20f, 202f, ideas.id.asDocumentId, null, "Ideensammlung", null)
+            // A table with a header row and two joined cells.
+            run {
+                fun id(n: Int) = StrokeId("tour-table-$n")
+                val cols = listOf(TableColumn(id(1), 60f), TableColumn(id(2), 35f), TableColumn(id(3), 35f))
+                val rows = listOf(TableRow(id(4)), TableRow(id(5)), TableRow(id(6)), TableRow(id(7)))
+                fun cell(r: Int, c: Int, t: String) = CellKey(rows[r].rowId, cols[c].colId) to TableCell(RichText.plain(t), 5f)
+                drafts += TableDraft(
+                    20f, 214f, cols, rows, header = true,
+                    cells = mapOf(
+                        cell(0, 0, "Arbeitspaket"), cell(0, 1, "Wer"), cell(0, 2, "Bis"),
+                        cell(1, 0, "Prototyp"), cell(1, 1, "Anna"), cell(1, 2, "30.11."),
+                        cell(2, 0, "Testgruppe"), cell(2, 1, "Ben und Carla (gemeinsam)"),
+                        cell(3, 0, "Budget"), cell(3, 1, "Dora"), cell(3, 2, "offen"),
+                    ),
+                    merges = listOf(CellMerge(rows[2].rowId, cols[1].colId, rows[2].rowId, cols[2].colId)),
+                )
+            }
             s.replaceElements(emptySet(), drafts)
             val done = s.state.value.todos.first { (it.content as TodoContent.Text).text.plainText.startsWith("Termin") }
             s.setTodoDone(done.taskId, true)

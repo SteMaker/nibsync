@@ -4,7 +4,7 @@ import com.stemaker.nibsync.model.geometry.Rect
 
 /**
  * Something placed on a page: a handwritten [Stroke], a [TextBox], an [ImageElement], a
- * [FileLink], a [TodoItem], an [Anchor] or a [NoteLink]. Elements are immutable;
+ * [FileLink], a [TodoItem], an [Anchor], a [NoteLink] or a [TableElement]. Elements are immutable;
  * changing one means removing it and adding a new element with a fresh id.
  */
 sealed interface PageElement {
@@ -26,6 +26,7 @@ fun PageElement.withId(id: StrokeId): PageElement = when (this) {
     is TodoItem -> copy(id = id)
     is Anchor -> copy(id = id)
     is NoteLink -> copy(id = id)
+    is TableElement -> copy(id = id)
 }
 
 /** An element as the user made it, before it gets an id and a place in a document. */
@@ -43,4 +44,5 @@ fun PageElement.toDraft(): ElementDraft = when (this) {
     is TodoItem -> TodoDraft(x, y, widthMm, heightMm, content, taskId)
     is Anchor -> AnchorDraft(x, y, name, anchorId)
     is NoteLink -> NoteLinkDraft(x, y, target, anchorId, title, anchorName)
+    is TableElement -> TableDraft(x, y, columns, rows, header, cells, merges, tableId)
 }

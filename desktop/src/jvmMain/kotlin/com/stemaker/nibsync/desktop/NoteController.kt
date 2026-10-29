@@ -1,5 +1,7 @@
 package com.stemaker.nibsync.desktop
 
+import com.stemaker.nibsync.text.TableEditing
+import com.stemaker.nibsync.model.TableElement
 import com.stemaker.nibsync.document.DocumentSession
 import com.stemaker.nibsync.document.erase.EraseGesture
 import com.stemaker.nibsync.document.erase.EraserMode
@@ -50,6 +52,9 @@ sealed interface GesturePreview {
     class Lassoing(val path: FloatArray) : GesturePreview
     data class Moving(val dx: Float, val dy: Float) : GesturePreview
     data class Resizing(val factor: Float) : GesturePreview
+
+    /** A table column border being dragged: where it would be (mm), from [top] to [bottom]. */
+    data class ColumnBorder(val x: Float, val top: Float, val bottom: Float) : GesturePreview
 }
 
 /**
@@ -70,6 +75,9 @@ class NoteController(
 
     /** The to-do being written or typed, see [selectTodo]. */
     val todo = TodoEditing(session).also { it.measureText = measureText }
+
+    /** The table cell being edited; tables are opened by a click into a cell. */
+    val table = TableEditing(session).also { it.measureText = measureText }
 
     private val _tools = MutableStateFlow(initialTools)
     val tools: StateFlow<DesktopToolState> = _tools.asStateFlow()
@@ -103,6 +111,7 @@ class NoteController(
     fun selectTool(tool: DesktopTool) {
         text.finish()
         todo.finish()
+        table.finish()
         selectionByClick = false
         if (tool != DesktopTool.LASSO) clearSelection()
         _tools.update { it.copy(tool = tool) }
@@ -177,7 +186,8 @@ class NoteController(
         class Erase(val gesture: EraseGesture) : Active
         class Lasso(val path: ArrayList<Float>) : Active
         class Move(val startX: Float, val startY: Float, var dx: Float = 0f, var dy: Float = 0f) : Active
-        class Resize(val element: FileElement, val anchorDist: Float, var factor: Float = 1f) : Active
+        class Resize(val element: PageElement, val anchorDist: Float, var factor: Float = 1f) : Active
+        class Column(val table: TableElement, val col: Int, val startX: Float, var dx: Float = 0f) : Active
         class Check(val taskId: StrokeId) : Active
     }
 
@@ -210,11 +220,22 @@ class NoteController(
                 return
             }
         }
+        table.table()?.let { t ->
+            // The right border of a column of the open table can be dragged.
+            val col = t.geometry.columnX.indexOfFirst { abs(x - (t.x + it)) <= handleReachMm } - 1
+            if (col >= 0 && y in t.y..(t.y + t.heightMm)) {
+                active = Active.Column(t, col, t.x + t.geometry.columnX[col + 1])
+                _gesture.value = GesturePreview.ColumnBorder(t.x + t.geometry.columnX[col + 1], t.y, t.y + t.heightMm)
+                return
+            }
+            if (!t.bounds.contains(x, y)) table.finish()
+        }
         if (_selection.value.isNotEmpty() && state.tool != DesktopTool.ERASER) {
             val resizable = resizable()
             val frame = selectionFrame()
             if (resizable != null && frame != null && abs(x - frame.right) <= handleReachMm && abs(y - frame.bottom) <= handleReachMm) {
-                active = Active.Resize(resizable, hypot(x - resizable.x, y - resizable.y))
+                val (ex, ey, _) = resizable.frame()
+                active = Active.Resize(resizable, hypot(x - ex, y - ey))
                 _gesture.value = GesturePreview.Resizing(1f)
                 return
             }
@@ -277,8 +298,15 @@ class NoteController(
                 _gesture.value = GesturePreview.Moving(a.dx, a.dy)
             }
             is Active.Resize -> {
-                if (a.anchorDist > 0f) a.factor = maxOf(MIN_SIZE_MM / a.element.widthMm, hypot(x - a.element.x, y - a.element.y) / a.anchorDist)
+                val (ex, ey, ew) = a.element.frame()
+                if (a.anchorDist > 0f) a.factor = maxOf(MIN_SIZE_MM / ew, hypot(x - ex, y - ey) / a.anchorDist)
                 _gesture.value = GesturePreview.Resizing(a.factor)
+            }
+            is Active.Column -> {
+                val t = a.table
+                val left = t.x + t.geometry.columnX[a.col]
+                a.dx = maxOf(left + TableElement.MIN_COLUMN_MM, x) - a.startX
+                _gesture.value = GesturePreview.ColumnBorder(a.startX + a.dx, t.y, t.y + t.heightMm)
             }
             is Active.Click, is Active.Check, null -> Unit
         }
@@ -324,6 +352,10 @@ class NoteController(
                 }
             }
             is Active.Resize -> if (abs(a.factor - 1f) > 0.01f) resizeSelection(a.factor)
+            is Active.Column -> if (abs(a.dx) > 0.2f) {
+                val col = a.table.columns[a.col]
+                table.setColumnWidth(a.table, col.colId, col.widthMm + a.dx)
+            }
             null -> Unit
         }
     }
@@ -364,13 +396,14 @@ class NoteController(
             is NoteLink -> if (double) openNote(hit.linkTarget) else selectByClick(hit.id)
             is Anchor -> if (double) editAnchor(hit) else selectByClick(hit.id)
             is ImageElement -> selectByClick(hit.id)
+            is TableElement -> if (_tools.value.tool == DesktopTool.LASSO) selectByClick(hit.id) else openCell(hit, x, y)
             is TodoItem -> when {
                 _tools.value.tool == DesktopTool.LASSO -> selectByClick(hit.id)
                 todo.editing.value?.itemId != hit.id -> openTodo(hit)
             }
             else -> {
-                if (todo.finish()) {
-                    // The first click beside an open to-do only ends it.
+                if (todo.finish() || table.finish()) {
+                    // The first click beside an open to-do or table only ends it.
                 } else if (_selection.value.isNotEmpty()) {
                     // The first click beside a selection only ends it.
                     clearSelection()
@@ -384,9 +417,29 @@ class NoteController(
         }
     }
 
+    /** Opens the cell of [hit] at ([x], [y]) mm for typing. */
+    private fun openCell(hit: TableElement, x: Float, y: Float) {
+        text.finish()
+        todo.finish()
+        clearSelection()
+        endTemporarySelection()
+        val area = hit.geometry.areaAtPoint(x - hit.x, y - hit.y) ?: return
+        table.open(hit, hit.geometry.key(area))
+    }
+
+    /** Adds a table of [rows] x [columns] in the middle of what is visible and opens its first cell. */
+    fun insertTable(cx: Float, top: Float, rows: Int, columns: Int, header: Boolean, pageWidthMm: Float) {
+        text.finish()
+        todo.finish()
+        clearSelection()
+        val width = minOf(TableElement.DEFAULT_WIDTH_MM, pageWidthMm - 10f)
+        table.insert(cx - width / 2, top, rows, columns, header, pageWidthMm)
+    }
+
     private fun selectByClick(id: StrokeId) {
         text.finish()
         todo.finish()
+        table.finish()
         val tool = _tools.value.tool
         if (tool != DesktopTool.LASSO) {
             toolBeforeSelection = tool
@@ -429,7 +482,7 @@ class NoteController(
     private fun selected(): List<PageElement> = session.state.value.elements.filter { it.id in _selection.value }
 
     /** The selected picture or link if it is the whole selection (then it can be scaled). */
-    fun resizable(): FileElement? = selected().singleOrNull() as? FileElement
+    fun resizable(): PageElement? = selected().singleOrNull()?.takeIf { it is FileElement || it is TableElement }
 
     /** The frame around the selection, in mm. */
     fun selectionFrame(): Rect? {
@@ -459,6 +512,7 @@ class NoteController(
         val clip = clipboard.content.value ?: return false
         text.finish()
         todo.finish()
+        table.finish()
         val drafts = clip.placedAt(cx, cy)
         val here = session.state.value.meta.id
         val source = clipboard.source
@@ -474,6 +528,7 @@ class NoteController(
     fun insert(drafts: List<ElementDraft>) {
         if (drafts.isEmpty()) return
         text.finish()
+        table.finish()
         val added = session.replaceElements(emptySet(), drafts)
         val tool = _tools.value.tool
         if (tool != DesktopTool.LASSO) {
@@ -493,6 +548,13 @@ class NoteController(
 
     private fun resizeSelection(factor: Float) {
         val element = resizable() ?: return
+        if (element is TableElement) {
+            // Wider or narrower; rows follow their text.
+            val resized = table.resize(element, element.widthMm * factor)
+            _selection.value = setOf(resized.id)
+            return
+        }
+        element as FileElement
         val w = maxOf(MIN_SIZE_MM, element.widthMm * factor)
         val h = element.heightMm * (w / element.widthMm)
         val draft = when (element) {
@@ -513,7 +575,7 @@ class NoteController(
 
     /** Escape: stop editing or selecting. */
     fun escape() {
-        if (!text.finish() && !todo.finish()) {
+        if (!text.finish() && !todo.finish() && !table.finish()) {
             clearSelection()
             endTemporarySelection()
         }
@@ -522,6 +584,7 @@ class NoteController(
     fun endEditing() {
         text.finish()
         todo.finish()
+        table.finish()
     }
 
     fun undo(): Boolean {
@@ -562,4 +625,11 @@ class DesktopClipboard {
         this.source = source
         _content.value = content
     }
+}
+
+/** Left, top and width (mm) of a picture, file link or table, for scaling at its corner. */
+private fun PageElement.frame(): Triple<Float, Float, Float> = when (this) {
+    is FileElement -> Triple(x, y, widthMm)
+    is TableElement -> Triple(x, y, widthMm)
+    else -> Triple(bounds.left, bounds.top, bounds.width)
 }
