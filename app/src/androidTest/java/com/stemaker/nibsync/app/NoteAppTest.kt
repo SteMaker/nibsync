@@ -914,6 +914,55 @@ class NoteAppTest {
     }
 
     @Test
+    fun typingAboveATablePushesItDownAndATableGoesInAtTheCursor() {
+        // A box near the top, then a table below it.
+        compose.onNodeWithTag(NoteScreenTags.TEXT).performClick()
+        tap(400f, 300f)
+        waitUntil("editing a new text box") { editing() != null }
+        compose.onNodeWithTag(TextTags.EDITOR).performTextInput("eins")
+        compose.onNodeWithTag(NoteScreenTags.TEXT_DONE).performClick()
+        waitUntil("box stored") { textBoxes().size == 1 && editing() == null }
+        val box = textBoxes().single()
+        compose.onNodeWithTag(NoteScreenTags.INSERT).performClick()
+        compose.onNodeWithTag(NoteScreenTags.INSERT_TABLE).performClick()
+        compose.onNodeWithTag(com.stemaker.nibsync.theme.TableSizeTags.CONFIRM).performClick()
+        waitUntil("table") { session().state.value.tables.size == 1 }
+        compose.onNodeWithTag(NoteScreenTags.TEXT_DONE).performClick()
+        waitUntil("table closed") { compose.onAllNodesWithTag(NoteScreenTags.TABLE_CELL).fetchSemanticsNodes().isEmpty() }
+        val tableTop = session().state.value.tables.single().y
+        assertThat(tableTop).isGreaterThan(box.bounds.bottom)
+
+        // Two more lines in the box (opened with the pen): the table moves down by its growth.
+        // The keyboard has gone and the page settled.
+        idleFor(1500)
+        compose.waitForIdle()
+        val t1 = checkNotNull(canvas()).viewport.documentToView
+        tap(t1.mapX(box.x + 5f), t1.mapY(box.y + 3f))
+        waitUntil("box open") { editing()?.boxId == box.id }
+        compose.onNodeWithTag(TextTags.EDITOR).performTextInput("\nzwei\ndrei")
+        compose.onNodeWithTag(NoteScreenTags.TEXT_DONE).performClick()
+        waitUntil("box grown") { textBoxes().singleOrNull()?.text?.paragraphs?.size == 3 }
+        val growth = textBoxes().single().heightMm - box.heightMm
+        assertThat(growth).isGreaterThan(5f)
+        assertThat(session().state.value.tables.single().y).isWithin(0.1f).of(tableTop + growth)
+
+        // A table at the cursor (end of the text): it goes right below the box.
+        val grown = textBoxes().single()
+        // The keyboard has gone and the page settled.
+        idleFor(1500)
+        compose.waitForIdle()
+        val t2 = checkNotNull(canvas()).viewport.documentToView
+        tap(t2.mapX(grown.x + 5f), t2.mapY(grown.y + 3f))
+        waitUntil("box open again") { editing() != null }
+        compose.onNodeWithTag(NoteScreenTags.INSERT_TABLE_HERE).performClick()
+        compose.onNodeWithTag(com.stemaker.nibsync.theme.TableSizeTags.CONFIRM).performClick()
+        waitUntil("second table") { session().state.value.tables.size == 2 }
+        val tables = session().state.value.tables.sortedBy { it.y }
+        assertThat(tables[0].y).isGreaterThan(textBoxes().minBy { it.y }.bounds.bottom)
+        assertThat(tables[1].y).isGreaterThan(tables[0].bounds.bottom)
+    }
+
+    @Test
     fun emptyBoxLeavesNothingBehind() {
         newTextBox()
         tapOutside()

@@ -66,6 +66,8 @@ class PagePainter(private val text: DesktopTextLayout, private val media: MediaC
         val todoInEditor: Boolean = false,
         /** The table cell being typed in an editor over the page (table id, cell): its text is not drawn. */
         val tableCell: Pair<StrokeId, com.stemaker.nibsync.model.CellKey>? = null,
+        /** Elements the text flow will move while the open text grows or shrinks, drawn there already. */
+        val flow: com.stemaker.nibsync.text.FlowPreview? = null,
     )
 
     fun draw(scope: DrawScope, doc: DocumentState, viewport: Viewport, hiddenTextBox: Any? = null, overlay: Overlay = Overlay()) = with(scope) {
@@ -95,6 +97,7 @@ class PagePainter(private val text: DesktopTextLayout, private val media: MediaC
                 val selected = element.id in overlay.selection
                 when {
                     selected && gesture is GesturePreview.Moving -> translate(gesture.dx, gesture.dy) { drawElement(this, element, hiddenTextBox, doc, selected, overlay.tableCell) }
+                    overlay.flow != null && element.id in overlay.flow.ids -> translate(0f, overlay.flow.dy) { drawElement(this, element, hiddenTextBox, doc, selected, overlay.tableCell) }
                     selected && gesture is GesturePreview.Resizing && (element is com.stemaker.nibsync.model.FileElement || element is TableElement) -> withTransform({
                         val origin = Offset(element.bounds.left, element.bounds.top)
                         translate(origin.x, origin.y)

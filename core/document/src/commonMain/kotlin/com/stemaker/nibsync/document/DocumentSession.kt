@@ -1,5 +1,6 @@
 package com.stemaker.nibsync.document
 
+import com.stemaker.nibsync.document.select.Reflow
 import com.stemaker.nibsync.model.BackgroundSpec
 import com.stemaker.nibsync.model.DeviceId
 import com.stemaker.nibsync.model.ElementDraft
@@ -26,6 +27,8 @@ import com.stemaker.nibsync.model.NoteLink
 import com.stemaker.nibsync.model.NoteLinkDraft
 import com.stemaker.nibsync.model.TableDraft
 import com.stemaker.nibsync.model.TableElement
+import com.stemaker.nibsync.model.toDraft
+import com.stemaker.nibsync.model.geometry.Rect
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.channels.Channel
@@ -210,18 +213,79 @@ class DocumentSession(
      * pasting a selection, storing an edited text box. Returns the added elements in the
      * order of [drafts]. Ids that no longer exist are ignored.
      */
-    fun replaceElements(replaces: Collection<StrokeId>, drafts: List<ElementDraft>): List<PageElement> {
-        val current = _state.value
-        val removed = replaces.mapNotNull { current.element(it) }
-        val added = drafts.map(::newElement)
-        val edit = when {
-            removed.isEmpty() && added.isEmpty() -> return emptyList()
-            removed.isEmpty() -> Edit.Added(added)
-            added.isEmpty() -> Edit.Removed(removed)
-            else -> Edit.Replaced(removed, added)
+    fun replaceElements(replaces: Collection<StrokeId>, drafts: List<ElementDraft>): List<PageElement> =
+        edit { replaceElements(replaces, drafts) }
+
+    /**
+     * Several changes as one undo step, e.g. a text box that grew and what moved below it.
+     * Returns what [block] returns.
+     */
+    fun <T> edit(block: Transaction.() -> T): T {
+        val t = Transaction()
+        val result = t.block()
+        when (t.edits.size) {
+            0 -> Unit
+            1 -> undo.record(t.edits.single())
+            else -> undo.record(Edit.Steps(t.edits.toList()))
         }
-        applyEdit(edit, record = true)
-        return added
+        _canUndo.value = undo.canUndo
+        _canRedo.value = undo.canRedo
+        return result
+    }
+
+    /** The changes of one [edit] step; each is applied at once, they are undone together. */
+    inner class Transaction internal constructor() {
+        internal val edits = ArrayList<Edit>()
+
+        val state: DocumentState get() = _state.value
+
+        private fun apply(e: Edit) {
+            applyEdit(e, record = false)
+            edits += e
+        }
+
+        /** Removes [replaces] and adds [drafts]; returns the added elements in the order of [drafts]. */
+        fun replaceElements(replaces: Collection<StrokeId>, drafts: List<ElementDraft>): List<PageElement> {
+            val current = _state.value
+            val removed = replaces.mapNotNull { current.element(it) }
+            val added = drafts.map(::newElement)
+            when {
+                removed.isEmpty() && added.isEmpty() -> return emptyList()
+                removed.isEmpty() -> apply(Edit.Added(added))
+                added.isEmpty() -> apply(Edit.Removed(removed))
+                else -> apply(Edit.Replaced(removed, added))
+            }
+            return added
+        }
+
+        /** Sets cells of the table [tableId]; cells that already hold the same content are left out. */
+        fun setTableCells(tableId: StrokeId, updates: List<CellUpdate>) {
+            val table = _state.value.tables.firstOrNull { it.tableId == tableId } ?: return
+            val quantized = updates.map { it.copy(cell = it.cell.copy(heightMm = Quantization.quantizePosition(it.cell.heightMm))) }
+            val changed = quantized.filter { table.cell(it.key) != it.cell }
+            if (changed.isEmpty()) return
+            apply(Edit.TableCells(tableId, changed, changed.map { CellUpdate(it.key, table.cell(it.key)) }))
+        }
+
+        /** Moves [elements] down by [dy] mm (up if negative), keeping task, table and anchor ids. */
+        fun move(elements: List<PageElement>, dy: Float): List<PageElement> =
+            if (elements.isEmpty() || dy == 0f) emptyList() else replaceElements(elements.map { it.id }, elements.map { it.toDraft().translated(0f, dy) })
+
+        /**
+         * Text flow: the block [source] (old and new ids) spanning [left]..[right] mm changed its
+         * bottom from [oldBottom] to [newBottom]; what is below it in its column moves along
+         * (see [Reflow]).
+         */
+        fun flow(source: Set<StrokeId>, left: Float, right: Float, oldBottom: Float, newBottom: Float) {
+            val moving = Reflow.shifts(_state.value.elements, source, left, right, oldBottom, newBottom)
+            move(moving, newBottom - oldBottom)
+        }
+
+        /** Text flow after the block [source] (old and new ids) went from [before] to [after], see [Reflow.plan]. */
+        fun reflow(source: Set<StrokeId>, before: Rect?, after: Rect?) {
+            val (moving, dy) = Reflow.plan(_state.value.elements, source, before, after)
+            move(moving, dy)
+        }
     }
 
     /** Removes elements of any kind in one undo step. */
@@ -241,39 +305,16 @@ class DocumentSession(
      * Sets the content of cells of the table [tableId] in one undo step. Cells that already hold
      * the same content are left out; nothing happens if none changes.
      */
-    fun setTableCells(tableId: StrokeId, updates: List<CellUpdate>) {
-        val table = _state.value.tables.firstOrNull { it.tableId == tableId } ?: return
-        val quantized = updates.map { it.copy(cell = it.cell.copy(heightMm = Quantization.quantizePosition(it.cell.heightMm))) }
-        val changed = quantized.filter { table.cell(it.key) != it.cell }
-        if (changed.isEmpty()) return
-        val was = changed.map { CellUpdate(it.key, table.cell(it.key)) }
-        applyEdit(Edit.TableCells(tableId, changed, was), record = true)
-    }
+    fun setTableCells(tableId: StrokeId, updates: List<CellUpdate>) = edit { setTableCells(tableId, updates) }
 
     /**
      * Replaces the table element [replaces] by [draft] (same table id: moved, resized or its rows
      * and columns changed) and sets [cells] of it, all in one undo step. Returns the new element.
      */
-    fun replaceTable(replaces: StrokeId, draft: TableDraft, cells: List<CellUpdate>): TableElement {
-        val current = _state.value
-        val removed = listOfNotNull(current.element(replaces))
-        val table = newElement(draft) as TableElement
-        val structure = if (removed.isEmpty()) Edit.Added(listOf(table)) else Edit.Replaced(removed, listOf(table))
-        applyEdit(structure, record = false)
-        val quantized = cells.map { it.copy(cell = it.cell.copy(heightMm = Quantization.quantizePosition(it.cell.heightMm))) }
-        val now = _state.value.tables.first { it.id == table.id }
-        val changed = quantized.filter { now.cell(it.key) != it.cell }
-        val steps = if (changed.isEmpty()) {
-            structure
-        } else {
-            val cellEdit = Edit.TableCells(table.tableId, changed, changed.map { CellUpdate(it.key, now.cell(it.key)) })
-            applyEdit(cellEdit, record = false)
-            Edit.Steps(listOf(structure, cellEdit))
-        }
-        undo.record(steps)
-        _canUndo.value = undo.canUndo
-        _canRedo.value = undo.canRedo
-        return _state.value.tables.first { it.id == table.id }
+    fun replaceTable(replaces: StrokeId, draft: TableDraft, cells: List<CellUpdate>): TableElement = edit {
+        val table = replaceElements(listOf(replaces), listOf(draft)).single() as TableElement
+        setTableCells(table.tableId, cells)
+        state.tables.first { it.id == table.id }
     }
 
     /** Changes the paper pattern. It is a document setting, not an edit: undo does not revert it. */

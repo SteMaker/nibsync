@@ -114,6 +114,7 @@ object ToolbarTags {
     const val ERASER = "tool-eraser"
     const val TEXT_DONE = "text-done"
     const val INSERT_TABLE = "insert-table"
+    const val INSERT_TABLE_HERE = "insert-table-here"
     const val TABLE_MENU = "table-menu"
     fun tableAction(name: String) = "table-$name"
     const val SELECTION_BAR = "selection-bar"
@@ -216,6 +217,10 @@ fun NoteToolbar(
                 Divider()
                 if (table != null) {
                     TableMenu(strings, table)
+                    Divider()
+                } else if (tools != null) {
+                    // A table at the cursor: the text box is split there.
+                    Action(strings.insertTableHere, Icons.Filled.TableChart, true, ToolbarTags.INSERT_TABLE_HERE, tools.onInsertTable)
                     Divider()
                 }
                 Action(if (table != null) strings.deleteTable else strings.deleteTextBox, Icons.Filled.Delete, true, TextTags.DELETE, onDeleteText)

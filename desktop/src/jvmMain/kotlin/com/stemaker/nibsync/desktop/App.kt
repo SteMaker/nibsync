@@ -28,6 +28,7 @@ import androidx.compose.material3.VerticalDivider
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -365,6 +366,18 @@ private fun DocumentPane(
     val headerState = remember(id) { DocumentHeaderState() }
     val todoEdit by controller.todo.editing.collectAsState()
     val tableEdit by controller.table.editing.collectAsState()
+    // While typing: where the text flow will move what is below, updated when the height changes.
+    var flowPreview by remember(id) { mutableStateOf<com.stemaker.nibsync.text.FlowPreview?>(null) }
+    val typing = editing?.controller ?: tableEdit?.controller
+    LaunchedEffect(typing, doc) {
+        if (typing == null) {
+            flowPreview = null
+            return@LaunchedEffect
+        }
+        snapshotFlow { typing.contentVersion }.collect {
+            flowPreview = if (editing != null) controller.text.flowPreview() else controller.table.flowPreview()
+        }
+    }
     var tableDialog by remember { mutableStateOf(false) }
     val tools by controller.tools.collectAsState()
     val selection by controller.selection.collectAsState()
@@ -546,6 +559,7 @@ private fun DocumentPane(
                         todo = todoEdit?.preview(s.device),
                         todoInEditor = todoEdit?.text != null,
                         tableCell = tableEdit?.let { it.tableId to it.cell },
+                        flow = flowPreview,
                     ),
                 )
                 editing?.let { e ->

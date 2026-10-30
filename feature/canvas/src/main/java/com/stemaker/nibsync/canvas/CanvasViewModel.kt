@@ -261,6 +261,10 @@ class CanvasViewModel(
     /** The table cell being edited, or null. */
     val tableEditing: StateFlow<TableEdit?> = tables.editing
 
+    /** While typing in a box or cell: what the text flow will move, and how far. */
+    fun flowPreview(): com.stemaker.nibsync.text.FlowPreview? =
+        if (text.editing.value != null) text.flowPreview() else tables.flowPreview()
+
     /** The to-do being written or typed, or null. */
     val todoEditing: StateFlow<TodoEdit?> = todo.editing
 
@@ -469,8 +473,16 @@ class CanvasViewModel(
         tables.finish()
     }
 
-    /** Adds a table of [rows] x [columns] centred at [cx] with its top at [top] mm and opens its first cell. */
+    /**
+     * Adds a table of [rows] x [columns] and opens its first cell: at the cursor of an open text
+     * box, else centred at [cx] with its top at [top] mm.
+     */
     fun insertTable(cx: Float, top: Float, rows: Int, columns: Int, header: Boolean) {
+        // At the cursor of an open text box, which is split there.
+        if (text.editing.value != null) {
+            tables.insertInto(text, rows, columns, header)
+            return
+        }
         finishText()
         clearSelection()
         enterTextMode()

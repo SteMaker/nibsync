@@ -490,6 +490,17 @@ class NoteCanvasView(context: Context) : FrameLayout(context) {
         if (viewport.hasSize) setViewport(viewport.revealing(topMm - REVEAL_GAP_MM, bottomMm + REVEAL_GAP_MM))
     }
 
+    /** Elements the text flow will move while the open text grows or shrinks, drawn there already. */
+    var flowShift: com.stemaker.nibsync.text.FlowPreview? = null
+        set(value) {
+            if (field != value) {
+                field = value
+                invalidate()
+            }
+        }
+
+    private fun flowDy(id: StrokeId): Float = flowShift?.takeIf { id in it.ids }?.dy ?: 0f
+
     /** Colours of the page surroundings from the app theme (ARGB). */
     fun setChromeColors(desk: Int, pageShadow: Int, selection: Int) {
         if (desk == deskColor && pageShadow == pageShadowPaint.color && selection == selectionPaint.color) return
@@ -535,6 +546,8 @@ class NoteCanvasView(context: Context) : FrameLayout(context) {
                 }
                 if (moving && stroke.id in selection) {
                     withTranslation(moveDx, moveDy) { renderer.draw(this, inkCache[stroke], documentToView) }
+                } else if (flowDy(stroke.id) != 0f) {
+                    withTranslation(0f, flowDy(stroke.id)) { renderer.draw(this, inkCache[stroke], documentToView) }
                 } else if (stroke.bounds.intersects(visible)) {
                     renderer.draw(this, inkCache[stroke], documentToView)
                 }
@@ -578,6 +591,7 @@ class NoteCanvasView(context: Context) : FrameLayout(context) {
             val selected = f.id in selection
             when {
                 moving && selected -> canvas.withTranslation(moveDx, moveDy) { mediaRenderer.draw(this, f, viewport.scale) }
+                flowDy(f.id) != 0f -> canvas.withTranslation(0f, flowDy(f.id)) { mediaRenderer.draw(this, f, viewport.scale) }
                 resizePointerId != NO_POINTER && selected -> {
                     val save = canvas.save()
                     canvas.translate(f.x, f.y)
@@ -595,6 +609,8 @@ class NoteCanvasView(context: Context) : FrameLayout(context) {
         for (link in links) {
             if (moving && link.id in selection) {
                 canvas.withTranslation(moveDx, moveDy) { linkRenderer.draw(this, link, viewport.scale, selected = true) }
+            } else if (flowDy(link.id) != 0f) {
+                canvas.withTranslation(0f, flowDy(link.id)) { linkRenderer.draw(this, link, viewport.scale, selected = link.id in selection) }
             } else if (link.selectedBounds.intersects(visible)) {
                 linkRenderer.draw(canvas, link, viewport.scale, selected = link.id in selection)
             }
@@ -606,6 +622,8 @@ class NoteCanvasView(context: Context) : FrameLayout(context) {
             val hidden = editingTableCell?.takeIf { it.first == table.tableId }?.second
             if (moving && table.id in selection) {
                 canvas.withTranslation(moveDx, moveDy) { tableRenderer.draw(this, table, hidden) }
+            } else if (flowDy(table.id) != 0f) {
+                canvas.withTranslation(0f, flowDy(table.id)) { tableRenderer.draw(this, table, hidden) }
             } else if (table.bounds.intersects(visible)) {
                 tableRenderer.draw(canvas, table, hidden)
             }
@@ -617,6 +635,8 @@ class NoteCanvasView(context: Context) : FrameLayout(context) {
             if (box.id == editingTextBox) continue
             if (moving && box.id in selection) {
                 canvas.withTranslation(moveDx, moveDy) { textRenderer.draw(this, box) }
+            } else if (flowDy(box.id) != 0f) {
+                canvas.withTranslation(0f, flowDy(box.id)) { textRenderer.draw(this, box) }
             } else if (box.bounds.intersects(visible)) {
                 textRenderer.draw(canvas, box)
             }
@@ -631,6 +651,8 @@ class NoteCanvasView(context: Context) : FrameLayout(context) {
             val done = item.taskId in doneTasks
             if (moving && item.id in selection) {
                 canvas.withTranslation(moveDx, moveDy) { todoRenderer.draw(this, item, done, documentToView.withTranslation(moveDx, moveDy)) }
+            } else if (flowDy(item.id) != 0f) {
+                canvas.withTranslation(0f, flowDy(item.id)) { todoRenderer.draw(this, item, done, documentToView.withTranslation(0f, flowDy(item.id))) }
             } else if (item.bounds.intersects(visible)) {
                 todoRenderer.draw(canvas, item, done, documentToView)
             }

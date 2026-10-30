@@ -143,6 +143,7 @@ object NoteScreenTags {
     const val TEXT_DONE = "text-done"
     const val SELECTION_BAR = "selection-bar"
     const val INSERT_TABLE = "insert-table"
+    const val INSERT_TABLE_HERE = "insert-table-here"
     const val TABLE_MENU = "table-menu"
     const val TABLE_CELL = "table-cell-editor"
     fun tableAction(name: String) = "table-$name"
@@ -215,6 +216,16 @@ fun NoteScreen(
         LaunchedEffect(todoEditing?.key) {
             snapshotFlow { controller.contentVersion }.drop(1).debounce(TEXT_SAVE_DELAY_MS).collect { viewModel.saveTodo() }
         }
+    }
+
+    // While typing: show where the text flow will move what is below (updated with the text).
+    val typing = textEditing?.controller ?: tableEditing?.controller
+    LaunchedEffect(typing, document) {
+        if (typing == null) {
+            canvasView?.flowShift = null
+            return@LaunchedEffect
+        }
+        snapshotFlow { typing.contentVersion }.collect { canvasView?.flowShift = viewModel.flowPreview() }
     }
 
     // Store a table cell while typing, too.
@@ -290,6 +301,7 @@ fun NoteScreen(
             onInsertTable = { choosingTableSize = true },
             textEditing = textEditing?.controller ?: todoEditing?.text ?: tableEditing?.controller,
             table = if (tableEditing != null) viewModel.tables else null,
+            textBoxOpen = textEditing != null,
             onTextDelete = {
                 when {
                     todoEditing != null -> viewModel.deleteTodo()
@@ -603,6 +615,8 @@ private fun Toolbar(
     onInsertTable: () -> Unit,
     textEditing: com.stemaker.nibsync.text.TextEditController?,
     table: com.stemaker.nibsync.text.TableEditing?,
+    /** A text box (not a to-do) is open: a table can be inserted at its cursor. */
+    textBoxOpen: Boolean,
     onTextDelete: () -> Unit,
     onTextDone: () -> Unit,
     inkTodoOpen: Boolean,
@@ -628,6 +642,15 @@ private fun Toolbar(
                 ScrollingRow(Modifier.weight(1f)) {
                     if (table != null) {
                         TableMenu(table)
+                        Divider()
+                    } else if (textBoxOpen) {
+                        // A table at the cursor: the text box is split there.
+                        val label = stringResource(R.string.insert_table_here)
+                        WithTooltip(label) {
+                            IconButton(onClick = onInsertTable, modifier = Modifier.testTag(NoteScreenTags.INSERT_TABLE_HERE)) {
+                                Icon(Icons.Filled.TableChart, contentDescription = label)
+                            }
+                        }
                         Divider()
                     }
                     TextFormatActions(textEditing, onDelete = onTextDelete)

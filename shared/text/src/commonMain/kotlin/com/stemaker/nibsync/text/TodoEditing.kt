@@ -123,7 +123,13 @@ class TodoEditing(private val session: DocumentSession) {
         fun q(mm: Float) = Quantization.quantizePosition(mm)
         val draft = TodoDraft(q(e.x), q(e.y), q(e.widthMm), q(e.heightMm), content, e.taskId)
         if (draft == saved && e.itemId != null && e.itemId in session.state.value) return
-        val item = session.replaceElements(listOfNotNull(e.itemId), listOf(draft)).single() as TodoItem
+        val old = e.itemId?.let { session.state.value.element(it) }
+        // What is below moves with the to-do's height (text flow).
+        val item = session.edit {
+            val added = replaceElements(listOfNotNull(e.itemId), listOf(draft)).single()
+            reflow(setOfNotNull(e.itemId, added.id), old?.bounds, added.bounds)
+            added
+        } as TodoItem
         saved = draft.copy(taskId = item.taskId)
         _editing.value = e.copy(itemId = item.id, taskId = item.taskId)
     }
@@ -132,7 +138,7 @@ class TodoEditing(private val session: DocumentSession) {
     fun finish(): Boolean {
         val e = _editing.value ?: return false
         if (content(e).isEmpty) {
-            e.itemId?.let { session.removeStrokes(listOf(it)) }
+            e.itemId?.let(::removeFlowing)
         } else {
             save()
         }
@@ -144,10 +150,19 @@ class TodoEditing(private val session: DocumentSession) {
     /** Deletes the edited to-do. Returns false if nothing was being edited. */
     fun delete(): Boolean {
         val e = _editing.value ?: return false
-        e.itemId?.let { session.removeStrokes(listOf(it)) }
+        e.itemId?.let(::removeFlowing)
         _editing.value = null
         saved = null
         return true
+    }
+
+    /** Removes the to-do [id]; what was below it moves up (text flow). */
+    private fun removeFlowing(id: StrokeId) {
+        val old = session.state.value.element(id) ?: return
+        session.edit {
+            replaceElements(listOf(id), emptyList())
+            reflow(setOf(id), old.bounds, null)
+        }
     }
 
     /** Moves the edited to-do while its handle is dragged; [save] stores the result. */

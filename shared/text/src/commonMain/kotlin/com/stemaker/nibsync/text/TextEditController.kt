@@ -207,6 +207,25 @@ class TextEditController internal constructor(internal val state: RichTextState)
         return true
     }
 
+    /**
+     * The text before and after the cursor (a paragraph it is in is split there, its marks cut
+     * at the cursor), e.g. to put something between the two parts.
+     */
+    fun splitAtCursor(): Pair<RichText, RichText> {
+        val content = text
+        val (index, offset) = paragraphAt(state.selection.min) ?: return content to RichText.EMPTY
+        val p = content.paragraphs[index]
+        val at = offset.coerceIn(0, p.text.length)
+        val first = p.copy(text = p.text.substring(0, at), marks = p.marks.mapNotNull { it.clipped(0, at) })
+        val second = TextParagraph(p.text.substring(at), p.list, p.indent, p.marks.mapNotNull { it.clipped(at, p.text.length)?.shifted(-at) }, p.continued)
+        // At a paragraph's end or start the split is between paragraphs: no empty one is left over.
+        val before = content.paragraphs.subList(0, index) + listOfNotNull(first.takeIf { it.text.isNotEmpty() || index == 0 })
+        val rest = content.paragraphs.subList(index + 1, content.paragraphs.size)
+        val after = listOfNotNull(second.takeIf { it.text.isNotEmpty() || rest.isEmpty() }) + rest
+        fun text(ps: List<TextParagraph>) = if (ps.isEmpty()) RichText.EMPTY else RichText(ps).takeIf { !it.isBlank } ?: RichText.EMPTY
+        return text(before) to text(after)
+    }
+
     private fun TextMark.clipped(from: Int, to: Int): TextMark? {
         val s = maxOf(start, from)
         val e = minOf(end, to)

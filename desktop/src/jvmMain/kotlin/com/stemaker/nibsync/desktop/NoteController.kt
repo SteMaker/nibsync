@@ -427,8 +427,15 @@ class NoteController(
         table.open(hit, hit.geometry.key(area))
     }
 
-    /** Adds a table of [rows] x [columns] in the middle of what is visible and opens its first cell. */
+    /**
+     * Adds a table of [rows] x [columns] and opens its first cell: at the cursor of an open text
+     * box (which is split there), else in the middle of what is visible.
+     */
     fun insertTable(cx: Float, top: Float, rows: Int, columns: Int, header: Boolean, pageWidthMm: Float) {
+        if (text.editing.value != null) {
+            table.insertInto(text, rows, columns, header)
+            return
+        }
         text.finish()
         todo.finish()
         clearSelection()

@@ -1,5 +1,8 @@
 package com.stemaker.nibsync.desktop
 
+import androidx.compose.ui.test.performTextInputSelection
+import androidx.compose.ui.test.click
+import androidx.compose.ui.test.performMouseInput
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.onAllNodesWithTag
@@ -82,4 +85,64 @@ class TableUiTest {
         runBlocking { container.closeAll() }
     }
 
+
+    @Test
+    fun typingAboveATablePushesItDownAndATableCanBeInsertedAtTheCursor() = runComposeUiTest {
+        val root = tmp.root.toOkioPath()
+        val container = DesktopContainer(root)
+        val settings = Settings(container.fs, root / "settings.properties")
+        setContent { App(container, settings, Strings(german = true)) }
+        waitUntil(timeoutMillis = 5000) { onAllNodesWithTag("page").fetchSemanticsNodes().isNotEmpty() }
+        waitForIdle()
+        val docId = settings.lastDocument ?: runBlocking { container.library.tree.value.documents.single().id.asDocumentId }
+        val session = runBlocking { container.openSession(docId) }
+
+        // A text box near the top, a table in the middle of the view below it.
+        onNodeWithTag("page").performMouseInput { click(androidx.compose.ui.geometry.Offset(300f, 150f)) }
+        waitUntil(timeoutMillis = 5000) { onAllNodesWithTag(com.stemaker.nibsync.text.TextTags.EDITOR).fetchSemanticsNodes().isNotEmpty() }
+        onNodeWithTag(com.stemaker.nibsync.text.TextTags.EDITOR).performTextInput("eins")
+        onNodeWithTag(com.stemaker.nibsync.text.TextTags.EDITOR).performKeyInput { pressKey(Key.Escape) }
+        onNodeWithTag(ToolbarTags.INSERT).performClick()
+        onNodeWithTag(ToolbarTags.INSERT_TABLE).performClick()
+        onNodeWithTag(TableSizeTags.cell(2, 2)).performClick()
+        onNodeWithTag(TableSizeTags.CONFIRM).performClick()
+        waitUntil(timeoutMillis = 5000) { onAllNodesWithTag(OverlayTags.TABLE_CELL).fetchSemanticsNodes().isNotEmpty() }
+        onNodeWithTag(OverlayTags.TABLE_CELL).performKeyInput { pressKey(Key.Escape) }
+        waitForIdle()
+        val box = session.state.value.textBoxes.single()
+        val tableTop = session.state.value.tables.single().y
+        assertThat(tableTop).isGreaterThan(box.bounds.bottom)
+
+        // Two more lines in the box: the table moves down by the box's growth.
+        onNodeWithTag("page").performMouseInput { click(androidx.compose.ui.geometry.Offset(330f, 152f)) }
+        waitUntil(timeoutMillis = 5000) { onAllNodesWithTag(com.stemaker.nibsync.text.TextTags.EDITOR).fetchSemanticsNodes().isNotEmpty() }
+        val editor = onNodeWithTag(com.stemaker.nibsync.text.TextTags.EDITOR)
+        editor.performTextInputSelection(androidx.compose.ui.text.TextRange(4))
+        editor.performKeyInput { pressKey(Key.Enter) }
+        editor.performTextInput("zwei")
+        editor.performKeyInput { pressKey(Key.Enter) }
+        editor.performTextInput("drei")
+        editor.performKeyInput { pressKey(Key.Escape) }
+        waitForIdle()
+        val grown = session.state.value.textBoxes.single()
+        val growth = grown.heightMm - box.heightMm
+        assertThat(growth).isGreaterThan(5f)
+        assertThat(session.state.value.tables.single().y).isWithin(0.1f).of(tableTop + growth)
+
+        // The cursor after "zwei", then a table right there: the box is split around it.
+        onNodeWithTag("page").performMouseInput { click(androidx.compose.ui.geometry.Offset(330f, 152f)) }
+        waitUntil(timeoutMillis = 5000) { onAllNodesWithTag(com.stemaker.nibsync.text.TextTags.EDITOR).fetchSemanticsNodes().isNotEmpty() }
+        onNodeWithTag(com.stemaker.nibsync.text.TextTags.EDITOR).performTextInputSelection(androidx.compose.ui.text.TextRange(9))
+        onNodeWithTag(ToolbarTags.INSERT_TABLE_HERE).performScrollTo().performClick()
+        onNodeWithTag(TableSizeTags.cell(1, 2)).performClick()
+        onNodeWithTag(TableSizeTags.CONFIRM).performClick()
+        waitUntil(timeoutMillis = 5000) { session.state.value.tables.size == 2 }
+        val boxes = session.state.value.textBoxes.sortedBy { it.y }
+        assertThat(boxes.map { it.text.plainText }).containsExactly("eins\nzwei", "drei").inOrder()
+        val inserted = session.state.value.tables.minBy { it.y }
+        assertThat(inserted.y).isGreaterThan(boxes[0].bounds.bottom)
+        assertThat(boxes[1].y).isGreaterThan(inserted.bounds.bottom)
+        assertThat(session.state.value.tables.maxBy { it.y }.y).isGreaterThan(boxes[1].bounds.bottom)
+        runBlocking { container.closeAll() }
+    }
 }

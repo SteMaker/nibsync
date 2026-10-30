@@ -219,6 +219,28 @@ than its rows stretches the last one. Content of a joined area is its top left c
   header row tinted; lasso, copy and undo work as for other elements, and on the PC the
   selection's corner scales a table.
 
+## Text flow
+
+The page stays freely laid out, but blocks push what is below them: when a text box, table or
+typed to-do gets taller or shorter in place, everything below it in its column moves by the
+same amount (`Reflow`, core/document/select): elements whose top is at or below the block's old
+bottom and that overlap it horizontally, cascading over what moves (a wide picture takes what is
+under it along). Handwriting in the column moves too; beside it, e.g. in the margin, it stays.
+Shrinking pulls content up, so gaps stay as they were.
+
+- A new block only pushes what it would cover, down to `Reflow.GAP_MM` below it; a new table
+  that would start inside a text box, table or to-do goes below it instead (`freeTop`). Deleting
+  a block through its Delete button pulls what was below up; lasso and erasers move nothing.
+- The moves are ordinary remove + add (like a lasso move, ids of tasks, tables and anchors
+  kept), done in the same `DocumentSession.edit { }` transaction as the change, so one undo
+  step reverts both. Moving handwriting writes its strokes anew, so typing above a lot of it
+  grows the op log by a copy per height change (saves are at most every 1.5 s).
+- While typing, the editors' `flowPreview()` tells the renderers what will move and how far,
+  so the content below follows the growing editor before the save.
+- Inserting a table while a text box is open (tool bar: "Insert table here") splits the box at
+  the cursor (`TextEditController.splitAtCursor`): text before, the table, the rest of the text
+  in a new box below, and what was below the box moves down; one undo step (`insertInto`).
+
 ## Anchors and links to notes
 
 An `Anchor` is a named place in a document (a small flag, 30 % smaller than a link; its name shows only while it is selected, `labelBounds`); a `NoteLink` leads to a

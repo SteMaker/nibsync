@@ -51,4 +51,5 @@
     <string name="table_header_toggle">Kopfzeile ein/aus</string>
     <string name="table_column_width">Spaltenbreite</string>
     <string name="cancel">Abbrechen</string>
+    <string name="insert_table_here">Tabelle hier einfügen</string>
 </resources>

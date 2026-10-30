@@ -6,6 +6,8 @@ import com.stemaker.nibsync.model.RichText
 import com.stemaker.nibsync.model.StrokeId
 import com.stemaker.nibsync.model.TextBox
 import com.stemaker.nibsync.model.TextBoxDraft
+import com.stemaker.nibsync.document.select.Reflow
+import com.stemaker.nibsync.model.geometry.Rect
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -24,6 +26,9 @@ data class TextEditing(
     val widthMm: Float,
     val controller: TextEditController,
 )
+
+/** While typing: elements drawn shifted by [dy] mm, as the text flow will move them on saving. */
+data class FlowPreview(val ids: Set<StrokeId>, val dy: Float)
 
 /**
  * Editing one text box of a document at a time, the same way on every platform: every save of
@@ -73,7 +78,13 @@ class TextBoxEditing(private val session: DocumentSession) {
         fun q(mm: Float) = Quantization.quantizePosition(mm)
         val draft = TextBoxDraft(q(e.x), q(e.y), q(e.widthMm), q(measureText(text, e.widthMm)), text)
         if (draft == saved && e.boxId != null && e.boxId in session.state.value) return
-        val box = session.replaceElements(listOfNotNull(e.boxId), listOf(draft)).single()
+        val old = e.boxId?.let { session.state.value.element(it) }
+        // What is below moves with the box's height (text flow).
+        val box = session.edit {
+            val added = replaceElements(listOfNotNull(e.boxId), listOf(draft)).single()
+            reflow(setOfNotNull(e.boxId, added.id), old?.bounds, added.bounds)
+            added
+        }
         saved = draft
         _editing.value = e.copy(boxId = box.id)
     }
@@ -82,7 +93,7 @@ class TextBoxEditing(private val session: DocumentSession) {
     fun finish(): Boolean {
         val e = _editing.value ?: return false
         if (e.controller.text.isBlank) {
-            e.boxId?.let { session.removeStrokes(listOf(it)) }
+            e.boxId?.let(::removeFlowing)
         } else {
             save()
         }
@@ -94,10 +105,35 @@ class TextBoxEditing(private val session: DocumentSession) {
     /** Deletes the edited box. Returns false if nothing was being edited. */
     fun delete(): Boolean {
         val e = _editing.value ?: return false
-        e.boxId?.let { session.removeStrokes(listOf(it)) }
+        e.boxId?.let(::removeFlowing)
         _editing.value = null
         saved = null
         return true
+    }
+
+    /** Ends editing without storing anything (the caller stored the content its own way). */
+    fun discard() {
+        _editing.value = null
+        saved = null
+    }
+
+    /** Removes the box [id]; what was below it moves up (text flow). */
+    private fun removeFlowing(id: StrokeId) {
+        val old = session.state.value.element(id) ?: return
+        session.edit {
+            replaceElements(listOf(id), emptyList())
+            reflow(setOf(id), old.bounds, null)
+        }
+    }
+
+    /** What the text flow would move, and how far, if the box were stored as typed now. */
+    fun flowPreview(): FlowPreview? {
+        val e = _editing.value ?: return null
+        val state = session.state.value
+        val old = e.boxId?.let { state.element(it) }
+        val after = Rect(e.x, e.y, e.x + e.widthMm, e.y + measureText(e.controller.text, e.widthMm))
+        val (moving, dy) = Reflow.plan(state.elements, setOfNotNull(e.boxId), old?.bounds, after)
+        return if (moving.isEmpty() || dy == 0f) null else FlowPreview(moving.mapTo(HashSet()) { it.id }, dy)
     }
 
     /** Moves the edited box while its handle is dragged; [save] stores the result. */
