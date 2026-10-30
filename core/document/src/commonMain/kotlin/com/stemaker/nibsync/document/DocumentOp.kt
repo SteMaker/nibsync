@@ -57,6 +57,12 @@ sealed interface DocumentOp {
      */
     data class SetTableCells(override val stamp: OpStamp, val tableId: StrokeId, val cells: List<CellUpdate>) : DocumentOp
 
+    /**
+     * Puts the flow [flowId] at ([x], [y]) mm: its first block's top left corner. Concurrent
+     * moves of a flow: the one with the highest stamp wins.
+     */
+    data class SetFlowPosition(override val stamp: OpStamp, val flowId: StrokeId, val x: Float, val y: Float) : DocumentOp
+
     /** Removes elements of any kind (strokes, text boxes) by id. */
     data class RemoveStrokes(override val stamp: OpStamp, val ids: Set<StrokeId>) : DocumentOp
 

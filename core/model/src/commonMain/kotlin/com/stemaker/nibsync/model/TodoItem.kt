@@ -34,14 +34,15 @@ sealed interface TodoContent {
 data class TodoItem(
     override val id: StrokeId,
     val taskId: StrokeId,
-    val x: Float,
-    val y: Float,
-    val widthMm: Float,
-    val heightMm: Float,
+    override val x: Float,
+    override val y: Float,
+    override val widthMm: Float,
+    override val heightMm: Float,
     val content: TodoContent,
     override val createdAtEpochMs: Long,
     override val author: DeviceId,
-) : PageElement {
+    override val slot: FlowSlot = FlowSlot(id, FlowSlot.FIRST),
+) : FlowBlock {
     init {
         require(widthMm > 0f && heightMm > 0f) { "A to-do needs a positive size" }
     }
@@ -49,6 +50,8 @@ data class TodoItem(
     override val layer: Layer get() = Layer.TODO
 
     override val bounds: Rect get() = Rect(x, y, x + widthMm, y + heightMm)
+
+    override fun placedAt(x: Float, y: Float): TodoItem = copy(x = x, y = y)
 
     /** Where the check circle is (mm). */
     val checkBounds: Rect
@@ -82,12 +85,14 @@ data class TodoItem(
  * null for a new one (also for pasted copies, which are new tasks).
  */
 data class TodoDraft(
-    val x: Float,
-    val y: Float,
-    val widthMm: Float,
+    override val x: Float,
+    override val y: Float,
+    override val widthMm: Float,
     val heightMm: Float,
     val content: TodoContent,
     val taskId: StrokeId? = null,
-) : ElementDraft {
+    override val slot: FlowSlot? = null,
+) : BlockDraft {
     override fun translated(dx: Float, dy: Float): TodoDraft = copy(x = x + dx, y = y + dy)
+    override fun inSlot(slot: FlowSlot?): TodoDraft = copy(slot = slot)
 }

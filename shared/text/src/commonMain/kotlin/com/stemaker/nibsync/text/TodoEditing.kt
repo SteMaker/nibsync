@@ -1,6 +1,8 @@
 package com.stemaker.nibsync.text
 
 import com.stemaker.nibsync.document.DocumentSession
+import com.stemaker.nibsync.model.FlowSlot
+import com.stemaker.nibsync.model.IdGenerator
 import com.stemaker.nibsync.model.Quantization
 import com.stemaker.nibsync.model.RichText
 import com.stemaker.nibsync.model.Stroke
@@ -29,6 +31,9 @@ data class TodoEdit(
     val heightMm: Float,
     val text: TextEditController?,
     val ink: List<Stroke>,
+    val slot: FlowSlot? = null,
+    val movedX: Float = 0f,
+    val movedY: Float = 0f,
 ) {
     val isInk: Boolean get() = text == null
 
@@ -58,7 +63,7 @@ data class TodoEdit(
  * step), a to-do left empty is removed when editing ends. The frame never gets smaller than
  * its content: typed text wraps to the width, handwriting keeps its size.
  */
-class TodoEditing(private val session: DocumentSession) {
+class TodoEditing(private val session: DocumentSession, private val ids: IdGenerator = IdGenerator()) {
     private val _editing = MutableStateFlow<TodoEdit?>(null)
     val editing: StateFlow<TodoEdit?> = _editing.asStateFlow()
 
@@ -77,6 +82,7 @@ class TodoEditing(private val session: DocumentSession) {
             ++key, item.id, item.taskId, item.x, item.y, item.widthMm, item.heightMm,
             text = (content as? TodoContent.Text)?.let { TextEditController.create(it.text) },
             ink = (content as? TodoContent.Ink)?.strokes.orEmpty(),
+            slot = item.slot,
         )
     }
 
@@ -120,19 +126,21 @@ class TodoEditing(private val session: DocumentSession) {
         _editing.value = e
         val content = content(e)
         if (content.isEmpty && e.itemId == null) return
-        fun q(mm: Float) = Quantization.quantizePosition(mm)
-        val draft = TodoDraft(q(e.x), q(e.y), q(e.widthMm), q(e.heightMm), content, e.taskId)
+        val slot = e.slot ?: FlowSlot(ids.newStrokeId(), FlowSlot.FIRST)
+        val draft = TodoDraft(q(e.x), q(e.y), q(e.widthMm), q(e.heightMm), content, e.taskId, slot)
         if (draft == saved && e.itemId != null && e.itemId in session.state.value) return
-        val old = e.itemId?.let { session.state.value.element(it) }
-        // What is below moves with the to-do's height (text flow).
+        // What is below the flow moves with its height.
         val item = session.edit {
-            val added = replaceElements(listOfNotNull(e.itemId), listOf(draft)).single()
-            reflow(setOfNotNull(e.itemId, added.id), old?.bounds, added.bounds)
-            added
-        } as TodoItem
-        saved = draft.copy(taskId = item.taskId)
-        _editing.value = e.copy(itemId = item.id, taskId = item.taskId)
+            val added = flowing(slot.flowId) { replaceElements(listOfNotNull(e.itemId), listOf(draft)).single() }
+            if (e.itemId != null && (e.movedX != 0f || e.movedY != 0f)) dragFlow(slot.flowId, e.movedX, e.movedY)
+            state.element(added.id) as TodoItem
+        }
+        saved = draft.copy(taskId = item.taskId, x = q(item.x), y = q(item.y))
+        _editing.value = e.copy(itemId = item.id, taskId = item.taskId, x = item.x, y = item.y, slot = slot, movedX = 0f, movedY = 0f)
     }
+
+    // On the storage grid, so an unchanged to-do compares equal to what was loaded.
+    private fun q(mm: Float) = Quantization.quantizePosition(mm)
 
     /** Ends editing; a to-do left empty is removed. Returns false if nothing was being edited. */
     fun finish(): Boolean {
@@ -156,18 +164,17 @@ class TodoEditing(private val session: DocumentSession) {
         return true
     }
 
-    /** Removes the to-do [id]; what was below it moves up (text flow). */
-    private fun removeFlowing(id: StrokeId) {
-        val old = session.state.value.element(id) ?: return
-        session.edit {
-            replaceElements(listOf(id), emptyList())
-            reflow(setOf(id), old.bounds, null)
-        }
-    }
+    /** Removes the to-do [id]; what was below it moves up, text around it is joined. */
+    private fun removeFlowing(id: StrokeId) = session.edit { removeBlocks(listOf(id), measureText, pull = true) }
 
     /** Moves the edited to-do while its handle is dragged; [save] stores the result. */
-    fun move(dx: Float, dy: Float) =
-        _editing.update { it?.copy(x = maxOf(0f, it.x + dx), y = maxOf(0f, it.y + dy)) }
+    fun move(dx: Float, dy: Float) = _editing.update {
+        it?.let { e ->
+            val x = maxOf(0f, e.x + dx)
+            val y = maxOf(0f, e.y + dy)
+            e.copy(x = x, y = y, movedX = e.movedX + x - e.x, movedY = e.movedY + y - e.y)
+        }
+    }
 
     /** Changes the frame while its corner is dragged; it does not get smaller than the content. */
     fun resize(dw: Float, dh: Float) =
@@ -187,7 +194,7 @@ class TodoEditing(private val session: DocumentSession) {
         return e.copy(widthMm = maxOf(minW, e.widthMm), heightMm = maxOf(minH, e.heightMm))
     }
 
-    private fun TodoItem.toDraft() = TodoDraft(x, y, widthMm, heightMm, content, taskId)
+    private fun TodoItem.toDraft() = TodoDraft(q(x), q(y), widthMm, heightMm, content, taskId, slot)
 
     private companion object {
         /** Space kept to the right page edge by new to-dos. */

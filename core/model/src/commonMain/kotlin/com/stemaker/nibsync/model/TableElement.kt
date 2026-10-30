@@ -42,8 +42,8 @@ data class CellMerge(val fromRowId: StrokeId, val fromColId: StrokeId, val toRow
 data class TableElement(
     override val id: StrokeId,
     val tableId: StrokeId,
-    val x: Float,
-    val y: Float,
+    override val x: Float,
+    override val y: Float,
     val columns: List<TableColumn>,
     val rows: List<TableRow>,
     /** The first row is a header row (bold, tinted). */
@@ -52,7 +52,8 @@ data class TableElement(
     val merges: List<CellMerge>,
     override val createdAtEpochMs: Long,
     override val author: DeviceId,
-) : PageElement {
+    override val slot: FlowSlot = FlowSlot(id, FlowSlot.FIRST),
+) : FlowBlock {
     init {
         require(columns.isNotEmpty() && rows.isNotEmpty()) { "A table needs at least one row and one column" }
     }
@@ -62,10 +63,12 @@ data class TableElement(
     /** Positions of rows, columns and (joined) cells. */
     val geometry: TableGeometry by lazy { TableGeometry(this) }
 
-    val widthMm: Float get() = geometry.widthMm
-    val heightMm: Float get() = geometry.heightMm
+    override val widthMm: Float get() = geometry.widthMm
+    override val heightMm: Float get() = geometry.heightMm
 
     override val bounds: Rect get() = Rect(x, y, x + widthMm, y + heightMm)
+
+    override fun placedAt(x: Float, y: Float): TableElement = copy(x = x, y = y)
 
     fun cell(key: CellKey): TableCell = cells[key] ?: TableCell.EMPTY
 
@@ -171,14 +174,18 @@ class TableGeometry(private val table: TableElement) {
 
 /** A table before it gets an id; [tableId] is kept when an existing table changes, null for a new one. */
 data class TableDraft(
-    val x: Float,
-    val y: Float,
+    override val x: Float,
+    override val y: Float,
     val columns: List<TableColumn>,
     val rows: List<TableRow>,
     val header: Boolean,
     val cells: Map<CellKey, TableCell>,
     val merges: List<CellMerge>,
     val tableId: StrokeId? = null,
-) : ElementDraft {
+    override val slot: FlowSlot? = null,
+) : BlockDraft {
+    override val widthMm: Float get() = columns.fold(0f) { w, c -> w + c.widthMm }
+
     override fun translated(dx: Float, dy: Float): TableDraft = copy(x = x + dx, y = y + dy)
+    override fun inSlot(slot: FlowSlot?): TableDraft = copy(slot = slot)
 }

@@ -23,7 +23,7 @@ class TextBoxTest {
     @Test
     fun draftRoundTripAndMove() {
         val draft = box.toDraft() as TextBoxDraft
-        assertEquals(TextBoxDraft(15f, 18f, 80f, 15f, box.text), draft.translated(5f, -2f))
+        assertEquals(TextBoxDraft(15f, 18f, 80f, 15f, box.text, box.slot), draft.translated(5f, -2f))
         assertEquals(StrokeId("u"), box.withId(StrokeId("u")).id)
     }
 

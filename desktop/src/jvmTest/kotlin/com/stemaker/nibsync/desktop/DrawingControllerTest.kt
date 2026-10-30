@@ -115,6 +115,40 @@ class DrawingControllerTest {
     }
 
     @Test
+    fun aTableDraggedOntoTextGoesBetweenItsParagraphsAndAClickedPictureLeavesTheText() = runTest {
+        val c = NoteController(
+            DocumentSession(DocumentState.empty(DocumentMeta(DocumentId("d"), "t", createdAtEpochMs = 0)), DEV, { }, backgroundScope, clock = { 0L }),
+            { text, _ -> text.paragraphs.size * 6f },
+            GeometricShapeRecognizer(),
+        )
+        c.text.startNew(20f, 20f, 120f)
+        c.text.editing.value!!.controller.setContent(com.stemaker.nibsync.model.RichText.plain("eins\nzwei\ndrei\nvier"))
+        c.text.finish()
+        val table = c.table.insert(20f, 100f, rows = 2, columns = 2, header = false, pageWidthMm = 210f)
+        c.table.finish()
+        c.selectTool(DesktopTool.LASSO)
+        c.pointerDown(10f, 98f, clock, null, tol, reach)
+        for ((x, y) in listOf(190f to 98f, 190f to 125f, 10f to 125f, 10f to 99f)) c.pointerMove(x, y, ++clock, null)
+        c.pointerUp(10f, 99f, ++clock, tol, 210f)
+        assertThat(c.selection.value).containsExactly(table.id)
+        // Dragged until its top is between "zwei" and "drei": a line shows where it will land.
+        val dy = 33f - table.y
+        c.pointerDown(50f, 105f, clock, null, tol, reach)
+        c.pointerMove(50f, 105f + dy, ++clock, null)
+        assertThat((c.gesture.value as GesturePreview.Moving).drop!!.y).isWithin(0.01f).of(32f)
+        c.pointerUp(50f, 105f + dy, ++clock, tol, 210f)
+        val texts = c.session.state.value.textBoxes.sortedBy { it.y }
+        assertThat(texts.map { it.text.plainText }).containsExactly("eins\nzwei", "drei\nvier").inOrder()
+        val moved = c.session.state.value.tables.single()
+        assertThat(moved.y).isGreaterThan(texts[0].bounds.bottom)
+        assertThat(texts[1].y).isGreaterThan(moved.bounds.bottom)
+        assertThat(c.selection.value).containsExactly(moved.id)
+        // Undo: the text whole again, the table back.
+        assertThat(c.session.undo()).isTrue()
+        assertThat(c.session.state.value.textBoxes.single().text.plainText).isEqualTo("eins\nzwei\ndrei\nvier")
+    }
+
+    @Test
     fun aClickedPictureIsSelectedScaledAndLeftAgain() = runTest {
         val c = controller()
         val asset = Asset("e".repeat(64), Asset.PNG)

@@ -115,6 +115,7 @@ object ToolbarTags {
     const val TEXT_DONE = "text-done"
     const val INSERT_TABLE = "insert-table"
     const val INSERT_TABLE_HERE = "insert-table-here"
+    const val INSERT_FILE_HERE = "insert-file-here"
     const val TABLE_MENU = "table-menu"
     fun tableAction(name: String) = "table-$name"
     const val SELECTION_BAR = "selection-bar"
@@ -219,8 +220,9 @@ fun NoteToolbar(
                     TableMenu(strings, table)
                     Divider()
                 } else if (tools != null) {
-                    // A table at the cursor: the text box is split there.
+                    // A table or file at the cursor: the text box is split there.
                     Action(strings.insertTableHere, Icons.Filled.TableChart, true, ToolbarTags.INSERT_TABLE_HERE, tools.onInsertTable)
+                    Action(strings.insertFileHere, Icons.Filled.AttachFile, true, ToolbarTags.INSERT_FILE_HERE, tools.onInsert)
                     Divider()
                 }
                 Action(if (table != null) strings.deleteTable else strings.deleteTextBox, Icons.Filled.Delete, true, TextTags.DELETE, onDeleteText)

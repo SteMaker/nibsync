@@ -38,11 +38,11 @@ sealed interface ElementDraft {
 /** The element as a draft for a new element of the same content. */
 fun PageElement.toDraft(): ElementDraft = when (this) {
     is Stroke -> StrokeDraft(brush, tool, points, layer)
-    is TextBox -> TextBoxDraft(x, y, widthMm, heightMm, text)
-    is ImageElement -> ImageDraft(x, y, widthMm, heightMm, asset)
-    is FileLink -> FileLinkDraft(x, y, widthMm, heightMm, asset, fileName)
-    is TodoItem -> TodoDraft(x, y, widthMm, heightMm, content, taskId)
+    is TextBox -> TextBoxDraft(x, y, widthMm, heightMm, text, slot)
+    is ImageElement -> ImageDraft(x, y, widthMm, heightMm, asset, slot)
+    is FileLink -> FileLinkDraft(x, y, widthMm, heightMm, asset, fileName, slot)
+    is TodoItem -> TodoDraft(x, y, widthMm, heightMm, content, taskId, slot)
     is Anchor -> AnchorDraft(x, y, name, anchorId)
     is NoteLink -> NoteLinkDraft(x, y, target, anchorId, title, anchorName)
-    is TableElement -> TableDraft(x, y, columns, rows, header, cells, merges, tableId)
+    is TableElement -> TableDraft(x, y, columns, rows, header, cells, merges, tableId, slot)
 }

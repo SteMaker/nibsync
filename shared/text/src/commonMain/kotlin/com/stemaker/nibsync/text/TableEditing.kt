@@ -1,11 +1,10 @@
 package com.stemaker.nibsync.text
 
-import com.stemaker.nibsync.model.TextBoxDraft
-import com.stemaker.nibsync.document.select.Reflow
 import com.stemaker.nibsync.document.CellUpdate
 import com.stemaker.nibsync.document.DocumentSession
 import com.stemaker.nibsync.model.CellKey
 import com.stemaker.nibsync.model.CellMerge
+import com.stemaker.nibsync.model.FlowSlot
 import com.stemaker.nibsync.model.IdGenerator
 import com.stemaker.nibsync.model.MarkStyle
 import com.stemaker.nibsync.model.RichText
@@ -85,71 +84,29 @@ class TableEditing(private val session: DocumentSession, private val ids: IdGene
         finish()
         val width = minOf(TableElement.DEFAULT_WIDTH_MM, pageWidthMm - x - MARGIN_MM).coerceAtLeast(columns * TableElement.MIN_COLUMN_MM)
         val left = maxOf(0f, minOf(x, pageWidthMm - width))
-        val draft = TableDraft(
-            x = left,
-            y = freeTop(left, left + width, maxOf(0f, y)),
-            columns = List(columns) { TableColumn(ids.newStrokeId(), width / columns) },
-            rows = List(rows) { TableRow(ids.newStrokeId()) },
-            header = header,
-            cells = emptyMap(),
-            merges = emptyList(),
-        )
-        // What the new table would cover moves down below it (text flow).
-        val table = session.edit {
-            val t = replaceElements(emptySet(), listOf(draft)).single() as TableElement
-            reflow(setOf(t.id), null, t.bounds)
-            t
-        }
+        val slot = FlowSlot(ids.newStrokeId(), FlowSlot.FIRST)
+        val draft = draft(left, session.state.value.freeTop(left, left + width, maxOf(0f, y)), width, rows, columns, header).inSlot(slot)
+        // What the new table would cover moves down below it.
+        val table = session.edit { flowing(slot.flowId) { replaceElements(emptySet(), listOf(draft)).single() } } as TableElement
         open(table, CellKey(table.rows.first().rowId, table.columns.first().colId))
         return table
     }
 
-    /**
-     * Where a new block spanning [left]..[right] mm can start at or below [y]: not inside a text
-     * box, table or to-do (it goes below such a block instead), so it never covers text.
-     */
-    private fun freeTop(left: Float, right: Float, y: Float): Float {
-        val blocks = session.state.value.elements.filter { it is com.stemaker.nibsync.model.TextBox || it is TableElement || it is com.stemaker.nibsync.model.TodoItem }
-        var top = y
-        while (true) {
-            val inside = blocks.firstOrNull { b -> b.bounds.left < right && b.bounds.right > left && b.bounds.top <= top && b.bounds.bottom > top } ?: return top
-            top = inside.bounds.bottom + GAP_MM
-        }
-    }
+    private fun draft(x: Float, y: Float, width: Float, rows: Int, columns: Int, header: Boolean) = TableDraft(
+        x = x,
+        y = y,
+        columns = List(columns) { TableColumn(ids.newStrokeId(), width / columns) },
+        rows = List(rows) { TableRow(ids.newStrokeId()) },
+        header = header,
+        cells = emptyMap(),
+        merges = emptyList(),
+    )
 
-    /**
-     * Inserts a table at the cursor of the open text box [text]: the text before the cursor
-     * stays in the box, the table comes right below it, the rest of the text in a new box under
-     * the table, and what was below the box moves down; all one undo step. Opens the first cell.
-     */
+    /** Inserts a table at the cursor of the open text box [text], see [TextBoxEditing.insertBlocksAtCursor]. Opens the first cell. */
     fun insertInto(text: TextBoxEditing, rows: Int, columns: Int, header: Boolean): TableElement? {
         val e = text.editing.value ?: return null
         finish()
-        val (before, after) = e.controller.splitAtCursor()
-        text.discard()
-        val state = session.state.value
-        val old = e.boxId?.let { state.element(it) }
-        fun height(t: RichText) = measureText(t, e.widthMm)
-        var y = e.y
-        val firstBox = if (before.isBlank) null else TextBoxDraft(e.x, y, e.widthMm, height(before), before).also { y += it.heightMm + GAP_MM }
-        val tableDraft = TableDraft(
-            x = e.x,
-            y = y,
-            columns = List(columns) { TableColumn(ids.newStrokeId(), e.widthMm / columns) },
-            rows = List(rows) { TableRow(ids.newStrokeId()) },
-            header = header,
-            cells = emptyMap(),
-            merges = emptyList(),
-        )
-        y += rows * TableElement.MIN_ROW_MM
-        val lastBox = if (after.isBlank) null else TextBoxDraft(e.x, y + GAP_MM, e.widthMm, height(after), after).also { y += GAP_MM + it.heightMm }
-        val table = session.edit {
-            // First move what is below the box down to the new end, then place the parts.
-            val end = Rect(e.x, e.y, e.x + e.widthMm, y)
-            reflow(setOfNotNull(e.boxId), old?.bounds, end)
-            val added = replaceElements(listOfNotNull(e.boxId), listOfNotNull(firstBox, tableDraft, lastBox))
-            added.filterIsInstance<TableElement>().single()
-        }
+        val table = text.insertBlocksAtCursor(listOf(draft(e.x, e.y, e.widthMm, rows, columns, header))).single() as TableElement
         open(table, CellKey(table.rows.first().rowId, table.columns.first().colId))
         return table
     }
@@ -171,23 +128,18 @@ class TableEditing(private val session: DocumentSession, private val ids: IdGene
         val area = table.geometry.areaOf(e.cell) ?: return
         val text = e.controller.text
         val cell = TableCell(text, if (text.isBlank) 0f else measureText(text, TableText.contentRect(table, area).width))
-        // What is below moves with the table's height (text flow).
-        session.edit {
-            setTableCells(table.tableId, listOf(CellUpdate(e.cell, cell)))
-            val now = state.tables.firstOrNull { it.tableId == table.tableId } ?: return@edit
-            reflow(setOf(table.id), table.bounds, now.bounds)
-        }
+        // What is below the flow moves with the table's height.
+        session.edit { flowing(table.slot.flowId) { setTableCells(table.tableId, listOf(CellUpdate(e.cell, cell))) } }
     }
 
-    /** What the text flow would move, and how far, if the open cell were stored as typed now. */
+    /** What moves, and how far, if the open cell were stored as typed now. */
     fun flowPreview(): FlowPreview? {
         val e = _editing.value ?: return null
         val table = tableOf(e.tableId) ?: return null
         val area = table.geometry.areaOf(e.cell) ?: return null
         val text = e.controller.text
         val typed = table.copy(cells = table.cells + (e.cell to TableCell(text, if (text.isBlank) 0f else measureText(text, TableText.contentRect(table, area).width))))
-        val (moving, dy) = Reflow.plan(session.state.value.elements, setOf(table.id), table.bounds, typed.bounds)
-        return if (moving.isEmpty() || dy == 0f) null else FlowPreview(moving.mapTo(HashSet()) { it.id }, dy)
+        return session.state.value.flowPreview(table, table.slot.flowId, typed.bounds)
     }
 
     /** Ends editing. Returns false if nothing was being edited. */
@@ -326,11 +278,8 @@ class TableEditing(private val session: DocumentSession, private val ids: IdGene
     fun deleteTable(): TableElement? {
         val t = table() ?: return null
         _editing.value = null
-        // What was below moves up (text flow).
-        session.edit {
-            replaceElements(listOf(t.id), emptyList())
-            reflow(setOf(t.id), t.bounds, null)
-        }
+        // What was below moves up, the text around the table is joined.
+        session.edit { removeBlocks(listOf(t.id), measureText, pull = true) }
         return null
     }
 
@@ -352,12 +301,13 @@ class TableEditing(private val session: DocumentSession, private val ids: IdGene
 
     private fun replace(old: TableElement, changed: TableElement): TableElement = replaceFlowing(old, changed, remeasured(changed))
 
-    /** Replaces the table and sets [cells] in one undo step; what is below moves with its height. */
+    /** Replaces the table and sets [cells] in one undo step; what is below the flow moves with its height. */
     private fun replaceFlowing(old: TableElement, changed: TableElement, cells: List<CellUpdate>): TableElement = session.edit {
-        val table = replaceElements(listOf(old.id), listOf(changed.toDraft())).single() as TableElement
-        setTableCells(table.tableId, cells)
-        val now = state.tables.first { it.id == table.id }
-        reflow(setOf(old.id, now.id), old.bounds, now.bounds)
+        val table = flowing(old.slot.flowId) {
+            val added = replaceElements(listOf(old.id), listOf(changed.toDraft())).single() as TableElement
+            setTableCells(added.tableId, cells)
+            added
+        }
         state.tables.first { it.id == table.id }
     }
 
@@ -409,12 +359,9 @@ class TableEditing(private val session: DocumentSession, private val ids: IdGene
         return g.merged.contains(area) && area.row <= a.lastRow && a.row <= area.lastRow && area.col <= a.lastCol && a.col <= area.lastCol
     }
 
-    private fun TableElement.toDraft() = TableDraft(x, y, columns, rows, header, cells, merges, tableId)
+    private fun TableElement.toDraft() = TableDraft(x, y, columns, rows, header, cells, merges, tableId, slot)
 
     private companion object {
         const val MARGIN_MM = 5f
-
-        /** Space between a split text box and a table put between its parts (mm). */
-        const val GAP_MM = 3f
     }
 }

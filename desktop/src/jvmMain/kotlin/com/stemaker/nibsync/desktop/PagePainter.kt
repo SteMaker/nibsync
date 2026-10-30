@@ -252,6 +252,10 @@ class PagePainter(private val text: DesktopTextLayout, private val media: MediaC
             }
         }
         when (gesture) {
+            is GesturePreview.Moving -> {
+                val d = gesture.drop
+                if (d != null) drawLine(DROP, Offset(t.mapX(d.left), t.mapY(d.y)), Offset(t.mapX(d.right), t.mapY(d.y)), strokeWidth = 3f)
+            }
             is GesturePreview.ColumnBorder -> drawLine(
                 selection,
                 Offset(t.mapX(gesture.x), t.mapY(gesture.top)),
@@ -376,6 +380,7 @@ class PagePainter(private val text: DesktopTextLayout, private val media: MediaC
     companion object {
         const val HANDLE_RADIUS_PX = 9f
         private val ERASER = Color(0xff757575)
+        private val DROP = Color(0xff4f6b80)
         private val PATTERN = Color(0xffb4c6e2)
         private val PLACEHOLDER = Color(0xffeceff1)
         private val TABLE_LINE = Color(0xff8a9099)

@@ -55,17 +55,11 @@ class ReflowTest {
         val box = s.replaceElements(emptySet(), listOf(box(20f, 20f))).single() as TextBox
         val ink = s.addStroke(stroke(30f, 50f, 60f))
         val inkTop = ink.bounds.top
-        s.edit {
-            val grown = replaceElements(listOf(box.id), listOf(TextBoxDraft(20f, 20f, 80f, 25f, RichText.plain("t\nu")))).single()
-            flow(setOf(box.id, grown.id), 20f, 100f, 30f, 45f)
-        }
+        s.edit { flowing(box.slot.flowId) { replaceElements(listOf(box.id), listOf(TextBoxDraft(20f, 20f, 80f, 25f, RichText.plain("t\nu"), box.slot))) } }
         assertEquals(inkTop + 15f, s.state.value.strokes.single().bounds.top, 0.05f)
         // Shrinking back pulls it up again: the gap stays.
         val grown = s.state.value.textBoxes.single()
-        s.edit {
-            val small = replaceElements(listOf(grown.id), listOf(TextBoxDraft(20f, 20f, 80f, 10f, RichText.plain("t")))).single()
-            flow(setOf(grown.id, small.id), 20f, 100f, 45f, 30f)
-        }
+        s.edit { flowing(grown.slot.flowId) { replaceElements(listOf(grown.id), listOf(TextBoxDraft(20f, 20f, 80f, 10f, RichText.plain("t"), grown.slot))) } }
         assertEquals(inkTop, s.state.value.strokes.single().bounds.top, 0.05f)
         // One undo per step: box and handwriting together.
         s.undo()

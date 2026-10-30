@@ -221,25 +221,38 @@ than its rows stretches the last one. Content of a joined area is its top left c
 
 ## Text flow
 
-The page stays freely laid out, but blocks push what is below them: when a text box, table or
-typed to-do gets taller or shorter in place, everything below it in its column moves by the
-same amount (`Reflow`, core/document/select): elements whose top is at or below the block's old
-bottom and that overlap it horizontally, cascading over what moves (a wide picture takes what is
-under it along). Handwriting in the column moves too; beside it, e.g. in the margin, it stays.
-Shrinking pulls content up, so gaps stay as they were.
+Text, tables, pictures, file links and to-dos are **blocks** of a `Flow`: what the user sees as
+one box is an ordered stack of blocks at one position. A block has a `FlowSlot` (flow id and a
+`FractionalIndex` sort key, so inserting touches no other block). Its position is not stored but
+derived: `DocumentState` stacks the blocks of a flow, `Flow.GAP_MM` apart, from the flow's position.
+So anything that gets taller or shorter moves the rest of its flow without a single op, and
+`state.tables`, `todos`, `files` and `textBoxes` still give absolute positions to everything that
+draws or hits them.
 
-- A new block only pushes what it would cover, down to `Reflow.GAP_MM` below it; a new table
-  that would start inside a text box, table or to-do goes below it instead (`freeTop`). Deleting
-  a block through its Delete button pulls what was below up; lasso and erasers move nothing.
-- The moves are ordinary remove + add (like a lasso move, ids of tasks, tables and anchors
-  kept), done in the same `DocumentSession.edit { }` transaction as the change, so one undo
-  step reverts both. Moving handwriting writes its strokes anew, so typing above a lot of it
-  grows the op log by a copy per height change (saves are at most every 1.5 s).
-- While typing, the editors' `flowPreview()` tells the renderers what will move and how far,
-  so the content below follows the growing editor before the save.
-- Inserting a table while a text box is open (tool bar: "Insert table here") splits the box at
-  the cursor (`TextEditController.splitAtCursor`): text before, the table, the rest of the text
-  in a new box below, and what was below the box moves down; one undo step (`insertInto`).
+- A flow's position is a register (`SetFlowPosition`, type 11, highest stamp wins), else the stored
+  position of its first block. Moving a box is one small op, keeps all ids, and two devices moving it
+  at once cannot duplicate it. Blocks are stored with the position of their flow; `translated` on a
+  draft in an existing flow has no effect, moves go through `Transaction.move` or `FlowEditing`.
+- Blocks written before flows have no slot: each is the only block of a flow named after its id.
+- `Reflow` (core/document/select) works between flows: when a flow's bottom moves, what is below it in
+  its column moves by the same amount, handwriting too, a flow as a whole; beside it, e.g. in the
+  margin, things stay. Shrinking pulls up, so gaps stay. A new flow only pushes what it would cover, down
+  to `Reflow.GAP_MM` below it. `Transaction.flowing(flowId) { ... }` wraps a change of a flow with this.
+  Lasso and eraser deletions pull nothing up.
+- `FlowEditing` (shared/text) has the rules: a block dropped on text goes in at the nearest paragraph
+  boundary, splitting the text box there (`dropAt`, on a block: before or after it by the nearer
+  half); dropped elsewhere it is a box of its own. While dragging, the line of the `FlowDrop` shows the
+  place. A block taken out or deleted joins the text around it again (`joinText`). Selecting text
+  selects its whole flow (`Lasso.select`), a table, picture, file or to-do just itself. Pictures
+  wider than the box are scaled to it. Pasted blocks of one flow stay together (`place`).
+- At the cursor of an open text box (`TextBoxEditing.insertBlocksAtCursor`, tool bar "Insert ... here",
+  also the picture dialog): text before the cursor, the blocks, the rest in a new text block.
+- A text tool tap up to 12 mm below a flow that does not end in text continues it (`continuation`).
+- The handle of an open text box or to-do moves its flow, not into other text: it lands below it (`dragFlow`).
+- While typing, the editors' `flowPreview()` says what will move and how far (later blocks and what
+  is below the flow), so the content follows the growing editor before the save.
+- Editing stays one block at a time: the cursor does not walk over a table; there is no wrapping beside
+  a picture. Moving handwriting still writes its strokes anew; flows do not.
 
 ## Anchors and links to notes
 

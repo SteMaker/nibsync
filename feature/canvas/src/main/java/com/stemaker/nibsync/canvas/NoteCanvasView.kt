@@ -88,6 +88,10 @@ class NoteCanvasView(context: Context) : FrameLayout(context) {
     /** The selection was dragged by (dx, dy) mm; returns what was stored, or null. */
     var onSelectionMoved: (Float, Float) -> CommittedEdit? = { _, _ -> null }
 
+    /** Where blocks of the selection would land in text if moved so far (mm); drawn while dragging. */
+    var dropFor: (Float, Float) -> com.stemaker.nibsync.text.FlowDrop? = { _, _ -> null }
+    private var selectionDrop: com.stemaker.nibsync.text.FlowDrop? = null
+
     /** Starting a new lasso drops the current selection. */
     var onSelectionCleared: () -> Unit = {}
 
@@ -314,6 +318,10 @@ class NoteCanvasView(context: Context) : FrameLayout(context) {
     private var resizeAnchorDist = 0f
     private var resizeFactor = 1f
     private val handlePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = 0xff4f6b80.toInt() }
+    private val dropPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = 0xff4f6b80.toInt()
+        strokeWidth = 5f
+    }
 
     // A tap on a to-do's check circle.
     private var checkPointerId = NO_POINTER
@@ -573,6 +581,9 @@ class NoteCanvasView(context: Context) : FrameLayout(context) {
             if (resizable() != null && !moving) {
                 canvas.drawCircle(transform.mapX(b.right), transform.mapY(b.bottom), handleRadiusPx(), handlePaint)
             }
+        }
+        selectionDrop?.let { d ->
+            canvas.drawLine(transform.mapX(d.left), transform.mapY(d.y), transform.mapX(d.right), transform.mapY(d.y), dropPaint)
         }
         lassoPath?.let { path ->
             lassoDrawPath.reset()
@@ -1079,6 +1090,7 @@ class NoteCanvasView(context: Context) : FrameLayout(context) {
                 if (index >= 0) updateMove(event, index)
             }
             movePointerId = NO_POINTER
+            selectionDrop = null
             val dx = moveDx
             val dy = moveDy
             moveDx = 0f
@@ -1103,6 +1115,7 @@ class NoteCanvasView(context: Context) : FrameLayout(context) {
         val toDoc = viewport.viewToDocument
         moveDx = toDoc.mapX(event.getX(pointerIndex)) - moveStartX
         moveDy = toDoc.mapY(event.getY(pointerIndex)) - moveStartY
+        selectionDrop = dropFor(moveDx, moveDy)
         invalidate()
     }
 

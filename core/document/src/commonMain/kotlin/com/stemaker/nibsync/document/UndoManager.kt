@@ -22,6 +22,9 @@ sealed interface Edit {
     /** Cells of the table [tableId] got [cells]; they held [was] before. */
     data class TableCells(val tableId: StrokeId, val cells: List<CellUpdate>, val was: List<CellUpdate>) : Edit
 
+    /** The flow [flowId] moved to ([x], [y]) mm; it was at ([wasX], [wasY]) before. */
+    data class FlowPosition(val flowId: StrokeId, val x: Float, val y: Float, val wasX: Float, val wasY: Float) : Edit
+
     /** Several edits made as one step (e.g. joining table cells: structure and content). */
     data class Steps(val edits: List<Edit>) : Edit
 }
@@ -84,6 +87,7 @@ class UndoManager(private val ids: IdGenerator, private val maxDepth: Int = 200)
         is Edit.Replaced -> Edit.Replaced(removed = edit.added.map(::current), added = restore(edit.removed))
         is Edit.TodoDone -> Edit.TodoDone(edit.taskId, done = edit.was, was = edit.done)
         is Edit.TableCells -> Edit.TableCells(edit.tableId, cells = edit.was, was = edit.cells)
+        is Edit.FlowPosition -> Edit.FlowPosition(edit.flowId, x = edit.wasX, y = edit.wasY, wasX = edit.x, wasY = edit.y)
         is Edit.Steps -> Edit.Steps(edit.edits.asReversed().map(::invert))
     }
 

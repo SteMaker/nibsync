@@ -10,14 +10,15 @@ import com.stemaker.nibsync.model.geometry.Rect
  */
 data class TextBox(
     override val id: StrokeId,
-    val x: Float,
-    val y: Float,
-    val widthMm: Float,
-    val heightMm: Float,
+    override val x: Float,
+    override val y: Float,
+    override val widthMm: Float,
+    override val heightMm: Float,
     val text: RichText,
     override val createdAtEpochMs: Long,
     override val author: DeviceId,
-) : PageElement {
+    override val slot: FlowSlot = FlowSlot(id, FlowSlot.FIRST),
+) : FlowBlock {
     init {
         require(widthMm > 0f) { "widthMm must be positive" }
         require(heightMm >= 0f) { "heightMm must not be negative" }
@@ -26,6 +27,8 @@ data class TextBox(
     override val layer: Layer get() = Layer.TEXT
 
     override val bounds: Rect get() = Rect(x, y, x + widthMm, y + heightMm)
+
+    override fun placedAt(x: Float, y: Float): TextBox = copy(x = x, y = y)
 
     companion object {
         /** Boxes are never narrower than this. */
@@ -59,11 +62,13 @@ data class TextBox(
 }
 
 data class TextBoxDraft(
-    val x: Float,
-    val y: Float,
-    val widthMm: Float,
+    override val x: Float,
+    override val y: Float,
+    override val widthMm: Float,
     val heightMm: Float,
     val text: RichText,
-) : ElementDraft {
+    override val slot: FlowSlot? = null,
+) : BlockDraft {
     override fun translated(dx: Float, dy: Float): TextBoxDraft = copy(x = x + dx, y = y + dy)
+    override fun inSlot(slot: FlowSlot?): TextBoxDraft = copy(slot = slot)
 }

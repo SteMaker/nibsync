@@ -40,6 +40,7 @@ internal data class OpRecord(
     @SerialName("n") val links: List<LinkRecord> = emptyList(),
     @SerialName("tb") val tables: List<TableRecord> = emptyList(),
     @SerialName("tc") val tableCells: TableCellsRecord? = null,
+    @SerialName("fp") val flowPosition: FlowPositionRecord? = null,
 ) {
     companion object {
         const val TYPE_ADD = 1
@@ -52,12 +53,15 @@ internal data class OpRecord(
         const val TYPE_ADD_LINKS = 8
         const val TYPE_ADD_TABLES = 9
         const val TYPE_TABLE_CELLS = 10
+        const val TYPE_FLOW_POSITION = 11
     }
 }
 
 /**
  * A picture ([kind] "image") or file link ("link"); position and size in position steps,
- * [sha256] and [mimeType] name the asset file. Unknown kinds are skipped.
+ * [sha256] and [mimeType] name the asset file. Unknown kinds are skipped. Blocks ([FileElementRecord],
+ * [TextBoxRecord], [TodoRecord], [TableRecord]): without [flow] a block is the only one of a flow
+ * named by its id, and [order] left out is the order of such a block.
  */
 @Serializable
 internal data class FileElementRecord(
@@ -72,6 +76,8 @@ internal data class FileElementRecord(
     @SerialName("s") val sha256: String,
     @SerialName("m") val mimeType: String,
     @SerialName("n") val name: String? = null,
+    @SerialName("fl") val flow: String? = null,
+    @SerialName("fo") val order: String? = null,
 )
 
 /**
@@ -104,6 +110,8 @@ internal data class TextBoxRecord(
     @SerialName("ts") val createdAtEpochMs: Long,
     @SerialName("a") val author: String,
     @SerialName("p") val paragraphs: List<ParagraphRecord>,
+    @SerialName("fl") val flow: String? = null,
+    @SerialName("fo") val order: String? = null,
 )
 
 /**
@@ -122,6 +130,8 @@ internal data class TodoRecord(
     @SerialName("a") val author: String,
     @SerialName("p") val paragraphs: List<ParagraphRecord>? = null,
     @SerialName("s") val strokes: List<StrokeRecord>? = null,
+    @SerialName("fl") val flow: String? = null,
+    @SerialName("fo") val order: String? = null,
 )
 
 /**
@@ -141,6 +151,8 @@ internal data class TableRecord(
     @SerialName("mg") val merges: List<MergeRecord> = emptyList(),
     @SerialName("ts") val createdAtEpochMs: Long,
     @SerialName("a") val author: String,
+    @SerialName("fl") val flow: String? = null,
+    @SerialName("fo") val order: String? = null,
 )
 
 @Serializable
@@ -172,6 +184,14 @@ internal data class MergeRecord(
 internal data class TableCellsRecord(
     @SerialName("k") val table: String,
     @SerialName("cl") val cells: List<CellRecord>,
+)
+
+/** The flow [flow] moved to ([x], [y]), in position steps. */
+@Serializable
+internal data class FlowPositionRecord(
+    @SerialName("k") val flow: String,
+    @SerialName("x") val x: Int,
+    @SerialName("y") val y: Int,
 )
 
 /** Done state of the to-do task [task]. */

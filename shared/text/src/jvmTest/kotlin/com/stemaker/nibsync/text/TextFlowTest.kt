@@ -6,8 +6,11 @@ import com.stemaker.nibsync.document.DocumentState
 import com.stemaker.nibsync.model.DeviceId
 import com.stemaker.nibsync.model.DocumentId
 import com.stemaker.nibsync.model.DocumentMeta
+import com.stemaker.nibsync.model.FlowBlock
 import com.stemaker.nibsync.model.MarkStyle
 import com.stemaker.nibsync.model.RichText
+import com.stemaker.nibsync.model.TableElement
+import com.stemaker.nibsync.model.TextBox
 import com.stemaker.nibsync.model.TextMark
 import com.stemaker.nibsync.model.TextParagraph
 import androidx.compose.ui.text.TextRange
@@ -110,5 +113,157 @@ class TextFlowTest {
         s.undo()
         assertThat(s.state.value.textBoxes.single().text.plainText).isEqualTo("vorher fett\nnachher")
         assertThat(s.state.value.tables.single().y).isWithin(0.05f).of(farTable.y)
+    }
+}
+
+/** Blocks in the text: where they land when dragged, and what happens to the text around them. */
+class FlowEditingTest {
+    private val lines: (RichText, Float) -> Float = { text, _ -> text.paragraphs.size * 6f }
+
+    private class Setup(val s: DocumentSession, val text: TextBoxEditing, val tables: TableEditing, val flows: FlowEditing)
+
+    private fun setup(): Setup {
+        val s = DocumentSession(DocumentState.empty(DocumentMeta(DocumentId("d"), "t", createdAtEpochMs = 0)), DeviceId("a"), { }, CoroutineScope(Dispatchers.Unconfined), clock = { 0L })
+        return Setup(s, TextBoxEditing(s).also { it.measureText = lines }, TableEditing(s).also { it.measureText = lines }, FlowEditing(s).also { it.measureText = lines })
+    }
+
+    private fun Setup.box(y: Float, content: String): TextBox {
+        text.startNew(20f, y, 120f)
+        text.editing.value!!.controller.setContent(RichText.plain(content))
+        text.finish()
+        return s.state.value.textBoxes.first { it.text.plainText == content }
+    }
+
+    private fun Setup.table(y: Float): TableElement {
+        val t = tables.insert(20f, y, rows = 2, columns = 2, header = false, pageWidthMm = 210f)
+        tables.finish()
+        return s.state.value.tables.first { it.tableId == t.tableId }
+    }
+
+    private fun Setup.plain() = s.state.value.textBoxes.sortedBy { it.y }.map { it.text.plainText }
+
+    @Test
+    fun aTableDraggedOntoTextLandsBetweenItsParagraphs() {
+        val f = setup()
+        val box = f.box(20f, "eins\nzwei\ndrei\nvier")
+        val table = f.table(100f)
+        // Its top comes down between "zwei" and "drei": 12 mm into the box.
+        val dy = box.y + 13f - table.y
+        val drop = f.flows.dropFor(setOf(table.id), 0f, dy)!!
+        assertThat(drop.y).isWithin(0.01f).of(box.y + 12f)
+        val moved = f.flows.moveSelection(setOf(table.id), 0f, dy)
+        assertThat(f.plain()).containsExactly("eins\nzwei", "drei\nvier").inOrder()
+        val flow = f.s.state.value.flow(box.slot.flowId)!!
+        assertThat(flow.blocks.map { it::class }).containsExactly(TextBox::class, TableElement::class, TextBox::class).inOrder()
+        assertThat(flow.blocks[1].id).isEqualTo(moved.single())
+        assertThat(f.s.state.value.tables.single().tableId).isEqualTo(table.tableId)
+        // One undo: the text whole again and the table where it was.
+        f.s.undo()
+        assertThat(f.plain()).containsExactly("eins\nzwei\ndrei\nvier")
+        assertThat(f.s.state.value.tables.single().y).isWithin(0.05f).of(table.y)
+    }
+
+    @Test
+    fun typingAboveATableInTheTextMovesItAndWhatIsBelow() {
+        val f = setup()
+        val box = f.box(20f, "eins\nzwei")
+        val table = f.table(100f)
+        val far = f.box(200f, "weit unten")
+        f.flows.moveSelection(setOf(table.id), 0f, box.bounds.bottom + 1f - table.y)
+        val before = f.s.state.value.tables.single().y
+        val first = f.s.state.value.textBoxes.minBy { it.y }
+        f.text.open(first)
+        f.text.editing.value!!.controller.setContent(RichText.plain("eins\nzwei\ndrei"))
+        assertThat(f.text.flowPreview()!!.dy).isWithin(0.01f).of(6f)
+        f.text.finish()
+        assertThat(f.s.state.value.tables.single().y).isWithin(0.05f).of(before + 6f)
+        assertThat(f.s.state.value.textBoxes.first { it.text.plainText == "weit unten" }.y).isGreaterThan(far.y - 0.1f)
+    }
+
+    @Test
+    fun aTableDraggedOutJoinsTheTextAgain() {
+        val f = setup()
+        val box = f.box(20f, "eins\nzwei")
+        val table = f.table(100f)
+        val dy = box.y + 7f - table.y
+        val inText = f.flows.moveSelection(setOf(table.id), 0f, dy)
+        assertThat(f.plain()).containsExactly("eins", "zwei").inOrder()
+        f.flows.moveSelection(inText, 0f, 150f)
+        assertThat(f.plain()).containsExactly("eins\nzwei")
+        assertThat(f.s.state.value.flows).hasSize(2)
+        // Deleting between two text blocks joins them as well.
+        val again = f.s.state.value.tables.single()
+        val second = f.flows.moveSelection(setOf(again.id), 0f, box.y + 7f - again.y)
+        f.flows.remove(second)
+        assertThat(f.plain()).containsExactly("eins\nzwei")
+        assertThat(f.s.state.value.tables).isEmpty()
+    }
+
+    @Test
+    fun aBlockOnFreeSpaceIsABoxOfItsOwnAndPushesHandwriting() {
+        val f = setup()
+        val ink = f.s.addStroke(
+            com.stemaker.nibsync.model.StrokeDraft(
+                com.stemaker.nibsync.model.BrushSpec(com.stemaker.nibsync.model.BrushFamily.BALLPOINT, -16777216, 0.5f),
+                com.stemaker.nibsync.model.InputTool.STYLUS,
+                listOf(com.stemaker.nibsync.model.StrokePoint(30f, 105f, 0), com.stemaker.nibsync.model.StrokePoint(60f, 105f, 10)),
+            ),
+        )
+        val table = f.table(20f)
+        val moved = f.flows.moveSelection(setOf(table.id), 0f, 80f).single()
+        val placed = f.s.state.value.element(moved)!!
+        assertThat(placed.bounds.top).isWithin(0.05f).of(table.y + 80f)
+        assertThat(f.s.state.value.strokes.single().bounds.top).isGreaterThan(placed.bounds.bottom)
+        assertThat(ink.bounds.top).isLessThan(placed.bounds.bottom)
+    }
+
+    @Test
+    fun aWholeBoxMovesAsOneAndGoesIntoOtherText() {
+        val f = setup()
+        val box = f.box(20f, "eins\nzwei")
+        val table = f.table(100f)
+        f.flows.moveSelection(setOf(table.id), 0f, box.y + 7f - table.y)
+        val other = f.box(150f, "anderer\nText")
+        val blocks = f.s.state.value.flow(box.slot.flowId)!!.blocks.mapTo(HashSet()) { it.id }
+        f.flows.moveSelection(blocks, 30f, 40f)
+        assertThat(f.s.state.value.flow(box.slot.flowId)!!.x).isWithin(0.05f).of(50f)
+        assertThat(f.s.state.value.flow(box.slot.flowId)!!.blocks.map { it.id }.toSet()).isEqualTo(blocks)
+        // Its top lands between the paragraphs of the other box: it goes in there.
+        val moved = f.s.state.value.flow(box.slot.flowId)!!
+        val into = f.flows.moveSelection(blocks, other.x + 10f - moved.x, other.y + 7f - moved.y)
+        // The text around the table joined the text it landed next to, only the table is left selected.
+        assertThat(into).containsExactly(f.s.state.value.tables.single().id)
+        assertThat(f.s.state.value.flows).hasSize(1)
+        assertThat(f.plain()).containsExactly("anderer\neins", "zwei\nText").inOrder()
+    }
+
+    @Test
+    fun textTappedBelowATableGoesOnInItsFlow() {
+        val f = setup()
+        val table = f.table(20f)
+        val next = f.flows.continuation(30f, table.bounds.bottom + 5f)!!
+        assertThat(f.flows.continuation(30f, table.bounds.bottom + 20f)).isNull()
+        f.text.startNew(next.x, next.y, next.widthMm, next.slot)
+        f.text.editing.value!!.controller.setContent(RichText.plain("danach"))
+        f.text.finish()
+        val flow = f.s.state.value.flow(table.slot.flowId)!!
+        assertThat(flow.blocks.map { it::class }).containsExactly(TableElement::class, TextBox::class).inOrder()
+    }
+
+    @Test
+    fun aPictureAtTheCursorFitsTheBoxAndPastedBlocksStayTogether() {
+        val f = setup()
+        f.text.startNew(20f, 20f, 100f)
+        f.text.editing.value!!.controller.setContent(RichText.plain("eins"))
+        val picture = com.stemaker.nibsync.model.ImageDraft(0f, 0f, 200f, 100f, com.stemaker.nibsync.model.Asset("a".repeat(64), com.stemaker.nibsync.model.Asset.PNG))
+        val block = f.text.insertBlocksAtCursor(listOf(picture)).single()
+        assertThat(block.widthMm).isWithin(0.05f).of(100f)
+        assertThat(block.heightMm).isWithin(0.05f).of(50f)
+        assertThat(f.text.editing.value).isNull()
+        val selection = f.s.state.value.elements.filter { it is FlowBlock }
+        val clip = com.stemaker.nibsync.document.select.ClipContent.of(selection)!!
+        f.flows.place(clip.placedAt(100f, 200f))
+        assertThat(f.s.state.value.flows).hasSize(2)
+        assertThat(f.s.state.value.flows.map { it.blocks.size }).containsExactly(2, 2)
     }
 }

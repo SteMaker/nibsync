@@ -9,8 +9,10 @@ import com.stemaker.nibsync.document.DocumentState
 import com.stemaker.nibsync.document.erase.EraseResult
 import com.stemaker.nibsync.document.erase.EraserMode
 import com.stemaker.nibsync.document.select.ClipContent
+import com.stemaker.nibsync.model.BlockDraft
+import com.stemaker.nibsync.text.FlowDrop
+import com.stemaker.nibsync.text.FlowEditing
 import com.stemaker.nibsync.document.select.Lasso
-import com.stemaker.nibsync.document.select.translated
 import com.stemaker.nibsync.model.Anchor
 import com.stemaker.nibsync.model.AnchorDraft
 import com.stemaker.nibsync.model.Asset
@@ -101,7 +103,7 @@ class CanvasViewModel(
     fun deleteSelection() {
         val ids = _selection.value
         if (ids.isEmpty()) return
-        session.removeStrokes(ids)
+        flows.remove(ids, pull = false)
         clearSelection()
     }
 
@@ -123,7 +125,7 @@ class CanvasViewModel(
         val here = session.state.value.meta.id
         val source = clipboard.source
         if (source != null && source != here && drafts.assets().isNotEmpty()) copyAssets(source, here, drafts.assets())
-        val added = session.replaceElements(emptySet(), drafts)
+        val added = flows.place(drafts)
         if (_tools.value.tool != Tool.LASSO) lassoByTap = false
         _tools.update { it.withLasso() }
         _selection.value = added.mapTo(LinkedHashSet()) { it.id }
@@ -136,8 +138,15 @@ class CanvasViewModel(
      */
     fun insert(drafts: List<ElementDraft>): List<PageElement> {
         if (drafts.isEmpty()) return emptyList()
-        finishText()
-        val added = session.replaceElements(emptySet(), drafts)
+        val blocks = drafts.filterIsInstance<BlockDraft>()
+        // Pictures and files go in at the cursor of an open text box.
+        val added = if (text.editing.value != null && blocks.size == drafts.size) {
+            tables.finish()
+            text.insertBlocksAtCursor(blocks)
+        } else {
+            finishText()
+            flows.place(drafts)
+        }
         selectTemporarily(added.mapTo(LinkedHashSet()) { it.id })
         return added
     }
@@ -169,20 +178,22 @@ class CanvasViewModel(
             is ImageElement -> ImageDraft(element.x, element.y, w, h, element.asset)
             is FileLink -> FileLinkDraft(element.x, element.y, w, h, element.asset, element.fileName)
         }
-        val added = session.replaceElements(listOf(element.id), listOf(draft))
-        _selection.value = added.mapTo(LinkedHashSet()) { it.id }
-        return CommittedEdit(added, setOf(element.id))
+        val added = flows.resize(element, draft)
+        _selection.value = setOf(added.id)
+        return CommittedEdit(listOf(added), setOf(element.id))
     }
 
     /** Moves the selected strokes by ([dx], [dy]) mm in one undo step; the moved copies stay selected. */
     fun moveSelection(dx: Float, dy: Float): CommittedEdit? {
-        val doc = session.state.value
-        val selected = doc.elements.filter { it.id in _selection.value }
-        if (selected.isEmpty() || (dx == 0f && dy == 0f)) return null
-        val added = session.replaceElements(selected.map { it.id }, selected.map { it.translated(dx, dy) })
-        _selection.value = added.mapTo(LinkedHashSet()) { it.id }
-        return CommittedEdit(added, selected.mapTo(HashSet()) { it.id })
+        val before = _selection.value
+        if (before.isEmpty() || (dx == 0f && dy == 0f)) return null
+        val after = flows.moveSelection(before, dx, dy)
+        _selection.value = after
+        return CommittedEdit(session.state.value.elements.filter { it.id in after }, before - after)
     }
+
+    /** Where blocks of the selection would land in text if moved by ([dx], [dy]) mm. */
+    fun dropFor(dx: Float, dy: Float): FlowDrop? = flows.dropFor(_selection.value, dx, dy)
 
     private fun pruneSelection() {
         val doc = session.state.value
@@ -258,6 +269,9 @@ class CanvasViewModel(
     /** Tables: the cell being typed, rows, columns and joined cells. */
     val tables = TableEditing(session)
 
+    /** Blocks in the text: dropping, placing, removing. */
+    private val flows = FlowEditing(session)
+
     /** The table cell being edited, or null. */
     val tableEditing: StateFlow<TableEdit?> = tables.editing
 
@@ -275,6 +289,7 @@ class CanvasViewModel(
             text.measureText = value
             todo.measureText = value
             tables.measureText = value
+            flows.measureText = value
         }
 
     /** The to-do tool; new to-dos are handwritten with [ink] (chosen with the pen), else typed. */
@@ -426,8 +441,13 @@ class CanvasViewModel(
                     // A new box of the default size, its first line at the tap.
                     val pageWidth = session.state.value.meta.format.widthMm
                     if (x in 0f..pageWidth && y >= 0f) {
-                        val (left, top, width) = TextBox.placeNew(x, y, pageWidth)
-                        text.startNew(left, top, width)
+                        val next = flows.continuation(x, y)
+                        if (next != null) {
+                            text.startNew(next.x, next.y, next.widthMm, next.slot)
+                        } else {
+                            val (left, top, width) = TextBox.placeNew(x, y, pageWidth)
+                            text.startNew(left, top, width)
+                        }
                     }
                 } else {
                     leaveTemporaryMode()

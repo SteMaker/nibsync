@@ -27,11 +27,7 @@ data class Asset(val sha256: String, val mimeType: String) {
 }
 
 /** A page element showing a stored file: a picture or a link to open the file. */
-sealed interface FileElement : PageElement {
-    val x: Float
-    val y: Float
-    val widthMm: Float
-    val heightMm: Float
+sealed interface FileElement : FlowBlock {
     val asset: Asset
 
     override val bounds: Rect get() = Rect(x, y, x + widthMm, y + heightMm)
@@ -47,12 +43,15 @@ data class ImageElement(
     override val asset: Asset,
     override val createdAtEpochMs: Long,
     override val author: DeviceId,
+    override val slot: FlowSlot = FlowSlot(id, FlowSlot.FIRST),
 ) : FileElement {
     init {
         require(widthMm > 0f && heightMm > 0f) { "An image needs a positive size" }
     }
 
     override val layer: Layer get() = Layer.IMAGE
+
+    override fun placedAt(x: Float, y: Float): ImageElement = copy(x = x, y = y)
 }
 
 /** A file of any type (e.g. a PDF) shown as a labelled link; tapping it opens the file in another app. */
@@ -66,12 +65,15 @@ data class FileLink(
     val fileName: String,
     override val createdAtEpochMs: Long,
     override val author: DeviceId,
+    override val slot: FlowSlot = FlowSlot(id, FlowSlot.FIRST),
 ) : FileElement {
     init {
         require(widthMm > 0f && heightMm > 0f) { "A link needs a positive size" }
     }
 
     override val layer: Layer get() = Layer.TEXT
+
+    override fun placedAt(x: Float, y: Float): FileLink = copy(x = x, y = y)
 
     /** Short type label on the link: "PDF", the file's extension (up to 4 letters) or "FILE". */
     val badge: String get() = badgeFor(asset.mimeType, fileName)
@@ -88,19 +90,29 @@ data class FileLink(
     }
 }
 
-data class ImageDraft(val x: Float, val y: Float, val widthMm: Float, val heightMm: Float, val asset: Asset) : ElementDraft {
+data class ImageDraft(
+    override val x: Float,
+    override val y: Float,
+    override val widthMm: Float,
+    val heightMm: Float,
+    val asset: Asset,
+    override val slot: FlowSlot? = null,
+) : BlockDraft {
     override fun translated(dx: Float, dy: Float): ImageDraft = copy(x = x + dx, y = y + dy)
+    override fun inSlot(slot: FlowSlot?): ImageDraft = copy(slot = slot)
 }
 
 data class FileLinkDraft(
-    val x: Float,
-    val y: Float,
-    val widthMm: Float,
+    override val x: Float,
+    override val y: Float,
+    override val widthMm: Float,
     val heightMm: Float,
     val asset: Asset,
     val fileName: String,
-) : ElementDraft {
+    override val slot: FlowSlot? = null,
+) : BlockDraft {
     override fun translated(dx: Float, dy: Float): FileLinkDraft = copy(x = x + dx, y = y + dy)
+    override fun inSlot(slot: FlowSlot?): FileLinkDraft = copy(slot = slot)
 }
 
 /** Assets the drafts refer to (they must exist in a document before the drafts are added there). */

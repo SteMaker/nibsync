@@ -2,11 +2,14 @@ package com.stemaker.nibsync.document
 
 import com.stemaker.nibsync.document.select.Reflow
 import com.stemaker.nibsync.model.BackgroundSpec
+import com.stemaker.nibsync.model.BlockDraft
 import com.stemaker.nibsync.model.DeviceId
 import com.stemaker.nibsync.model.ElementDraft
 import com.stemaker.nibsync.model.FileElement
 import com.stemaker.nibsync.model.FileLink
 import com.stemaker.nibsync.model.FileLinkDraft
+import com.stemaker.nibsync.model.FlowBlock
+import com.stemaker.nibsync.model.FlowSlot
 import com.stemaker.nibsync.model.ImageDraft
 import com.stemaker.nibsync.model.ImageElement
 import com.stemaker.nibsync.model.IdGenerator
@@ -28,7 +31,6 @@ import com.stemaker.nibsync.model.NoteLinkDraft
 import com.stemaker.nibsync.model.TableDraft
 import com.stemaker.nibsync.model.TableElement
 import com.stemaker.nibsync.model.toDraft
-import com.stemaker.nibsync.model.geometry.Rect
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.channels.Channel
@@ -96,67 +98,13 @@ class DocumentSession(
 
     private fun newElement(draft: ElementDraft): PageElement = when (draft) {
         is StrokeDraft -> newStroke(draft)
-        is TextBoxDraft -> TextBox(
-            id = ids.newStrokeId(),
-            x = Quantization.quantizePosition(draft.x),
-            y = Quantization.quantizePosition(draft.y),
-            widthMm = Quantization.quantizePosition(draft.widthMm),
-            heightMm = Quantization.quantizePosition(draft.heightMm),
-            text = draft.text,
-            createdAtEpochMs = clock(),
-            author = device,
-        )
-        is ImageDraft -> ImageElement(
-            id = ids.newStrokeId(),
-            x = Quantization.quantizePosition(draft.x),
-            y = Quantization.quantizePosition(draft.y),
-            widthMm = Quantization.quantizePosition(draft.widthMm),
-            heightMm = Quantization.quantizePosition(draft.heightMm),
-            asset = draft.asset,
-            createdAtEpochMs = clock(),
-            author = device,
-        )
-        is FileLinkDraft -> FileLink(
-            id = ids.newStrokeId(),
-            x = Quantization.quantizePosition(draft.x),
-            y = Quantization.quantizePosition(draft.y),
-            widthMm = Quantization.quantizePosition(draft.widthMm),
-            heightMm = Quantization.quantizePosition(draft.heightMm),
-            asset = draft.asset,
-            fileName = draft.fileName,
-            createdAtEpochMs = clock(),
-            author = device,
-        )
-        is TodoDraft -> TodoItem(
-            id = ids.newStrokeId(),
-            taskId = draft.taskId ?: ids.newStrokeId(),
-            x = Quantization.quantizePosition(draft.x),
-            y = Quantization.quantizePosition(draft.y),
-            widthMm = Quantization.quantizePosition(draft.widthMm),
-            heightMm = Quantization.quantizePosition(draft.heightMm),
-            content = draft.content,
-            createdAtEpochMs = clock(),
-            author = device,
-        )
+        is BlockDraft -> newBlock(draft)
         is AnchorDraft -> Anchor(
             id = ids.newStrokeId(),
             anchorId = draft.anchorId ?: ids.newStrokeId(),
             x = Quantization.quantizePosition(draft.x),
             y = Quantization.quantizePosition(draft.y),
             name = draft.name,
-            createdAtEpochMs = clock(),
-            author = device,
-        )
-        is TableDraft -> TableElement(
-            id = ids.newStrokeId(),
-            tableId = draft.tableId ?: ids.newStrokeId(),
-            x = Quantization.quantizePosition(draft.x),
-            y = Quantization.quantizePosition(draft.y),
-            columns = draft.columns.map { it.copy(widthMm = Quantization.quantizePosition(it.widthMm)) },
-            rows = draft.rows,
-            header = draft.header,
-            cells = draft.cells.mapValues { (_, c) -> c.copy(heightMm = Quantization.quantizePosition(c.heightMm)) },
-            merges = draft.merges,
             createdAtEpochMs = clock(),
             author = device,
         )
@@ -171,6 +119,80 @@ class DocumentSession(
             createdAtEpochMs = clock(),
             author = device,
         )
+    }
+
+    /**
+     * A block in the draft's slot, or the only one of a new flow. It is stored with the position of
+     * its flow: its own one is derived, but it is what a flow without a position register starts at.
+     */
+    private fun newBlock(draft: BlockDraft): FlowBlock {
+        val id = ids.newStrokeId()
+        val slot = draft.slot ?: FlowSlot(id, FlowSlot.FIRST)
+        val flow = _state.value.flow(slot.flowId)
+        val x = Quantization.quantizePosition(flow?.x ?: draft.x)
+        val y = Quantization.quantizePosition(flow?.y ?: draft.y)
+        return when (draft) {
+            is TextBoxDraft -> TextBox(
+                id = id,
+                x = x,
+                y = y,
+                widthMm = Quantization.quantizePosition(draft.widthMm),
+                heightMm = Quantization.quantizePosition(draft.heightMm),
+                text = draft.text,
+                createdAtEpochMs = clock(),
+                author = device,
+                slot = slot,
+            )
+            is ImageDraft -> ImageElement(
+                id = id,
+                x = x,
+                y = y,
+                widthMm = Quantization.quantizePosition(draft.widthMm),
+                heightMm = Quantization.quantizePosition(draft.heightMm),
+                asset = draft.asset,
+                createdAtEpochMs = clock(),
+                author = device,
+                slot = slot,
+            )
+            is FileLinkDraft -> FileLink(
+                id = id,
+                x = x,
+                y = y,
+                widthMm = Quantization.quantizePosition(draft.widthMm),
+                heightMm = Quantization.quantizePosition(draft.heightMm),
+                asset = draft.asset,
+                fileName = draft.fileName,
+                createdAtEpochMs = clock(),
+                author = device,
+                slot = slot,
+            )
+            is TodoDraft -> TodoItem(
+                id = id,
+                taskId = draft.taskId ?: ids.newStrokeId(),
+                x = x,
+                y = y,
+                widthMm = Quantization.quantizePosition(draft.widthMm),
+                heightMm = Quantization.quantizePosition(draft.heightMm),
+                content = draft.content,
+                createdAtEpochMs = clock(),
+                author = device,
+                slot = slot,
+            )
+            is TableDraft -> TableElement(
+                id = id,
+                tableId = draft.tableId ?: ids.newStrokeId(),
+                x = x,
+                y = y,
+                columns = draft.columns.map { it.copy(widthMm = Quantization.quantizePosition(it.widthMm)) },
+                rows = draft.rows,
+                header = draft.header,
+                cells = draft.cells.mapValues { (_, c) -> c.copy(heightMm = Quantization.quantizePosition(c.heightMm)) },
+                merges = draft.merges,
+                createdAtEpochMs = clock(),
+                author = device,
+                slot = slot,
+            )
+        }
     }
 
     /**
@@ -267,24 +289,37 @@ class DocumentSession(
             apply(Edit.TableCells(tableId, changed, changed.map { CellUpdate(it.key, table.cell(it.key)) }))
         }
 
-        /** Moves [elements] down by [dy] mm (up if negative), keeping task, table and anchor ids. */
-        fun move(elements: List<PageElement>, dy: Float): List<PageElement> =
-            if (elements.isEmpty() || dy == 0f) emptyList() else replaceElements(elements.map { it.id }, elements.map { it.toDraft().translated(0f, dy) })
-
-        /**
-         * Text flow: the block [source] (old and new ids) spanning [left]..[right] mm changed its
-         * bottom from [oldBottom] to [newBottom]; what is below it in its column moves along
-         * (see [Reflow]).
-         */
-        fun flow(source: Set<StrokeId>, left: Float, right: Float, oldBottom: Float, newBottom: Float) {
-            val moving = Reflow.shifts(_state.value.elements, source, left, right, oldBottom, newBottom)
-            move(moving, newBottom - oldBottom)
+        /** Puts the flow [flowId] at ([x], [y]) mm. */
+        fun moveFlow(flowId: StrokeId, x: Float, y: Float) {
+            val flow = _state.value.flow(flowId) ?: return
+            val qx = Quantization.quantizePosition(x)
+            val qy = Quantization.quantizePosition(y)
+            if (qx != flow.x || qy != flow.y) apply(Edit.FlowPosition(flowId, qx, qy, flow.x, flow.y))
         }
 
-        /** Text flow after the block [source] (old and new ids) went from [before] to [after], see [Reflow.plan]. */
-        fun reflow(source: Set<StrokeId>, before: Rect?, after: Rect?) {
-            val (moving, dy) = Reflow.plan(_state.value.elements, source, before, after)
-            move(moving, dy)
+        /**
+         * Moves [elements] by ([dx], [dy]) mm: the flows of the blocks among them as a whole, the rest
+         * (strokes, free anchors and links) by remove + add. Returns what was added.
+         */
+        fun move(elements: List<PageElement>, dx: Float, dy: Float): List<PageElement> {
+            if (elements.isEmpty() || (dx == 0f && dy == 0f)) return emptyList()
+            val (blocks, free) = elements.partition { it is FlowBlock }
+            for (flowId in blocks.mapTo(LinkedHashSet()) { (it as FlowBlock).slot.flowId }) {
+                val flow = _state.value.flow(flowId) ?: continue
+                moveFlow(flowId, flow.x + dx, flow.y + dy)
+            }
+            return if (free.isEmpty()) emptyList() else replaceElements(free.map { it.id }, free.map { it.toDraft().translated(dx, dy) })
+        }
+
+        /** Runs [change] on the flow [flowId]; what is below it moves with the flow's new extent ([Reflow.plan]). */
+        fun <T> flowing(flowId: StrokeId, change: () -> T): T {
+            val before = _state.value.flow(flowId)
+            val result = change()
+            val after = _state.value.flow(flowId)
+            val source = (before?.blocks.orEmpty() + after?.blocks.orEmpty()).mapTo(HashSet()) { it.id }
+            val (moving, dy) = Reflow.plan(_state.value.elements, source, before?.bounds, after?.bounds)
+            move(moving, 0f, dy)
+            return result
         }
     }
 
@@ -389,6 +424,7 @@ class DocumentSession(
             }
             is Edit.TodoDone -> emit { DocumentOp.SetTodoDone(it, edit.taskId, edit.done) }
             is Edit.TableCells -> emit { DocumentOp.SetTableCells(it, edit.tableId, edit.cells) }
+            is Edit.FlowPosition -> emit { DocumentOp.SetFlowPosition(it, edit.flowId, edit.x, edit.y) }
             is Edit.Steps -> edit.edits.forEach { applyEdit(it, record = false) }
         }
         if (record) undo.record(edit)

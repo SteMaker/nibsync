@@ -1,11 +1,13 @@
 package com.stemaker.nibsync.document.select
 
 import com.stemaker.nibsync.model.ElementDraft
+import com.stemaker.nibsync.model.FlowBlock
 import com.stemaker.nibsync.model.PageElement
 import com.stemaker.nibsync.model.selectedBounds
 import com.stemaker.nibsync.model.Stroke
 import com.stemaker.nibsync.model.StrokeDraft
 import com.stemaker.nibsync.model.StrokeId
+import com.stemaker.nibsync.model.TextBox
 import com.stemaker.nibsync.model.TodoDraft
 import com.stemaker.nibsync.model.TableDraft
 import com.stemaker.nibsync.model.AnchorDraft
@@ -33,8 +35,11 @@ object Lasso {
     fun select(strokes: List<PageElement>, polygon: FloatArray): Set<StrokeId> {
         if (polygon.size < 6 || area(polygon) < MIN_AREA_MM2) return emptySet()
         val box = bounds(polygon)
-        return strokes.filter { e -> e.bounds.intersects(box) && insideShare(e, polygon) >= INSIDE_SHARE }
-            .mapTo(LinkedHashSet()) { it.id }
+        val selected = strokes.filter { e -> e.bounds.intersects(box) && insideShare(e, polygon) >= INSIDE_SHARE }
+        // Text is what holds a flow together: selecting it takes the whole flow along.
+        val flows = selected.filterIsInstance<TextBox>().mapTo(HashSet()) { it.slot.flowId }
+        val rest = strokes.filter { it is FlowBlock && it.slot.flowId in flows }
+        return (selected + rest).mapTo(LinkedHashSet()) { it.id }
     }
 
     private fun insideShare(e: PageElement, polygon: FloatArray): Float = when (e) {

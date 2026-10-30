@@ -97,6 +97,30 @@ class GoldenFormatTest {
         ),
     )
 
+    // Added in format version 1 later on (op type 11, block fields "fl" and "fo"); older readers
+    // skip the op and show each block where it was added.
+    private val flowOps = run {
+        val flow = com.stemaker.nibsync.model.StrokeId("81818181-8181-4818-8818-818181818181")
+        listOf(
+            com.stemaker.nibsync.document.DocumentOp.AddTextBoxes(
+                com.stemaker.nibsync.document.OpStamp(13, DEV_A),
+                listOf(
+                    com.stemaker.nibsync.model.TextBox(
+                        com.stemaker.nibsync.model.StrokeId("82828282-8282-4828-8828-828282828282"), 10f, 20f, 100f, 6f,
+                        com.stemaker.nibsync.model.RichText.plain("oben"), 1_700_000_000_004, DEV_A,
+                        com.stemaker.nibsync.model.FlowSlot(flow, "h"),
+                    ),
+                    com.stemaker.nibsync.model.TextBox(
+                        com.stemaker.nibsync.model.StrokeId("83838383-8383-4838-8838-838383838383"), 10f, 20f, 100f, 6f,
+                        com.stemaker.nibsync.model.RichText.plain("unten"), 1_700_000_000_005, DEV_A,
+                        com.stemaker.nibsync.model.FlowSlot(flow, "t"),
+                    ),
+                ),
+            ),
+            com.stemaker.nibsync.document.DocumentOp.SetFlowPosition(com.stemaker.nibsync.document.OpStamp(14, DEV_B), flow, 15f, 42.5f),
+        )
+    }
+
     // Added in format version 1 later on (op types 9 and 10); older readers skip them.
     private val tableOps = run {
         fun id(s: String) = com.stemaker.nibsync.model.StrokeId(s)
@@ -166,6 +190,7 @@ class GoldenFormatTest {
         FileSystem.SYSTEM.write(goldenDir / "ops-v1-links.oplog") { write(encodedLog(linkOps)) }
         FileSystem.SYSTEM.write(goldenDir / "ops-v1-continued-line.oplog") { write(encodedLog(continuedLineOps)) }
         FileSystem.SYSTEM.write(goldenDir / "ops-v1-tables.oplog") { write(encodedLog(tableOps)) }
+        FileSystem.SYSTEM.write(goldenDir / "ops-v1-flows.oplog") { write(encodedLog(flowOps)) }
     }
 
     @Test
@@ -173,6 +198,13 @@ class GoldenFormatTest {
         val golden = golden("ops-v1-tables.oplog")
         assertThat(OpLogCodec.read(Buffer().write(golden)).ops).isEqualTo(tableOps)
         assertThat(encodedLog(tableOps).hex()).isEqualTo(golden.hex())
+    }
+
+    @Test
+    fun flowOpsAreStable() {
+        val golden = golden("ops-v1-flows.oplog")
+        assertThat(OpLogCodec.read(Buffer().write(golden)).ops).isEqualTo(flowOps)
+        assertThat(encodedLog(flowOps).hex()).isEqualTo(golden.hex())
     }
 
     @Test

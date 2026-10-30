@@ -164,8 +164,8 @@ class DocumentSessionTest {
         val s = session()
         val stroke = s.addStroke(draft())
         val box = s.addTextBox(textDraft())
-        val moved = s.replaceElements(listOf(stroke.id, box.id), listOf<PageElement>(stroke, box).map { it.translated(0f, 20f) })
-        assertEquals(2, moved.size)
+        val moved = s.edit { move(listOf<PageElement>(stroke, box), 0f, 20f) }
+        assertEquals(1, moved.size)
         assertEquals(20f, s.state.value.textBoxes.single().y)
         assertEquals(1, s.state.value.strokeCount)
         assertTrue(s.undo())

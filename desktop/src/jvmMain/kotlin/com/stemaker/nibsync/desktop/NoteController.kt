@@ -8,7 +8,9 @@ import com.stemaker.nibsync.document.erase.EraserMode
 import com.stemaker.nibsync.document.select.ClipContent
 import com.stemaker.nibsync.document.select.Lasso
 import com.stemaker.nibsync.document.select.selectionBoundsOf
-import com.stemaker.nibsync.document.select.translated
+import com.stemaker.nibsync.model.BlockDraft
+import com.stemaker.nibsync.text.FlowDrop
+import com.stemaker.nibsync.text.FlowEditing
 import com.stemaker.nibsync.model.BrushFamily
 import com.stemaker.nibsync.model.DocumentId
 import com.stemaker.nibsync.model.ElementDraft
@@ -50,7 +52,8 @@ sealed interface GesturePreview {
     data class Drawing(val stroke: Stroke) : GesturePreview
     data class Erasing(val visible: List<Stroke>, val x: Float, val y: Float, val radiusMm: Float) : GesturePreview
     class Lassoing(val path: FloatArray) : GesturePreview
-    data class Moving(val dx: Float, val dy: Float) : GesturePreview
+    /** The selection being dragged; [drop] is where blocks would land in text. */
+    data class Moving(val dx: Float, val dy: Float, val drop: FlowDrop? = null) : GesturePreview
     data class Resizing(val factor: Float) : GesturePreview
 
     /** A table column border being dragged: where it would be (mm), from [top] to [bottom]. */
@@ -78,6 +81,9 @@ class NoteController(
 
     /** The table cell being edited; tables are opened by a click into a cell. */
     val table = TableEditing(session).also { it.measureText = measureText }
+
+    /** Blocks in the text: dropping, placing, removing. */
+    val flows = FlowEditing(session).also { it.measureText = measureText }
 
     private val _tools = MutableStateFlow(initialTools)
     val tools: StateFlow<DesktopToolState> = _tools.asStateFlow()
@@ -295,7 +301,7 @@ class NoteController(
             is Active.Move -> {
                 a.dx = x - a.startX
                 a.dy = y - a.startY
-                _gesture.value = GesturePreview.Moving(a.dx, a.dy)
+                _gesture.value = GesturePreview.Moving(a.dx, a.dy, flows.dropFor(_selection.value, a.dx, a.dy))
             }
             is Active.Resize -> {
                 val (ex, ey, ew) = a.element.frame()
@@ -476,8 +482,13 @@ class NoteController(
             text.finish()
             return
         }
-        val (left, top, width) = TextBox.placeNew(x, y, pageWidthMm)
-        text.startNew(left, top, width)
+        val next = flows.continuation(x, y)
+        if (next != null) {
+            text.startNew(next.x, next.y, next.widthMm, next.slot)
+        } else {
+            val (left, top, width) = TextBox.placeNew(x, y, pageWidthMm)
+            text.startNew(left, top, width)
+        }
     }
 
     // ---- selection ---------------------------------------------------------------------------
@@ -500,7 +511,7 @@ class NoteController(
     fun deleteSelection(): Boolean {
         val ids = _selection.value
         if (ids.isEmpty()) return false
-        session.removeStrokes(ids)
+        flows.remove(ids, pull = false)
         clearSelection()
         endTemporarySelection()
         return true
@@ -524,7 +535,7 @@ class NoteController(
         val here = session.state.value.meta.id
         val source = clipboard.source
         if (source != null && source != here && drafts.assets().isNotEmpty()) copyAssets(source, here, drafts.assets())
-        val added = session.replaceElements(emptySet(), drafts)
+        val added = flows.place(drafts)
         selectionByClick = false
         _tools.update { it.copy(tool = DesktopTool.LASSO) }
         _selection.value = added.mapTo(LinkedHashSet()) { it.id }
@@ -534,9 +545,16 @@ class NoteController(
     /** Adds inserted pictures or links (files already stored) and selects them for moving and scaling. */
     fun insert(drafts: List<ElementDraft>) {
         if (drafts.isEmpty()) return
-        text.finish()
-        table.finish()
-        val added = session.replaceElements(emptySet(), drafts)
+        val blocks = drafts.filterIsInstance<BlockDraft>()
+        // Pictures and files go in at the cursor of an open text box.
+        val added = if (text.editing.value != null && blocks.size == drafts.size) {
+            table.finish()
+            text.insertBlocksAtCursor(blocks)
+        } else {
+            text.finish()
+            table.finish()
+            flows.place(drafts)
+        }
         val tool = _tools.value.tool
         if (tool != DesktopTool.LASSO) {
             toolBeforeSelection = tool
@@ -547,10 +565,7 @@ class NoteController(
     }
 
     private fun moveSelection(dx: Float, dy: Float) {
-        val items = selected()
-        if (items.isEmpty()) return
-        val added = session.replaceElements(items.map { it.id }, items.map { it.translated(dx, dy) })
-        _selection.value = added.mapTo(LinkedHashSet()) { it.id }
+        if (_selection.value.isNotEmpty()) _selection.value = flows.moveSelection(_selection.value, dx, dy)
     }
 
     private fun resizeSelection(factor: Float) {
@@ -568,8 +583,7 @@ class NoteController(
             is ImageElement -> ImageDraft(element.x, element.y, w, h, element.asset)
             is FileLink -> FileLinkDraft(element.x, element.y, w, h, element.asset, element.fileName)
         }
-        val added = session.replaceElements(listOf(element.id), listOf(draft))
-        _selection.value = added.mapTo(LinkedHashSet()) { it.id }
+        _selection.value = setOf(flows.resize(element, draft).id)
     }
 
     /** Gives the anchor a new name; it stays the same anchor, so links to it keep working. */

@@ -22,6 +22,8 @@ import com.stemaker.nibsync.model.DocumentId
 import com.stemaker.nibsync.model.DocumentMeta
 import com.stemaker.nibsync.model.FileElement
 import com.stemaker.nibsync.model.FileLink
+import com.stemaker.nibsync.model.FlowBlock
+import com.stemaker.nibsync.model.FlowSlot
 import com.stemaker.nibsync.model.ImageElement
 import com.stemaker.nibsync.model.InputTool
 import com.stemaker.nibsync.model.ListKind
@@ -121,6 +123,12 @@ internal fun DocumentOp.toRecord(): OpRecord = when (this) {
         type = OpRecord.TYPE_TODO_DONE,
         todoDone = TodoDoneRecord(taskId.value, done),
     )
+    is DocumentOp.SetFlowPosition -> OpRecord(
+        counter = stamp.counter,
+        device = stamp.device.value,
+        type = OpRecord.TYPE_FLOW_POSITION,
+        flowPosition = FlowPositionRecord(flowId.value, Quantization.positionToSteps(x), Quantization.positionToSteps(y)),
+    )
     is DocumentOp.SetBackground -> OpRecord(
         counter = stamp.counter,
         device = stamp.device.value,
@@ -150,9 +158,18 @@ internal fun OpRecord.toDomain(): DocumentOp? {
         OpRecord.TYPE_TABLE_CELLS -> tableCells?.let { r ->
             DocumentOp.SetTableCells(stamp, StrokeId(r.table), r.cells.map { c -> CellUpdate(c.key(), c.toCell()) })
         }
+        OpRecord.TYPE_FLOW_POSITION -> flowPosition?.let {
+            DocumentOp.SetFlowPosition(stamp, StrokeId(it.flow), Quantization.stepsToPosition(it.x), Quantization.stepsToPosition(it.y))
+        }
         else -> null
     }
 }
+
+/** What a block's record says about its flow: nothing for the only block of a flow named after it. */
+private val FlowBlock.flowField: String? get() = slot.flowId.value.takeIf { it != id.value }
+private val FlowBlock.orderField: String? get() = slot.order.takeIf { it != FlowSlot.FIRST }
+
+private fun slot(id: String, flow: String?, order: String?) = FlowSlot(StrokeId(flow ?: id), order ?: FlowSlot.FIRST)
 
 internal fun Stroke.toRecord() = StrokeRecord(
     id = id.value,
@@ -192,6 +209,8 @@ internal fun TextBox.toRecord() = TextBoxRecord(
     createdAtEpochMs = createdAtEpochMs,
     author = author.value,
     paragraphs = text.toRecords(),
+    flow = flowField,
+    order = orderField,
 )
 
 private fun TextMark.toRecord(): MarkRecord = when (val s = style) {
@@ -230,6 +249,8 @@ internal fun TableElement.toRecord(): TableRecord {
         merges = merges.map { MergeRecord(it.fromRowId.value, it.fromColId.value, it.toRowId.value, it.toColId.value) },
         createdAtEpochMs = createdAtEpochMs,
         author = author.value,
+        flow = flowField,
+        order = orderField,
     )
 }
 
@@ -256,6 +277,7 @@ internal fun TableRecord.toDomain(): TableElement? {
         merges = merges.map { CellMerge(StrokeId(it.fromRow), StrokeId(it.fromColumn), StrokeId(it.toRow), StrokeId(it.toColumn)) },
         createdAtEpochMs = createdAtEpochMs,
         author = DeviceId(author),
+        slot = slot(id, flow, order),
     )
 }
 
@@ -273,6 +295,8 @@ internal fun TodoItem.toRecord(): TodoRecord {
         author = author.value,
         paragraphs = (content as? TodoContent.Text)?.text?.toRecords(),
         strokes = (content as? TodoContent.Ink)?.strokes?.map { it.toRecord() },
+        flow = flowField,
+        order = orderField,
     )
 }
 
@@ -284,7 +308,7 @@ internal fun TodoRecord.toDomain(): TodoItem? {
         strokes != null -> TodoContent.Ink(strokes.mapNotNull { it.toDomain() })
         else -> TodoContent.Text(paragraphs.orEmpty().toRichText())
     }
-    return TodoItem(StrokeId(id), StrokeId(task), q(x), q(y), q(width), q(height), content, createdAtEpochMs, DeviceId(author))
+    return TodoItem(StrokeId(id), StrokeId(task), q(x), q(y), q(width), q(height), content, createdAtEpochMs, DeviceId(author), slot(id, flow, order))
 }
 
 internal fun TextBoxRecord.toDomain(): TextBox {
@@ -297,6 +321,7 @@ internal fun TextBoxRecord.toDomain(): TextBox {
         text = paragraphs.toRichText(),
         createdAtEpochMs = createdAtEpochMs,
         author = DeviceId(author),
+        slot = slot(id, flow, order),
     )
 }
 
@@ -323,8 +348,8 @@ private const val MARK_FONT = "f"
 internal fun FileElement.toRecord(): FileElementRecord {
     val p = Quantization::positionToSteps
     return when (this) {
-        is ImageElement -> FileElementRecord(KIND_IMAGE, id.value, p(x), p(y), p(widthMm), p(heightMm), createdAtEpochMs, author.value, asset.sha256, asset.mimeType)
-        is FileLink -> FileElementRecord(KIND_LINK, id.value, p(x), p(y), p(widthMm), p(heightMm), createdAtEpochMs, author.value, asset.sha256, asset.mimeType, fileName)
+        is ImageElement -> FileElementRecord(KIND_IMAGE, id.value, p(x), p(y), p(widthMm), p(heightMm), createdAtEpochMs, author.value, asset.sha256, asset.mimeType, flow = flowField, order = orderField)
+        is FileLink -> FileElementRecord(KIND_LINK, id.value, p(x), p(y), p(widthMm), p(heightMm), createdAtEpochMs, author.value, asset.sha256, asset.mimeType, fileName, flowField, orderField)
     }
 }
 
@@ -334,8 +359,8 @@ internal fun FileElementRecord.toDomain(): FileElement? {
     if (width <= 0 || height <= 0) return null
     val asset = runCatching { Asset(sha256, mimeType) }.getOrNull() ?: return null
     return when (kind) {
-        KIND_IMAGE -> ImageElement(StrokeId(id), q(x), q(y), q(width), q(height), asset, createdAtEpochMs, DeviceId(author))
-        KIND_LINK -> FileLink(StrokeId(id), q(x), q(y), q(width), q(height), asset, name ?: "", createdAtEpochMs, DeviceId(author))
+        KIND_IMAGE -> ImageElement(StrokeId(id), q(x), q(y), q(width), q(height), asset, createdAtEpochMs, DeviceId(author), slot(id, flow, order))
+        KIND_LINK -> FileLink(StrokeId(id), q(x), q(y), q(width), q(height), asset, name ?: "", createdAtEpochMs, DeviceId(author), slot(id, flow, order))
         else -> null
     }
 }

@@ -6,6 +6,7 @@ import androidx.compose.ui.input.key.isShiftPressed
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material.icons.filled.SwapHoriz
+import androidx.compose.material.icons.filled.AttachFile
 import androidx.compose.material.icons.filled.TableChart
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.unit.IntSize
@@ -144,6 +145,7 @@ object NoteScreenTags {
     const val SELECTION_BAR = "selection-bar"
     const val INSERT_TABLE = "insert-table"
     const val INSERT_TABLE_HERE = "insert-table-here"
+    const val INSERT_FILE_HERE = "insert-file-here"
     const val TABLE_MENU = "table-menu"
     const val TABLE_CELL = "table-cell-editor"
     fun tableAction(name: String) = "table-$name"
@@ -360,6 +362,7 @@ fun NoteScreen(
                             it.onEraseFinished = viewModel::commitErase
                             it.onLassoFinished = viewModel::selectByLasso
                             it.onSelectionMoved = viewModel::moveSelection
+                            it.dropFor = viewModel::dropFor
                             it.onSelectionCleared = viewModel::clearSelection
                             it.onTodoChecked = viewModel::toggleTodo
                             it.onTodoInk = viewModel::commitTodoInk
@@ -644,11 +647,19 @@ private fun Toolbar(
                         TableMenu(table)
                         Divider()
                     } else if (textBoxOpen) {
-                        // A table at the cursor: the text box is split there.
+                        // A table or file at the cursor: the text box is split there.
                         val label = stringResource(R.string.insert_table_here)
                         WithTooltip(label) {
                             IconButton(onClick = onInsertTable, modifier = Modifier.testTag(NoteScreenTags.INSERT_TABLE_HERE)) {
                                 Icon(Icons.Filled.TableChart, contentDescription = label)
+                            }
+                        }
+                        if (onInsertFile != null) {
+                            val fileLabel = stringResource(R.string.insert_file_here)
+                            WithTooltip(fileLabel) {
+                                IconButton(onClick = onInsertFile, modifier = Modifier.testTag(NoteScreenTags.INSERT_FILE_HERE)) {
+                                    Icon(Icons.Filled.AttachFile, contentDescription = fileLabel)
+                                }
                             }
                         }
                         Divider()
