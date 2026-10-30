@@ -340,6 +340,7 @@ private fun DocumentPane(
     var message by remember(id) { mutableStateOf<String?>(null) }
     val controller = remember(s) {
         NoteController(s, textLayout::heightMm, GeometricShapeRecognizer(), clipboard, DesktopToolState.from(settings.pens)).apply {
+            linkAt = textLayout::linkAt
             openFile = { link -> if (!DesktopMedia.open(container.repository, id, link)) message = strings.mediaNotSynced }
             copyAssets = { from, to, assets -> DesktopMedia.copyAssets(container.repository, from, to, assets) }
         }

@@ -267,3 +267,89 @@ class FlowEditingTest {
         assertThat(f.s.state.value.flows.map { it.blocks.size }).containsExactly(2, 2)
     }
 }
+
+/** Anchors and links as letters of the text. */
+class LinksInTextTest {
+    private val lines: (RichText, Float) -> Float = { text, _ -> text.paragraphs.size * 6f }
+    private val target = DocumentId("00000000-0000-4000-8000-000000000001")
+
+    private class Setup(val s: DocumentSession, val text: TextBoxEditing, val flows: FlowEditing)
+
+    private fun setup(): Setup {
+        val s = DocumentSession(DocumentState.empty(DocumentMeta(DocumentId("d"), "t", createdAtEpochMs = 0)), DeviceId("a"), { }, CoroutineScope(Dispatchers.Unconfined), clock = { 0L })
+        return Setup(s, TextBoxEditing(s).also { it.measureText = lines }, FlowEditing(s).also { it.measureText = lines })
+    }
+
+    private fun Setup.open(content: String) {
+        text.startNew(20f, 20f, 120f)
+        text.editing.value!!.controller.setContent(RichText.plain(content))
+    }
+
+    @Test
+    fun anAnchorAtTheCursorIsALetterThatGoesAlongWithTheText() {
+        val f = setup()
+        f.open("eins\nzwei")
+        f.text.editing.value!!.controller.state.selection = TextRange(5)
+        assertThat(f.text.insertLinkAtCursor(com.stemaker.nibsync.model.AnchorDraft(0f, 0f, "Kapitel"))).isTrue()
+        f.text.finish()
+        val box = f.s.state.value.textBoxes.single()
+        assertThat(box.text.plainText).isEqualTo("eins\n${MarkStyle.Anchor.SIGN}zwei")
+        val anchor = f.s.state.value.anchors.single()
+        assertThat(anchor.name).isEqualTo("Kapitel")
+        assertThat(anchor.y).isWithin(0.05f).of(box.y + 6f)
+        // Text above it: the anchor goes along, under the same id.
+        f.text.open(box)
+        val typed = f.text.editing.value!!.controller
+        typed.state.selection = TextRange(0)
+        typed.state.addTextAfterSelection("null\n")
+        f.text.finish()
+        val again = f.s.state.value.anchor(anchor.anchorId)!!
+        assertThat(again.y).isWithin(0.05f).of(box.y + 12f)
+        // Renaming keeps it.
+        assertThat(f.flows.renameInText(anchor.anchorId, "Neu")).isTrue()
+        assertThat(f.s.state.value.anchor(anchor.anchorId)!!.name).isEqualTo("Neu")
+    }
+
+    @Test
+    fun aLinkAtTheCursorShowsItsTitleAndTextTypedBesideItStaysOutside() {
+        val f = setup()
+        f.open("siehe ")
+        val c = f.text.editing.value!!.controller
+        c.state.selection = TextRange(6)
+        f.text.insertLinkAtCursor(com.stemaker.nibsync.model.NoteLinkDraft(0f, 0f, target, null, "Projekt", null))
+        c.state.addTextAfterSelection(" weiter")
+        f.text.finish()
+        val p = f.s.state.value.textBoxes.single().text.paragraphs.single()
+        assertThat(p.text).isEqualTo("siehe Projekt weiter")
+        val mark = p.marks.single { it.style is MarkStyle.NoteLink }
+        assertThat(p.text.substring(mark.start, mark.end)).isEqualTo("Projekt")
+        assertThat((mark.style as MarkStyle.NoteLink).linkTarget.document).isEqualTo(target)
+        assertThat(RichTextLayout.linkAt(f.s.state.value.textBoxes.single().text, 8)).isEqualTo(mark.style)
+        assertThat(RichTextLayout.linkAt(f.s.state.value.textBoxes.single().text, 3)).isNull()
+    }
+
+    @Test
+    fun aFreeAnchorDroppedOnTextBecomesALetterAndStaysFreeElsewhere() {
+        val f = setup()
+        f.open("eins\nzwei")
+        f.text.finish()
+        val free = f.flows.place(listOf(com.stemaker.nibsync.model.AnchorDraft(150f, 100f, "Frei"))).single()
+        assertThat(f.s.state.value.links).hasSize(1)
+        val box = f.s.state.value.textBoxes.single()
+        f.flows.moveSelection(setOf(free.id), 30f - 150f, box.y + 7f - 100f)
+        assertThat(f.s.state.value.links).isEmpty()
+        assertThat(f.s.state.value.textBoxes.single().text.plainText).isEqualTo("eins\n${MarkStyle.Anchor.SIGN}zwei")
+        assertThat(f.s.state.value.anchors.single().anchorId).isEqualTo((free as com.stemaker.nibsync.model.Anchor).anchorId)
+    }
+
+    @Test
+    fun aCopiedTextHasNewAnchors() {
+        val f = setup()
+        f.open("eins")
+        f.text.insertLinkAtCursor(com.stemaker.nibsync.model.AnchorDraft(0f, 0f, "A"))
+        f.text.finish()
+        val clip = com.stemaker.nibsync.document.select.ClipContent.of(f.s.state.value.textBoxes)!!
+        f.flows.place(clip.placedAt(100f, 200f))
+        assertThat(f.s.state.value.anchors.map { it.anchorId }.toSet()).hasSize(2)
+    }
+}

@@ -39,6 +39,10 @@ class TextBoxRenderer(context: Context) {
         ceil(layout(text, widthMm).size.height / LAYOUT_PX_PER_MM * 100f) / 100f
 
     /** Draws [box]; [canvas] must be in page millimetres (see NoteCanvasView). */
+    /** The anchor or link in [box] at ([x], [y]) mm, or null. */
+    fun linkAt(box: TextBox, x: Float, y: Float): com.stemaker.nibsync.model.MarkStyle? =
+        RichTextLayout.linkAt(box.text, layoutOf(box), (x - box.x) * LAYOUT_PX_PER_MM, (y - box.y) * LAYOUT_PX_PER_MM)
+
     fun draw(canvas: android.graphics.Canvas, box: TextBox) {
         val result = layoutOf(box)
         val save = canvas.save()

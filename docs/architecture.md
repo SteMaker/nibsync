@@ -272,6 +272,17 @@ and "Link to note …" (document, then its top or an anchor). Tablet: a tap on a
 a tap on an anchor selects it, a second tap renames it. PC: a click selects, a double click
 follows the link or renames the anchor.
 
+In text they are letters: `MarkStyle.Anchor` on the character `§`, `MarkStyle.NoteLink` on its
+title (record marks `"a"` and `"l"`). They go along with the text and are one unit in the editor
+(`LinkRun`, atomic, typed text stays outside). Tool bar "Insert ... here" puts them at the cursor;
+an anchor or link inserted or dragged onto a text goes in front of (anchor) or behind (link) the
+paragraph there; elsewhere it stays a free `LinkElement`, so handwriting has anchors too.
+`DocumentState.anchors` includes those in text, placed by `yMm`, the paragraph's distance from the box's
+top at the last save (`withAnchorsPlaced`, like `heightMm`), so `LinkTargets` needs no text engine. With a
+tool other than text, a tap or click on one follows the link or renames the anchor
+(`RichTextLayout.linkAt`); with the text tool the box opens. A copied text gets new anchors. A letter
+cannot be dragged out of the text; a link in text keeps the title it was made with.
+
 ## Input
 
 Stylus writes (or erases with the eraser selected); fingers scroll and pinch-zoom; a toggle

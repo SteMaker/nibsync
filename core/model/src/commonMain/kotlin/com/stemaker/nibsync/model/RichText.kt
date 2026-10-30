@@ -97,4 +97,20 @@ sealed interface MarkStyle {
         }
     }
     data class Font(val font: TextFont) : MarkStyle
+
+    /**
+     * An anchor in the text, on the single character [SIGN]: the same as an [com.stemaker.nibsync.model.Anchor]
+     * on the page, but it goes along with the text. [yMm] is its distance from the box's top when
+     * the box was stored, so code without a text engine can find the place.
+     */
+    data class Anchor(val anchorId: StrokeId, val name: String, val yMm: Float = 0f) : MarkStyle {
+        companion object {
+            const val SIGN = "§"
+        }
+    }
+
+    /** A link to the document [target] (to its anchor [anchorId], if any) on the text it covers. */
+    data class NoteLink(val target: DocumentId, val anchorId: StrokeId?, val anchorName: String?) : MarkStyle {
+        val linkTarget: LinkTarget get() = LinkTarget(target, anchorId)
+    }
 }

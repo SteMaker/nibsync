@@ -218,6 +218,8 @@ private fun TextMark.toRecord(): MarkRecord = when (val s = style) {
     MarkStyle.Italic -> MarkRecord(start, end, MARK_ITALIC)
     is MarkStyle.Size -> MarkRecord(start, end, MARK_SIZE, s.pt.toString())
     is MarkStyle.Font -> MarkRecord(start, end, MARK_FONT, s.font.name)
+    is MarkStyle.Anchor -> MarkRecord(start, end, MARK_ANCHOR, s.anchorId.value, s.name, Quantization.positionToSteps(s.yMm))
+    is MarkStyle.NoteLink -> MarkRecord(start, end, MARK_LINK, s.anchorId?.value, s.anchorName, document = s.target.value)
 }
 
 private fun RichText.toRecords(): List<ParagraphRecord> = paragraphs.map { p ->
@@ -335,6 +337,8 @@ private fun MarkRecord.toDomain(length: Int): TextMark? {
         MARK_ITALIC -> MarkStyle.Italic
         MARK_SIZE -> value?.toFloatOrNull()?.takeIf { it > 0f }?.let { MarkStyle.Size(it) }
         MARK_FONT -> TextFont.entries.firstOrNull { it.name == value }?.let { MarkStyle.Font(it) }
+        MARK_ANCHOR -> value?.let { MarkStyle.Anchor(StrokeId(it), name.orEmpty(), Quantization.stepsToPosition(y ?: 0)) }
+        MARK_LINK -> document?.let { MarkStyle.NoteLink(DocumentId(it), value?.let(::StrokeId), name) }
         else -> null
     } ?: return null
     return TextMark(s, e, style)
@@ -344,6 +348,8 @@ private const val MARK_BOLD = "b"
 private const val MARK_ITALIC = "i"
 private const val MARK_SIZE = "z"
 private const val MARK_FONT = "f"
+private const val MARK_ANCHOR = "a"
+private const val MARK_LINK = "l"
 
 internal fun FileElement.toRecord(): FileElementRecord {
     val p = Quantization::positionToSteps

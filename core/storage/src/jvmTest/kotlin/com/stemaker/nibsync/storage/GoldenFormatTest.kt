@@ -107,7 +107,18 @@ class GoldenFormatTest {
                 listOf(
                     com.stemaker.nibsync.model.TextBox(
                         com.stemaker.nibsync.model.StrokeId("82828282-8282-4828-8828-828282828282"), 10f, 20f, 100f, 6f,
-                        com.stemaker.nibsync.model.RichText.plain("oben"), 1_700_000_000_004, DEV_A,
+                        com.stemaker.nibsync.model.RichText(
+                            listOf(
+                                com.stemaker.nibsync.model.TextParagraph(
+                                    "§siehe Projekt",
+                                    marks = listOf(
+                                        com.stemaker.nibsync.model.TextMark(0, 1, com.stemaker.nibsync.model.MarkStyle.Anchor(com.stemaker.nibsync.model.StrokeId("84848484-8484-4848-8848-848484848484"), "Start", 6f)),
+                                        com.stemaker.nibsync.model.TextMark(7, 14, com.stemaker.nibsync.model.MarkStyle.NoteLink(com.stemaker.nibsync.model.DocumentId("ffffffff-ffff-4fff-8fff-ffffffffffff"), com.stemaker.nibsync.model.StrokeId("dddddddd-dddd-4ddd-8ddd-dddddddddddd"), "Kapitel 1")),
+                                    ),
+                                ),
+                            ),
+                        ),
+                        1_700_000_000_004, DEV_A,
                         com.stemaker.nibsync.model.FlowSlot(flow, "h"),
                     ),
                     com.stemaker.nibsync.model.TextBox(

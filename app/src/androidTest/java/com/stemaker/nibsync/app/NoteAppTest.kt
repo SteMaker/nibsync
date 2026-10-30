@@ -963,6 +963,60 @@ class NoteAppTest {
     }
 
     @Test
+    fun aLassoedTableDraggedOntoTextGoesBetweenItsParagraphsAndAnAnchorGoesInAtTheCursor() {
+        compose.onNodeWithTag(NoteScreenTags.TEXT).performClick()
+        tap(400f, 300f)
+        waitUntil("editing a new text box") { editing() != null }
+        compose.onNodeWithTag(TextTags.EDITOR).performTextInput("eins")
+        editing()!!.controller.setContent(com.stemaker.nibsync.model.RichText.plain("eins\nzwei\ndrei\nvier"))
+        compose.onNodeWithTag(NoteScreenTags.TEXT_DONE).performClick()
+        waitUntil("box stored") { textBoxes().size == 1 && editing() == null }
+        val box = textBoxes().single()
+        compose.onNodeWithTag(NoteScreenTags.INSERT).performClick()
+        compose.onNodeWithTag(NoteScreenTags.INSERT_TABLE).performClick()
+        compose.onNodeWithTag(com.stemaker.nibsync.theme.TableSizeTags.CONFIRM).performClick()
+        waitUntil("table") { session().state.value.tables.size == 1 }
+        compose.onNodeWithTag(NoteScreenTags.TEXT_DONE).performClick()
+        waitUntil("table closed") { compose.onAllNodesWithTag(NoteScreenTags.TABLE_CELL).fetchSemanticsNodes().isEmpty() }
+        idleFor(1500)
+        compose.waitForIdle()
+
+        // Lasso around the table, then its top dragged to the middle of the text.
+        val table = session().state.value.tables.single()
+        val t = checkNotNull(canvas()).viewport.documentToView
+        compose.onNodeWithTag(NoteScreenTags.LASSO).performClick()
+        drag(loop(t.mapX(table.x - 3f), t.mapY(table.y - 2f), t.mapX(table.bounds.right + 2f), t.mapY(table.bounds.bottom + 2f)))
+        waitUntil("table selected") { selection() == setOf(table.id) }
+        val gx = t.mapX(table.x + 10f)
+        val grabY = table.y + 4f
+        val target = box.y + box.heightMm / 2 + 4f
+        drag(line(gx, t.mapY(grabY), gx, t.mapY(target), steps = 20))
+        waitUntil("text split") { textBoxes().size == 2 }
+        val parts = textBoxes().sortedBy { it.y }
+        assertThat(parts.map { it.text.plainText }).containsExactly("eins\nzwei", "drei\nvier").inOrder()
+        val moved = session().state.value.tables.single()
+        assertThat(moved.tableId).isEqualTo(table.tableId)
+        assertThat(moved.y).isGreaterThan(parts[0].bounds.bottom)
+        assertThat(parts[1].y).isGreaterThan(moved.bounds.bottom)
+
+        // One undo: the text whole again.
+        compose.onNodeWithTag(NoteScreenTags.UNDO).performClick()
+        waitUntil("text whole") { textBoxes().size == 1 }
+
+        // An anchor at the cursor of the open box is a letter of the text and goes along with it.
+        compose.onNodeWithTag(NoteScreenTags.TEXT).performClick()
+        val whole = textBoxes().single()
+        tap(t.mapX(whole.x + 5f), t.mapY(whole.y + 3f))
+        waitUntil("box open") { editing() != null }
+        compose.onNodeWithTag(NoteScreenTags.INSERT_ANCHOR_HERE).performClick()
+        compose.onNodeWithTag(NoteLinkTags.ANCHOR_NAME).performTextInput("Mitte")
+        compose.onNodeWithTag(NoteLinkTags.ANCHOR_CONFIRM).performClick()
+        waitUntil("anchor stored") { session().state.value.anchors.singleOrNull()?.name == "Mitte" }
+        assertThat(session().state.value.links).isEmpty()
+        assertThat(textBoxes().single().text.plainText).contains(com.stemaker.nibsync.model.MarkStyle.Anchor.SIGN)
+    }
+
+    @Test
     fun emptyBoxLeavesNothingBehind() {
         newTextBox()
         tapOutside()

@@ -17,6 +17,7 @@ import com.stemaker.nibsync.model.Anchor
 import com.stemaker.nibsync.model.AnchorDraft
 import com.stemaker.nibsync.model.Asset
 import com.stemaker.nibsync.model.LinkTarget
+import com.stemaker.nibsync.model.MarkStyle
 import com.stemaker.nibsync.model.NoteLink
 import com.stemaker.nibsync.model.linkTarget
 import com.stemaker.nibsync.model.BackgroundSpec
@@ -138,6 +139,8 @@ class CanvasViewModel(
      */
     fun insert(drafts: List<ElementDraft>): List<PageElement> {
         if (drafts.isEmpty()) return emptyList()
+        // Anchors and links go in at the cursor of an open text box, as letters.
+        if (drafts.all { text.insertLinkAtCursor(it) }) return emptyList()
         val blocks = drafts.filterIsInstance<BlockDraft>()
         // Pictures and files go in at the cursor of an open text box.
         val added = if (text.editing.value != null && blocks.size == drafts.size) {
@@ -157,9 +160,13 @@ class CanvasViewModel(
     /** Asks for a new name of an anchor (then [renameAnchor]); set by the app. */
     var editAnchor: (Anchor) -> Unit = {}
 
+    /** The anchor or link at a place (mm) in a text box; set by the screen, which has the text layout. */
+    var linkAt: (TextBox, Float, Float) -> MarkStyle? = { _, _, _ -> null }
+
     /** Gives the anchor a new name; it stays the same anchor, so links to it keep working. */
     fun renameAnchor(anchor: Anchor, name: String) {
         val current = session.state.value.anchor(anchor.anchorId) ?: return
+        if (name.isNotBlank() && name != current.name && flows.renameInText(anchor.anchorId, name.trim())) return
         if (name.isBlank() || name.trim() == current.name) return
         val added = session.replaceElements(listOf(current.id), listOf(AnchorDraft(current.x, current.y, name.trim(), current.anchorId)))
         if (current.id in _selection.value) _selection.value = added.mapTo(LinkedHashSet()) { it.id }
@@ -413,9 +420,17 @@ class CanvasViewModel(
         when (hit) {
             is TodoItem -> if (_tools.value.tool == Tool.LASSO && !lassoByTap) selectTemporarily(setOf(hit.id)) else openTodo(hit)
             is TextBox -> {
-                enterTextMode()
-                clearSelection()
-                text.open(hit)
+                // With a tool other than text, a tap on an anchor or link in text works it.
+                val mark = if (_tools.value.tool == Tool.TEXT) null else linkAt(hit, x, y)
+                when (mark) {
+                    is MarkStyle.NoteLink -> openNote(mark.linkTarget)
+                    is MarkStyle.Anchor -> session.state.value.anchor(mark.anchorId)?.let(editAnchor)
+                    else -> {
+                        enterTextMode()
+                        clearSelection()
+                        text.open(hit)
+                    }
+                }
             }
             is FileLink -> openFile(hit)
             is NoteLink -> openNote(hit.linkTarget)

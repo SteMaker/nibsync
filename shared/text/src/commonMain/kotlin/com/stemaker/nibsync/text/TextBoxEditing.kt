@@ -2,6 +2,7 @@ package com.stemaker.nibsync.text
 
 import com.stemaker.nibsync.document.DocumentSession
 import com.stemaker.nibsync.model.BlockDraft
+import com.stemaker.nibsync.model.ElementDraft
 import com.stemaker.nibsync.model.FlowBlock
 import com.stemaker.nibsync.model.FlowSlot
 import com.stemaker.nibsync.model.FractionalIndex
@@ -86,7 +87,7 @@ class TextBoxEditing(private val session: DocumentSession, private val ids: IdGe
         val text = e.controller.text
         if (text.isBlank && e.boxId == null) return
         val slot = e.slot ?: FlowSlot(ids.newStrokeId(), FlowSlot.FIRST)
-        val draft = TextBoxDraft(q(e.x), q(e.y), q(e.widthMm), q(measureText(text, e.widthMm)), text, slot)
+        val draft = TextBoxDraft(q(e.x), q(e.y), q(e.widthMm), q(measureText(text, e.widthMm)), text.withAnchorsPlaced(e.widthMm, measureText), slot)
         if (draft == saved && e.boxId != null && e.boxId in session.state.value) return
         // What is below the flow moves with its height.
         val box = session.edit {
@@ -143,7 +144,7 @@ class TextBoxEditing(private val session: DocumentSession, private val ids: IdGe
         var order = (old?.slot ?: e.slot)?.order
         val high = session.state.value.flow(flowId)?.blocks?.firstOrNull { b -> order.let { it == null || b.slot.order > it } }?.slot?.order
         fun slot() = FlowSlot(flowId, FractionalIndex.between(order, high).also { order = it })
-        fun box(text: RichText, slot: FlowSlot) = TextBoxDraft(e.x, e.y, e.widthMm, measureText(text, e.widthMm), text, slot)
+        fun box(text: RichText, slot: FlowSlot) = TextBoxDraft(e.x, e.y, e.widthMm, measureText(text, e.widthMm), text.withAnchorsPlaced(e.widthMm, measureText), slot)
         val first = if (before.isBlank) null else box(before, old?.slot ?: slot())
         val placed = blocks.map { b -> b.fittedTo(e.widthMm).let { it.translated(e.x - it.x, e.y - it.y) }.inSlot(slot()) }
         val last = if (after.isBlank) null else box(after, slot())
@@ -151,6 +152,15 @@ class TextBoxEditing(private val session: DocumentSession, private val ids: IdGe
             val added = flowing(flowId) { replaceElements(listOfNotNull(e.boxId), listOfNotNull(first) + placed + listOfNotNull(last)) }
             added.subList(if (first == null) 0 else 1, (if (first == null) 0 else 1) + placed.size).map { state.element(it.id) as FlowBlock }
         }
+    }
+
+    /** Puts an anchor or link at the cursor of the open box, as a letter of the text. Returns false for no open box or another draft. */
+    fun insertLinkAtCursor(draft: ElementDraft): Boolean {
+        val e = _editing.value ?: return false
+        val (text, style) = linkText(draft, ids) ?: return false
+        e.controller.insertLink(text, style)
+        save()
+        return true
     }
 
     /** What moves, and how far, if the box were stored as typed now. */

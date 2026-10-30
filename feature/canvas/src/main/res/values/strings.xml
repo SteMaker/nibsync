@@ -53,4 +53,6 @@
     <string name="cancel">Cancel</string>
     <string name="insert_table_here">Insert table here</string>
     <string name="insert_file_here">Insert picture or file here</string>
+    <string name="insert_anchor_here">Insert anchor here</string>
+    <string name="insert_link_here">Insert link to note here</string>
 </resources>

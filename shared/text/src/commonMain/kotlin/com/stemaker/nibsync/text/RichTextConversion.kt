@@ -71,6 +71,7 @@ internal object RichTextConversion {
             MarkStyle.Italic -> RichTextSpanMark.Italic(range)
             is MarkStyle.Size -> RichTextSpanMark.FontSize(range, s.pt.sp)
             is MarkStyle.Font -> RichTextSpanMark.Custom(range, FontRun(s.font))
+            is MarkStyle.Anchor, is MarkStyle.NoteLink -> RichTextSpanMark.Custom(range, LinkRun(s))
         }
     }
 
@@ -121,7 +122,11 @@ internal object RichTextConversion {
             is RichTextSpanMark.Italic -> MarkStyle.Italic
             is RichTextSpanMark.FontSize ->
                 if (size.type == TextUnitType.Sp && size.value > 0f) MarkStyle.Size(size.value) else null
-            is RichTextSpanMark.Custom -> (style as? FontRun)?.let { MarkStyle.Font(it.font) }
+            is RichTextSpanMark.Custom -> when (val run = style) {
+                is FontRun -> MarkStyle.Font(run.font)
+                is LinkRun -> run.style
+                else -> null
+            }
             else -> null
         } ?: return null
         return TextMark(range.first, range.last + 1, style)

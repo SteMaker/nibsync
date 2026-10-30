@@ -3,6 +3,7 @@ package com.stemaker.nibsync.text
 import com.stemaker.nibsync.document.DocumentSession
 import com.stemaker.nibsync.document.DocumentState
 import com.stemaker.nibsync.document.select.Reflow
+import com.stemaker.nibsync.model.AnchorDraft
 import com.stemaker.nibsync.model.BlockDraft
 import com.stemaker.nibsync.model.ElementDraft
 import com.stemaker.nibsync.model.FileElement
@@ -12,11 +13,15 @@ import com.stemaker.nibsync.model.FlowSlot
 import com.stemaker.nibsync.model.FractionalIndex
 import com.stemaker.nibsync.model.IdGenerator
 import com.stemaker.nibsync.model.ImageDraft
+import com.stemaker.nibsync.model.MarkStyle
+import com.stemaker.nibsync.model.NoteLinkDraft
 import com.stemaker.nibsync.model.PageElement
 import com.stemaker.nibsync.model.RichText
+import com.stemaker.nibsync.model.Stroke
 import com.stemaker.nibsync.model.StrokeId
 import com.stemaker.nibsync.model.TextBox
 import com.stemaker.nibsync.model.TextBoxDraft
+import com.stemaker.nibsync.model.TextMark
 import com.stemaker.nibsync.model.toDraft
 import com.stemaker.nibsync.model.geometry.Rect
 
@@ -115,7 +120,10 @@ class FlowEditing(private val session: DocumentSession, private val ids: IdGener
         val others = selected.filterNot { it is FlowBlock }
         return session.edit {
             val result = LinkedHashSet<StrokeId>()
-            move(others, dx, dy).mapTo(result) { it.id }
+            // Anchors and links landing on text become letters of it.
+            val letters = others.filter { it !is Stroke && intoText(it.toDraft().translated(dx, dy)) }
+            replaceElements(letters.map { it.id }, emptyList())
+            move(others - letters.toSet(), dx, dy).mapTo(result) { it.id }
             val drop = dropOf(blocks, dx, dy)
             val flows = blocks.mapNotNullTo(LinkedHashSet()) { state.flow(it.slot.flowId) }
             val whole = flows.filter { f -> drop == null && f.blocks.all { it.id in selection } }
@@ -149,8 +157,9 @@ class FlowEditing(private val session: DocumentSession, private val ids: IdGener
      * together; like moved blocks they go into the text they land on, else in a box of their own.
      */
     fun place(drafts: List<ElementDraft>): List<PageElement> = session.edit {
-        val blocks = drafts.filterIsInstance<BlockDraft>()
-        val added = replaceElements(emptySet(), drafts.filterNot { it is BlockDraft }).toMutableList()
+        val blocks = drafts.filterIsInstance<BlockDraft>().map(::withNewAnchors)
+        val others = drafts.filterNot { it is BlockDraft }
+        val added = replaceElements(emptySet(), others.filterNot { intoText(it) }).toMutableList()
         val groups = blocks.groupBy { it.slot?.flowId ?: ids.newStrokeId() }.values
         for (group in groups) {
             val sorted = group.sortedBy { it.y }
@@ -161,6 +170,59 @@ class FlowEditing(private val session: DocumentSession, private val ids: IdGener
             if (drop == null) pushBelow((new.first() as FlowBlock).slot.flowId, new.mapTo(HashSet()) { it.id })
         }
         added
+    }
+
+    /** A copied anchor is a new anchor: text gets new ids for the anchors in it. */
+    private fun withNewAnchors(draft: BlockDraft): BlockDraft {
+        if (draft !is TextBoxDraft) return draft
+        return draft.copy(
+            text = RichText(
+                draft.text.paragraphs.map { p ->
+                    p.copy(marks = p.marks.map { m -> (m.style as? MarkStyle.Anchor)?.let { m.copy(style = it.copy(anchorId = ids.newStrokeId())) } ?: m })
+                },
+            ),
+        )
+    }
+
+    /**
+     * An anchor or link landing on text becomes a letter of it: an anchor in front of the paragraph
+     * there, a link behind it. Returns false if it is not one or there is no text at its place.
+     */
+    private fun DocumentSession.Transaction.intoText(draft: ElementDraft): Boolean {
+        val (x, y) = when (draft) {
+            is AnchorDraft -> draft.x to draft.y
+            is NoteLinkDraft -> draft.x to draft.y
+            else -> return false
+        }
+        val (text, style) = linkText(draft, ids) ?: return false
+        val box = state.textBoxes.firstOrNull { it.bounds.contains(x, y) } ?: return false
+        val index = paragraphTops(box).indexOfLast { box.y + it <= y }.coerceIn(0, box.text.paragraphs.lastIndex)
+        val p = box.text.paragraphs[index]
+        val mark = TextMark(0, text.length, style)
+        val changed = if (draft is AnchorDraft) {
+            p.copy(text = text + p.text, marks = listOf(mark) + p.marks.map { it.copy(start = it.start + text.length, end = it.end + text.length) })
+        } else {
+            val gap = if (p.text.isEmpty()) "" else " "
+            val at = p.text.length + gap.length
+            p.copy(text = p.text + gap + text, marks = p.marks + mark.copy(start = at, end = at + text.length))
+        }
+        val content = RichText(box.text.paragraphs.toMutableList().also { it[index] = changed }).withAnchorsPlaced(box.widthMm, measureText)
+        flowing(box.slot.flowId) {
+            replaceElements(listOf(box.id), listOf(TextBoxDraft(box.x, box.y, box.widthMm, measureText(content, box.widthMm), content, box.slot)))
+        }
+        return true
+    }
+
+    /** Gives the anchor [anchorId] in a text the name [name]. Returns false if no text has it. */
+    fun renameInText(anchorId: StrokeId, name: String): Boolean {
+        val box = session.state.value.textBoxes.firstOrNull { b -> b.anchors.any { it.anchorId == anchorId } } ?: return false
+        val text = RichText(
+            box.text.paragraphs.map { p ->
+                p.copy(marks = p.marks.map { m -> (m.style as? MarkStyle.Anchor)?.takeIf { it.anchorId == anchorId }?.let { m.copy(style = it.copy(name = name)) } ?: m })
+            },
+        )
+        session.replaceElements(listOf(box.id), listOf(TextBoxDraft(box.x, box.y, box.widthMm, box.heightMm, text, box.slot)))
+        return true
     }
 
     private fun DocumentSession.Transaction.newFlow(drafts: List<BlockDraft>): List<PageElement> {
@@ -186,7 +248,7 @@ class FlowEditing(private val session: DocumentSession, private val ids: IdGener
             val paragraphs = split.text.paragraphs
             val head = RichText(paragraphs.subList(0, drop.paragraph))
             val tail = RichText(paragraphs.subList(drop.paragraph, paragraphs.size))
-            fun part(text: RichText, slot: FlowSlot) = TextBoxDraft(split.x, split.y, split.widthMm, measureText(text, split.widthMm), text, slot)
+            fun part(text: RichText, slot: FlowSlot) = TextBoxDraft(split.x, split.y, split.widthMm, measureText(text, split.widthMm), text.withAnchorsPlaced(split.widthMm, measureText), slot)
             val added = replaceElements(listOf(split.id), listOf(part(head, split.slot)) + blocks + part(tail, slot()))
             added.subList(1, added.size - 1)
         }
@@ -244,7 +306,7 @@ internal fun DocumentSession.Transaction.joinText(flowId: StrokeId, measure: (Ri
         val i = blocks.indices.firstOrNull { it > 0 && blocks[it - 1] is TextBox && blocks[it] is TextBox } ?: return
         val first = blocks[i - 1] as TextBox
         val second = blocks[i] as TextBox
-        val text = RichText(first.text.paragraphs + second.text.paragraphs)
+        val text = RichText(first.text.paragraphs + second.text.paragraphs).withAnchorsPlaced(first.widthMm, measure)
         replaceElements(listOf(first.id, second.id), listOf(TextBoxDraft(first.x, first.y, first.widthMm, measure(text, first.widthMm), text, first.slot)))
     }
 }
@@ -286,6 +348,26 @@ internal fun DocumentState.flowPreview(block: FlowBlock?, flowId: StrokeId?, aft
     val (below, _) = Reflow.plan(elements, flow.blocks.mapTo(HashSet()) { it.id }, b, Rect(b.left, b.top, maxOf(b.right, after.right), b.bottom + dy))
     val later = if (block == null) emptyList() else flow.blocks.dropWhile { it.id != block.id }.drop(1)
     return FlowPreview((below + later).mapTo(HashSet()) { it.id }, dy).takeIf { it.ids.isNotEmpty() }
+}
+
+/** What shows an anchor or link in text, and its mark; null for other drafts. */
+internal fun linkText(draft: ElementDraft, ids: IdGenerator): Pair<String, MarkStyle>? = when (draft) {
+    is AnchorDraft -> MarkStyle.Anchor.SIGN to MarkStyle.Anchor(draft.anchorId ?: ids.newStrokeId(), draft.name)
+    is NoteLinkDraft -> (if (draft.anchorName == null) draft.title else "${draft.title} › ${draft.anchorName}") to
+        MarkStyle.NoteLink(draft.target, draft.anchorId, draft.anchorName)
+    else -> null
+}
+
+/** The text with its anchors' [MarkStyle.Anchor.yMm] set for a box [widthMm] wide. */
+internal fun RichText.withAnchorsPlaced(widthMm: Float, measure: (RichText, Float) -> Float): RichText {
+    if (paragraphs.none { p -> p.marks.any { it.style is MarkStyle.Anchor } }) return this
+    return RichText(
+        paragraphs.mapIndexed { i, p ->
+            if (p.marks.none { it.style is MarkStyle.Anchor }) return@mapIndexed p
+            val y = if (i == 0) 0f else measure(RichText(paragraphs.subList(0, i)), widthMm)
+            p.copy(marks = p.marks.map { m -> (m.style as? MarkStyle.Anchor)?.let { m.copy(style = it.copy(yMm = y)) } ?: m })
+        },
+    )
 }
 
 /** A picture wider than [widthMm] scaled down to it; other blocks stay as they are. */

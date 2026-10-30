@@ -213,7 +213,9 @@ internal data class ParagraphRecord(
 
 /**
  * A character style over [start] until [end] (exclusive). [kind]: "b" bold, "i" italic,
- * "z" size ([value] = points), "f" font ([value] = TextFont name). Unknown kinds are skipped.
+ * "z" size ([value] = points), "f" font ([value] = TextFont name), "a" anchor ([value] = its id,
+ * [name], [y] in position steps), "l" link ([document], [value] = id of its anchor if any, [name]
+ * of that anchor). Unknown kinds are skipped.
  */
 @Serializable
 internal data class MarkRecord(
@@ -221,6 +223,9 @@ internal data class MarkRecord(
     @SerialName("e") val end: Int,
     @SerialName("k") val kind: String,
     @SerialName("v") val value: String? = null,
+    @SerialName("n") val name: String? = null,
+    @SerialName("y") val y: Int? = null,
+    @SerialName("d") val document: String? = null,
 )
 
 @Serializable

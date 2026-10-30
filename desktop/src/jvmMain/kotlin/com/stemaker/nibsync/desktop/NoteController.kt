@@ -19,6 +19,7 @@ import com.stemaker.nibsync.model.FileLink
 import com.stemaker.nibsync.model.Anchor
 import com.stemaker.nibsync.model.AnchorDraft
 import com.stemaker.nibsync.model.LinkTarget
+import com.stemaker.nibsync.model.MarkStyle
 import com.stemaker.nibsync.model.NoteLink
 import com.stemaker.nibsync.model.linkTarget
 import com.stemaker.nibsync.model.FileLinkDraft
@@ -104,6 +105,20 @@ class NoteController(
 
     /** Asks for a new name of an anchor (then [renameAnchor]); set by the app. */
     var editAnchor: (Anchor) -> Unit = {}
+
+    /** The anchor or link at a place (mm) in a text box; set by the app, which has the text layout. */
+    var linkAt: (TextBox, Float, Float) -> MarkStyle? = { _, _, _ -> null }
+
+    /** With a tool other than text, a click on an anchor or link in text works it; else the box opens. */
+    private fun followLink(box: TextBox, x: Float, y: Float): Boolean {
+        if (_tools.value.tool == DesktopTool.TEXT) return false
+        when (val mark = linkAt(box, x, y)) {
+            is MarkStyle.NoteLink -> openNote(mark.linkTarget)
+            is MarkStyle.Anchor -> session.state.value.anchor(mark.anchorId)?.let(editAnchor)
+            else -> return false
+        }
+        return true
+    }
 
     /** Copies files of pasted elements from the document they were copied in; set by the app. */
     var copyAssets: (from: DocumentId, to: DocumentId, assets: Set<com.stemaker.nibsync.model.Asset>) -> Unit = { _, _, _ -> }
@@ -394,7 +409,7 @@ class NoteController(
         lastClickX = x
         lastClickY = y
         when (val hit = elementAt(x, y)) {
-            is TextBox -> {
+            is TextBox -> if (!followLink(hit, x, y)) {
                 endTemporarySelection()
                 clickAt(x, y, pageWidthMm)
             }
@@ -545,6 +560,8 @@ class NoteController(
     /** Adds inserted pictures or links (files already stored) and selects them for moving and scaling. */
     fun insert(drafts: List<ElementDraft>) {
         if (drafts.isEmpty()) return
+        // Anchors and links go in at the cursor of an open text box, as letters.
+        if (drafts.all { text.insertLinkAtCursor(it) }) return
         val blocks = drafts.filterIsInstance<BlockDraft>()
         // Pictures and files go in at the cursor of an open text box.
         val added = if (text.editing.value != null && blocks.size == drafts.size) {
@@ -590,6 +607,7 @@ class NoteController(
     fun renameAnchor(anchor: Anchor, name: String) {
         val current = session.state.value.anchor(anchor.anchorId) ?: return
         if (name.isBlank() || name == current.name) return
+        if (flows.renameInText(anchor.anchorId, name.trim())) return
         val added = session.replaceElements(listOf(current.id), listOf(AnchorDraft(current.x, current.y, name.trim(), current.anchorId)))
         if (current.id in _selection.value) _selection.value = added.mapTo(LinkedHashSet()) { it.id }
     }

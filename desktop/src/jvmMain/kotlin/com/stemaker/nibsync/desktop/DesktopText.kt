@@ -34,6 +34,10 @@ class DesktopTextLayout {
     fun heightMm(text: RichText, widthMm: Float): Float =
         ceil(layout(text, widthMm).size.height / LAYOUT_PX_PER_MM * 100f) / 100f
 
+    /** The anchor or link in [box] at ([x], [y]) mm, or null. */
+    fun linkAt(box: TextBox, x: Float, y: Float): com.stemaker.nibsync.model.MarkStyle? =
+        com.stemaker.nibsync.text.RichTextLayout.linkAt(box.text, layoutOf(box), (x - box.x) * LAYOUT_PX_PER_MM, (y - box.y) * LAYOUT_PX_PER_MM)
+
     fun layoutOf(box: TextBox): TextLayoutResult {
         cache[box.id]?.let { (cached, result) -> if (cached == box) return result }
         return layout(box.text, box.widthMm).also { cache[box.id] = box to it }

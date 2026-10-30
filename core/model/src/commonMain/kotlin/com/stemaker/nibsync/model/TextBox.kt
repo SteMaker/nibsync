@@ -30,6 +30,11 @@ data class TextBox(
 
     override fun placedAt(x: Float, y: Float): TextBox = copy(x = x, y = y)
 
+    /** The anchors in the text, as anchors on the page. */
+    val anchors: List<Anchor>
+        get() = text.paragraphs.flatMap { p -> p.marks.mapNotNull { it.style as? MarkStyle.Anchor } }
+            .map { Anchor(it.anchorId, it.anchorId, x, y + it.yMm, it.name, createdAtEpochMs, author) }
+
     companion object {
         /** Boxes are never narrower than this. */
         const val MIN_WIDTH_MM = 10f

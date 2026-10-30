@@ -116,6 +116,8 @@ object ToolbarTags {
     const val INSERT_TABLE = "insert-table"
     const val INSERT_TABLE_HERE = "insert-table-here"
     const val INSERT_FILE_HERE = "insert-file-here"
+    const val INSERT_ANCHOR_HERE = "insert-anchor-here"
+    const val INSERT_LINK_HERE = "insert-link-here"
     const val TABLE_MENU = "table-menu"
     fun tableAction(name: String) = "table-$name"
     const val SELECTION_BAR = "selection-bar"
@@ -223,6 +225,9 @@ fun NoteToolbar(
                     // A table or file at the cursor: the text box is split there.
                     Action(strings.insertTableHere, Icons.Filled.TableChart, true, ToolbarTags.INSERT_TABLE_HERE, tools.onInsertTable)
                     Action(strings.insertFileHere, Icons.Filled.AttachFile, true, ToolbarTags.INSERT_FILE_HERE, tools.onInsert)
+                    // An anchor or link at the cursor is a letter of the text.
+                    Action(strings.insertAnchorHere, Icons.Filled.Flag, true, ToolbarTags.INSERT_ANCHOR_HERE, tools.onInsertAnchor)
+                    Action(strings.insertLinkHere, Icons.Filled.Link, true, ToolbarTags.INSERT_LINK_HERE, tools.onInsertNoteLink)
                     Divider()
                 }
                 Action(if (table != null) strings.deleteTable else strings.deleteTextBox, Icons.Filled.Delete, true, TextTags.DELETE, onDeleteText)

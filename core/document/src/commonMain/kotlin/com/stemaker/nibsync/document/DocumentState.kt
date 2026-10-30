@@ -116,8 +116,8 @@ class DocumentState private constructor(
     /** Visible anchors and links to notes, back to front. */
     val links: List<LinkElement> by lazy { elements.filterIsInstance<LinkElement>() }
 
-    /** Visible anchors, back to front. */
-    val anchors: List<Anchor> by lazy { elements.filterIsInstance<Anchor>() }
+    /** Visible anchors, on the page (back to front) and in text. */
+    val anchors: List<Anchor> by lazy { elements.filterIsInstance<Anchor>() + textBoxes.flatMap { it.anchors } }
 
     /** The anchor [anchorId] (if it was moved, its current element). */
     fun anchor(anchorId: StrokeId): Anchor? = anchors.firstOrNull { it.anchorId == anchorId }

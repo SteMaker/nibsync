@@ -18,6 +18,7 @@ import com.mohamedrejeb.richeditor.paragraph.type.OrderedListStyleType
 import com.mohamedrejeb.richeditor.document.RichTextBlock
 import com.mohamedrejeb.richeditor.document.RichTextBlockType
 import com.stemaker.nibsync.model.ListKind
+import com.stemaker.nibsync.model.MarkStyle
 import com.stemaker.nibsync.model.RichText
 import com.stemaker.nibsync.model.TextMark
 import com.stemaker.nibsync.model.TextParagraph
@@ -205,6 +206,14 @@ class TextEditController internal constructor(internal val state: RichTextState)
         state.addSpanStyle(span)
         if (rich is FontRun) state.addRichSpan(rich)
         return true
+    }
+
+    /** Puts [text] with the anchor or link [style] at the cursor, replacing a selection. */
+    internal fun insertLink(text: String, style: MarkStyle) {
+        val start = state.selection.min
+        state.replaceSelectedText(text)
+        state.addRichSpan(LinkRun(style), TextRange(start, start + text.length))
+        state.selection = TextRange(start + text.length)
     }
 
     /**

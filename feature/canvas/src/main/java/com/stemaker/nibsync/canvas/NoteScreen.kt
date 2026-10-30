@@ -146,6 +146,8 @@ object NoteScreenTags {
     const val INSERT_TABLE = "insert-table"
     const val INSERT_TABLE_HERE = "insert-table-here"
     const val INSERT_FILE_HERE = "insert-file-here"
+    const val INSERT_ANCHOR_HERE = "insert-anchor-here"
+    const val INSERT_LINK_HERE = "insert-link-here"
     const val TABLE_MENU = "table-menu"
     const val TABLE_CELL = "table-cell-editor"
     fun tableAction(name: String) = "table-$name"
@@ -357,6 +359,7 @@ fun NoteScreen(
                             it.mediaRenderer.assetFile = assetFile
                             it.onViewportChanged = { v -> viewport = v }
                             viewModel.measureText = it.textRenderer::heightMm
+                            viewModel.linkAt = it.textRenderer::linkAt
                             it.onStrokeDrafted = viewModel::commitStroke
                             it.onShapeRequested = viewModel::commitShape
                             it.onEraseFinished = viewModel::commitErase
@@ -659,6 +662,23 @@ private fun Toolbar(
                             WithTooltip(fileLabel) {
                                 IconButton(onClick = onInsertFile, modifier = Modifier.testTag(NoteScreenTags.INSERT_FILE_HERE)) {
                                     Icon(Icons.Filled.AttachFile, contentDescription = fileLabel)
+                                }
+                            }
+                        }
+                        // An anchor or link at the cursor is a letter of the text.
+                        if (onInsertAnchor != null) {
+                            val anchorLabel = stringResource(R.string.insert_anchor_here)
+                            WithTooltip(anchorLabel) {
+                                IconButton(onClick = onInsertAnchor, modifier = Modifier.testTag(NoteScreenTags.INSERT_ANCHOR_HERE)) {
+                                    Icon(Icons.Filled.Flag, contentDescription = anchorLabel)
+                                }
+                            }
+                        }
+                        if (onInsertNoteLink != null) {
+                            val linkLabel = stringResource(R.string.insert_link_here)
+                            WithTooltip(linkLabel) {
+                                IconButton(onClick = onInsertNoteLink, modifier = Modifier.testTag(NoteScreenTags.INSERT_LINK_HERE)) {
+                                    Icon(Icons.Filled.Link, contentDescription = linkLabel)
                                 }
                             }
                         }
