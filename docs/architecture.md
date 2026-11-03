@@ -294,6 +294,13 @@ draws or hits them.
   on below it. Selected blocks have indent buttons (`FlowEditing.indent`). The flow keeps its left
   edge (`Flow.x`); a block's stored x is that edge, its shown x adds its indent. Tables keep their
   width when indented.
+- **Floating blocks** (`FlowSlot.floating`, record field `"ff"`): a picture, file, table or to-do put on
+  the page while no text is open (inserted, pasted without text, a new table) floats alone over
+  everything: it neither pushes nor is pushed (`Reflow`, `flowing`), nothing drops into it, text taps
+  do not continue it, a drag just moves it. The selection bar switches: "Put into the text" inserts a
+  floating block where it lies (by the drop rule; on free space it becomes a box of its own and pushes);
+  "Let it float freely" takes a block out of its text exactly where it is, the text closes up under it
+  (`FlowEditing.setFloating`). Inserted while text is open, a block goes in at the cursor.
 - **Rows of pictures:** pictures with the same `order` and a `FlowSlot.beside` key (record field `"fb"`,
   pictures only) stand side by side, left to right by that key (`Flow.rowsOf`; a row needs two). Each
   keeps its own size, top aligned; the highest sets the row's height. Wider together than the flow's

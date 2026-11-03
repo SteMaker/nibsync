@@ -79,6 +79,7 @@ internal data class FileElementRecord(
     @SerialName("fl") val flow: String? = null,
     @SerialName("fo") val order: String? = null,
     @SerialName("fi") val indent: Int = 0,
+    @SerialName("ff") val floating: Boolean = false,
     // Place in a row of pictures (FlowSlot.beside).
     @SerialName("fb") val beside: String? = null,
 )
@@ -116,6 +117,7 @@ internal data class TextBoxRecord(
     @SerialName("fl") val flow: String? = null,
     @SerialName("fo") val order: String? = null,
     @SerialName("fi") val indent: Int = 0,
+    @SerialName("ff") val floating: Boolean = false,
 )
 
 /**
@@ -137,6 +139,7 @@ internal data class TodoRecord(
     @SerialName("fl") val flow: String? = null,
     @SerialName("fo") val order: String? = null,
     @SerialName("fi") val indent: Int = 0,
+    @SerialName("ff") val floating: Boolean = false,
 )
 
 /**
@@ -159,6 +162,7 @@ internal data class TableRecord(
     @SerialName("fl") val flow: String? = null,
     @SerialName("fo") val order: String? = null,
     @SerialName("fi") val indent: Int = 0,
+    @SerialName("ff") val floating: Boolean = false,
 )
 
 @Serializable

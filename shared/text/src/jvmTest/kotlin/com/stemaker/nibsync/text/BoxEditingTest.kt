@@ -123,7 +123,11 @@ class BoxEditingTest {
         text.editing.value!!.controller.placeCursor(0, 4)
         val first = text.insertBlocksAtCursor(listOf(picture(60f, 30f))).single()
         text.finish()
-        val second = flows.place(listOf(picture(40f, 40f).translated(150f, 150f))).single()
+        // Put on the page without text it floats; into text it goes as a box of its own there.
+        val floating = flows.place(listOf(picture(40f, 40f).translated(150f, 150f))).single() as ImageElement
+        assertThat(floating.slot.floating).isTrue()
+        val sunk = flows.setFloating(setOf(floating.id), false)
+        val second = session.state.value.element(sunk.single())!!
         // Dragged onto the right part of the first picture: a line upright beside it.
         val b = first.bounds
         val dx = b.right - 5f - (second.bounds.left + second.bounds.right) / 2
@@ -187,5 +191,35 @@ class BoxEditingTest {
         text.editing.value!!.controller.setContent(RichText.plain("danach"))
         text.finish()
         assertThat(blocks().map { it::class.simpleName }).containsExactly("TextBox", "ImageElement", "TextBox", "TableElement", "TextBox").inOrder()
+    }
+
+    @Test
+    fun aFloatingTableLiesOverTextAndGoesInOrOutOfIt() {
+        text.startNew(20f, 20f, 120f)
+        text.editing.value!!.controller.setContent(RichText.plain("eins\nzwei\ndrei"))
+        text.finish()
+        // Inserted with no text open: it floats over the text, nothing moves.
+        val table = tables.insert(30f, 25f, rows = 1, columns = 1, header = false, pageWidthMm = 210f)
+        tables.finish()
+        assertThat(table.slot.floating).isTrue()
+        assertThat(session.state.value.textBoxes.single().y).isEqualTo(20f)
+        // Text growing below it does not push it.
+        text.open(session.state.value.textBoxes.single()) { it.placeCursorAtEnd() }
+        text.editing.value!!.controller.setContent(RichText.plain("eins\nzwei\ndrei\nvier\nfünf"))
+        text.finish()
+        assertThat(session.state.value.tables.single().y).isEqualTo(25f)
+        // Moved, it goes where it is dropped, not into the text.
+        flows.moveSelection(setOf(session.state.value.tables.single().id), 0f, 1f)
+        assertThat(session.state.value.textBoxes).hasSize(1)
+        // Into the text: between the paragraphs where it lies.
+        val inText = flows.setFloating(setOf(session.state.value.tables.single().id), false).single()
+        assertThat(session.state.value.textBoxes).hasSize(2)
+        val placed = session.state.value.element(inText) as TableElement
+        assertThat(placed.slot.floating).isFalse()
+        // Out again: it stays where it is, the text closes up under it.
+        val y = placed.y
+        val out = flows.setFloating(setOf(inText), true).single()
+        assertThat((session.state.value.element(out) as TableElement).y).isEqualTo(y)
+        assertThat(session.state.value.textBoxes.single().text.plainText).isEqualTo("eins\nzwei\ndrei\nvier\nfünf")
     }
 }

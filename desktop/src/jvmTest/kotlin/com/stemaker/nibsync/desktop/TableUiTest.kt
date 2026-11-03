@@ -97,13 +97,11 @@ class TableUiTest {
         val docId = settings.lastDocument ?: runBlocking { container.library.tree.value.documents.single().id.asDocumentId }
         val session = runBlocking { container.openSession(docId) }
 
-        // A text box near the top, a table in the middle of the view below it.
+        // A text box near the top, a table in it below the text.
         onNodeWithTag("page").performMouseInput { click(androidx.compose.ui.geometry.Offset(300f, 150f)) }
         waitUntil(timeoutMillis = 5000) { onAllNodesWithTag(com.stemaker.nibsync.text.TextTags.EDITOR).fetchSemanticsNodes().isNotEmpty() }
         onNodeWithTag(com.stemaker.nibsync.text.TextTags.EDITOR).performTextInput("eins")
-        onNodeWithTag(com.stemaker.nibsync.text.TextTags.EDITOR).performKeyInput { pressKey(Key.Escape) }
-        onNodeWithTag(ToolbarTags.INSERT).performClick()
-        onNodeWithTag(ToolbarTags.INSERT_TABLE).performClick()
+        onNodeWithTag(ToolbarTags.INSERT_TABLE_HERE).performScrollTo().performClick()
         onNodeWithTag(TableSizeTags.cell(2, 2)).performClick()
         onNodeWithTag(TableSizeTags.CONFIRM).performClick()
         waitUntil(timeoutMillis = 5000) { onAllNodesWithTag(OverlayTags.TABLE_CELL).fetchSemanticsNodes().isNotEmpty() }

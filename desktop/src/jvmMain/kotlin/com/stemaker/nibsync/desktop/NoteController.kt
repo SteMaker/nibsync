@@ -648,6 +648,14 @@ class NoteController(
 
     fun cutSelection(): Boolean = copySelection() && deleteSelection()
 
+    /** Whether tables, pictures, files or to-dos in [selection] can be made [floating] (or put into text). */
+    fun canSetFloating(selection: Set<StrokeId>, floating: Boolean): Boolean = flows.canSetFloating(selection, floating)
+
+    /** Takes the selected blocks out of their text to float, or puts floating ones into the text there. */
+    fun setFloating(floating: Boolean) {
+        _selection.value = flows.setFloating(_selection.value, floating)
+    }
+
     /** Whether tables, pictures, files or to-dos in [selection] can be indented by [delta] steps. */
     fun canIndent(selection: Set<StrokeId>, delta: Int): Boolean = flows.canIndent(selection, delta)
 

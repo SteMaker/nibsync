@@ -11,7 +11,8 @@ import com.stemaker.nibsync.model.geometry.Rect
  * its column": its top is at or below the flow's old bottom and it overlaps the flow horizontally,
  * or overlaps something else that moves (a wide picture takes what is under it along). Handwriting
  * beside the flow, e.g. in the margin, stays. A flow moves as a whole: what counts is its own
- * extent, and a block of it is only ever moved with all the others.
+ * extent, and a block of it is only ever moved with all the others. Floating blocks
+ * ([com.stemaker.nibsync.model.FlowSlot.floating]) are left out both ways.
  */
 object Reflow {
     /** Height changes smaller than this (mm) move nothing. */
@@ -38,7 +39,7 @@ object Reflow {
         if (kotlin.math.abs(newBottom - oldBottom) < MIN_SHIFT_MM) return emptyList()
         val candidates = elements
             .groupBy { (it as? FlowBlock)?.slot?.flowId ?: it.id }.values
-            .filter { unit -> unit.none { it.id in source } && unit.minOf { it.bounds.top } >= oldBottom - TOLERANCE_MM }
+            .filter { unit -> unit.none { it.id in source || (it as? FlowBlock)?.slot?.floating == true } && unit.minOf { it.bounds.top } >= oldBottom - TOLERANCE_MM }
             .sortedBy { unit -> unit.minOf { it.bounds.top } }
         val columns = mutableListOf(left to right)
         val moving = ArrayList<PageElement>()
@@ -63,6 +64,8 @@ object Reflow {
      */
     fun plan(elements: List<PageElement>, source: Set<StrokeId>, before: Rect?, after: Rect?): Pair<List<PageElement>, Float> {
         val none = emptyList<PageElement>() to 0f
+        // A floating block lies over the rest: it pushes nothing.
+        if (elements.any { it.id in source && (it as? FlowBlock)?.slot?.floating == true }) return none
         return when {
             before == null && after != null -> {
                 val below = shifts(elements, source, after.left, after.right, after.top, after.top + MIN_SHIFT_MM * 2)

@@ -66,6 +66,7 @@ class FlowEditing(private val session: DocumentSession, private val ids: IdGener
      */
     fun dropAt(x: Float, y: Float, moving: Set<StrokeId> = emptySet(), pictures: Boolean = false): FlowDrop? {
         for (flow in session.state.value.flows) {
+            if (flow.floating) continue
             val blocks = flow.blocks.filter { it.id !in moving }
             if (blocks.isEmpty()) continue
             if (pictures) besideDrop(flow, blocks, x, y, moving)?.let { return it }
@@ -145,7 +146,9 @@ class FlowEditing(private val session: DocumentSession, private val ids: IdGener
     fun moveSelection(selection: Set<StrokeId>, dx: Float, dy: Float): Set<StrokeId> {
         val selected = session.state.value.elements.filter { it.id in selection }
         if (selected.isEmpty() || (dx == 0f && dy == 0f)) return selection
-        val blocks = selected.filterIsInstance<FlowBlock>().sortedBy { it.y }
+        // Floating blocks just go there, over whatever lies there.
+        val floating = selected.filter { it is FlowBlock && it.slot.floating }.map { it as FlowBlock }
+        val blocks = selected.filterIsInstance<FlowBlock>().filter { !it.slot.floating }.sortedBy { it.y }
         val others = selected.filterNot { it is FlowBlock }
         return session.edit {
             val result = LinkedHashSet<StrokeId>()
@@ -153,6 +156,11 @@ class FlowEditing(private val session: DocumentSession, private val ids: IdGener
             val letters = others.filter { it !is Stroke && intoText(it.toDraft().translated(dx, dy)) }
             replaceElements(letters.map { it.id }, emptyList())
             move(others - letters.toSet(), dx, dy).mapTo(result) { it.id }
+            for (f in floating) {
+                val flow = state.flow(f.slot.flowId) ?: continue
+                moveFlow(flow.id, maxOf(0f, flow.x + dx), maxOf(0f, flow.y + dy))
+                result += f.id
+            }
             val drop = dropOf(blocks, dx, dy)
             val flows = blocks.mapNotNullTo(LinkedHashSet()) { state.flow(it.slot.flowId) }
             val whole = flows.filter { f -> drop == null && f.blocks.all { it.id in selection } }
@@ -192,6 +200,11 @@ class FlowEditing(private val session: DocumentSession, private val ids: IdGener
         val groups = blocks.groupBy { it.slot?.flowId ?: ids.newStrokeId() }.values
         for (group in groups) {
             val sorted = group.sortedBy { it.y }
+            // Without text they are not part of any: each floats where it is put.
+            if (sorted.none { it is TextBoxDraft }) {
+                for (d in sorted) added += replaceElements(emptySet(), listOf(d.inSlot(FlowSlot(ids.newStrokeId(), FlowSlot.FIRST, floating = true))))
+                continue
+            }
             val first = sorted.first()
             val drop = dropAt(first.x + first.widthMm / 2, first.y)
             val new = if (drop != null) insert(drop, sorted) else newFlow(sorted)
@@ -318,6 +331,40 @@ class FlowEditing(private val session: DocumentSession, private val ids: IdGener
         }
     }.also { joinText(drop.flowId, measureText) }
 
+    /**
+     * Takes the selected tables, pictures, files and to-dos out of their text ([floating]): each stays
+     * exactly where it is, over the text, which closes up below it; or puts floating ones into the
+     * text where they lie (a box of their own, pushing down what they cover, if there is no text
+     * there). One undo step; returns the new ids of the selection.
+     */
+    fun setFloating(selection: Set<StrokeId>, floating: Boolean): Set<StrokeId> {
+        val state = session.state.value
+        val blocks = state.elements.filter { it.id in selection }.filterIsInstance<FlowBlock>()
+            .filter { it !is TextBox && it.slot.floating != floating }
+        if (blocks.isEmpty()) return selection
+        return session.edit {
+            val result = LinkedHashSet(selection)
+            result.removeAll(blocks.map { it.id }.toSet())
+            val drafts = blocks.map { state.naturalDraft(it) }
+            if (floating) {
+                removeBlocks(blocks.map { it.id }, measureText, pull = true)
+                for (d in drafts) replaceElements(emptySet(), listOf(d.inSlot(FlowSlot(ids.newStrokeId(), FlowSlot.FIRST, floating = true)))).mapTo(result) { it.id }
+            } else {
+                replaceElements(blocks.map { it.id }, emptyList())
+                for (d in drafts) {
+                    val drop = dropAt(d.x + d.widthMm / 2, d.y)
+                    val placed = if (drop != null) insert(drop, listOf(d)) else newFlow(listOf(d)).also { pushBelow((it.first() as FlowBlock).slot.flowId, it.mapTo(HashSet()) { e -> e.id }) }
+                    placed.mapTo(result) { it.id }
+                }
+            }
+            result
+        }
+    }
+
+    /** True if something in [selection] can be made [floating] (or be put into text). */
+    fun canSetFloating(selection: Set<StrokeId>, floating: Boolean): Boolean =
+        session.state.value.elements.any { it.id in selection && it is FlowBlock && it !is TextBox && it.slot.floating != floating }
+
     /** The indent of a block right below [above]: a list item's text, an indented block's own. */
     private fun indentBelow(above: Any?): Int = when (above) {
         is TextBox -> indentBelow(above.text.paragraphs.last())
@@ -372,6 +419,7 @@ class FlowEditing(private val session: DocumentSession, private val ids: IdGener
      */
     fun continuation(x: Float, y: Float): FlowContinuation? {
         for (flow in session.state.value.flows) {
+            if (flow.floating) continue
             val b = flow.bounds
             if (x < b.left || x > b.right) continue
             val lines = Flow.rowsOf(flow.blocks)
@@ -452,7 +500,7 @@ internal fun DocumentSession.Transaction.dragFlow(flowId: StrokeId, dx: Float, d
  * than [except] (it goes below that one instead), so it never covers text.
  */
 internal fun DocumentState.freeTop(left: Float, right: Float, y: Float, except: StrokeId? = null): Float {
-    val others = flows.filter { it.id != except }.map { it.bounds }
+    val others = flows.filter { it.id != except && !it.floating }.map { it.bounds }
     var top = y
     while (true) {
         val inside = others.firstOrNull { it.left < right && it.right > left && it.top <= top && it.bottom > top } ?: return top

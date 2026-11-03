@@ -6,6 +6,8 @@ import androidx.compose.ui.input.key.isShiftPressed
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material.icons.filled.SwapHoriz
+import androidx.compose.material.icons.filled.Layers
+import androidx.compose.material.icons.automirrored.filled.WrapText
 import androidx.compose.material.icons.filled.AttachFile
 import androidx.compose.material.icons.filled.TableChart
 import androidx.compose.ui.layout.onSizeChanged
@@ -170,6 +172,8 @@ object NoteScreenTags {
     const val DELETE_SELECTION = "delete-selection"
     const val INDENT_SELECTION = "indent-selection"
     const val BOX_FRAME = "box-frame"
+    const val INTO_TEXT = "selection-into-text"
+    const val FLOAT = "selection-float"
     const val OUTDENT_SELECTION = "outdent-selection"
     const val COPY_SELECTION = "copy-selection"
     const val PASTE = "paste"
@@ -476,6 +480,7 @@ fun NoteScreen(
                         SelectionBar(
                             bounds, v, onDelete = viewModel::deleteSelection, onCopy = viewModel::copySelection,
                             canIndent = viewModel.canIndent(1), canOutdent = viewModel.canIndent(-1), onIndent = viewModel::indentSelection,
+                            canFloat = viewModel.canSetFloating(true), canSink = viewModel.canSetFloating(false), onFloating = viewModel::setFloating,
                         )
                     }
                 }
@@ -933,6 +938,9 @@ private fun SelectionBar(
     canIndent: Boolean = false,
     canOutdent: Boolean = false,
     onIndent: (Int) -> Unit = {},
+    canFloat: Boolean = false,
+    canSink: Boolean = false,
+    onFloating: (Boolean) -> Unit = {},
 ) {
     val t = viewport.documentToView
     val density = androidx.compose.ui.platform.LocalDensity.current
@@ -962,6 +970,23 @@ private fun SelectionBar(
             WithTooltip(copyLabel) {
                 IconButton(onClick = onCopy, modifier = Modifier.testTag(NoteScreenTags.COPY_SELECTION)) {
                     Icon(Icons.Filled.ContentCopy, contentDescription = copyLabel)
+                }
+            }
+            // Into the text where it lies, or out of it to float freely over the page.
+            if (canSink) {
+                val label = stringResource(R.string.into_text)
+                WithTooltip(label) {
+                    IconButton(onClick = { onFloating(false) }, modifier = Modifier.testTag(NoteScreenTags.INTO_TEXT)) {
+                        Icon(Icons.AutoMirrored.Filled.WrapText, contentDescription = label)
+                    }
+                }
+            }
+            if (canFloat) {
+                val label = stringResource(R.string.float_free)
+                WithTooltip(label) {
+                    IconButton(onClick = { onFloating(true) }, modifier = Modifier.testTag(NoteScreenTags.FLOAT)) {
+                        Icon(Icons.Filled.Layers, contentDescription = label)
+                    }
                 }
             }
             // Tables, pictures, files and to-dos move in steps like list levels.

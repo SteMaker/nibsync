@@ -317,6 +317,8 @@ class DocumentSession(
             val before = _state.value.flow(flowId)
             val result = change()
             val after = _state.value.flow(flowId)
+            // A floating block neither pushes nor pulls what is below it.
+            if (before?.floating == true || after?.floating == true) return result
             val source = (before?.blocks.orEmpty() + after?.blocks.orEmpty()).mapTo(HashSet()) { it.id }
             val (moving, dy) = Reflow.plan(_state.value.elements, source, before?.bounds, after?.bounds)
             move(moving, 0f, dy)

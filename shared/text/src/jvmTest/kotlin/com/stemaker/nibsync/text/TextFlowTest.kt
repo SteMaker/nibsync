@@ -38,7 +38,7 @@ class TextFlowTest {
         text.startNew(20f, 20f, 120f)
         text.editing.value!!.controller.setContent(RichText.plain("eins"))
         text.finish()
-        tables.insert(20f, 40f, rows = 2, columns = 2, header = false, pageWidthMm = 210f)
+        tables.insert(20f, 40f, rows = 2, columns = 2, header = false, pageWidthMm = 210f, floating = false)
         tables.finish()
         val tableTop = s.state.value.tables.single().y
         // Two more lines in the box: the table moves 12 mm down.
@@ -60,7 +60,7 @@ class TextFlowTest {
     @Test
     fun aTableRowPushesTheTextBelowDown() {
         val (s, text, tables) = setup()
-        tables.insert(20f, 20f, rows = 1, columns = 2, header = false, pageWidthMm = 210f)
+        tables.insert(20f, 20f, rows = 1, columns = 2, header = false, pageWidthMm = 210f, floating = false)
         text.startNew(20f, 40f, 120f)
         text.editing.value!!.controller.setContent(RichText.plain("darunter"))
         text.finish()
@@ -78,11 +78,11 @@ class TextFlowTest {
         text.editing.value!!.controller.setContent(RichText.plain("weit unten"))
         text.finish()
         // Far above: nothing moves.
-        tables.insert(20f, 20f, rows = 2, columns = 2, header = false, pageWidthMm = 210f)
+        tables.insert(20f, 20f, rows = 2, columns = 2, header = false, pageWidthMm = 210f, floating = false)
         assertThat(s.state.value.textBoxes.single().y).isWithin(0.05f).of(100f)
         tables.finish()
         // Right on top of it: it moves below the table.
-        val second = tables.insert(20f, 95f, rows = 2, columns = 2, header = false, pageWidthMm = 210f)
+        val second = tables.insert(20f, 95f, rows = 2, columns = 2, header = false, pageWidthMm = 210f, floating = false)
         assertThat(s.state.value.textBoxes.single().y).isAtLeast(second.bounds.bottom)
     }
 
@@ -93,7 +93,7 @@ class TextFlowTest {
         val controller = text.editing.value!!.controller
         controller.setContent(RichText(listOf(TextParagraph("vorher fett", marks = listOf(TextMark(7, 11, MarkStyle.Bold))), TextParagraph("nachher"))))
         text.save()
-        tables.insert(20f, 80f, rows = 1, columns = 1, header = false, pageWidthMm = 210f)
+        tables.insert(20f, 80f, rows = 1, columns = 1, header = false, pageWidthMm = 210f, floating = false)
         tables.finish()
         val farTable = s.state.value.tables.single()
         text.open(s.state.value.textBoxes.single())
@@ -137,7 +137,7 @@ class FlowEditingTest {
     }
 
     private fun Setup.table(y: Float): TableElement {
-        val t = tables.insert(20f, y, rows = 2, columns = 2, header = false, pageWidthMm = 210f)
+        val t = tables.insert(20f, y, rows = 2, columns = 2, header = false, pageWidthMm = 210f, floating = false)
         tables.finish()
         return s.state.value.tables.first { it.tableId == t.tableId }
     }

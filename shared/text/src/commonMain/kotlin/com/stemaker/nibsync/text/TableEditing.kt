@@ -84,15 +84,17 @@ class TableEditing(private val session: DocumentSession, private val ids: IdGene
 
     /**
      * Adds a table of [rows] x [columns] with its top left at ([x], [y]) mm, as wide as
-     * [TableElement.DEFAULT_WIDTH_MM] or the page allows, and opens its first cell.
+     * [TableElement.DEFAULT_WIDTH_MM] or the page allows, and opens its first cell. Not inserted into
+     * text, it [floating]s there over the page ([FlowSlot.floating]); else it is a box of its own
+     * that pushes down what it would cover.
      */
-    fun insert(x: Float, y: Float, rows: Int, columns: Int, header: Boolean, pageWidthMm: Float): TableElement {
+    fun insert(x: Float, y: Float, rows: Int, columns: Int, header: Boolean, pageWidthMm: Float, floating: Boolean = true): TableElement {
         finish()
         val width = minOf(TableElement.DEFAULT_WIDTH_MM, pageWidthMm - x - MARGIN_MM).coerceAtLeast(columns * TableElement.MIN_COLUMN_MM)
         val left = maxOf(0f, minOf(x, pageWidthMm - width))
-        val slot = FlowSlot(ids.newStrokeId(), FlowSlot.FIRST)
-        val draft = draft(left, session.state.value.freeTop(left, left + width, maxOf(0f, y)), width, rows, columns, header).inSlot(slot)
-        // What the new table would cover moves down below it.
+        val slot = FlowSlot(ids.newStrokeId(), FlowSlot.FIRST, floating = floating)
+        val top = if (floating) maxOf(0f, y) else session.state.value.freeTop(left, left + width, maxOf(0f, y))
+        val draft = draft(left, top, width, rows, columns, header).inSlot(slot)
         val table = session.edit { flowing(slot.flowId) { replaceElements(emptySet(), listOf(draft)).single() } } as TableElement
         open(table, CellKey(table.rows.first().rowId, table.columns.first().colId))
         return table

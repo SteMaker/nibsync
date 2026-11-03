@@ -124,7 +124,7 @@ class DrawingControllerTest {
         c.text.startNew(20f, 20f, 120f)
         c.text.editing.value!!.controller.setContent(com.stemaker.nibsync.model.RichText.plain("eins\nzwei\ndrei\nvier"))
         c.text.finish()
-        val table = c.table.insert(20f, 100f, rows = 2, columns = 2, header = false, pageWidthMm = 210f)
+        val table = c.table.insert(20f, 100f, rows = 2, columns = 2, header = false, pageWidthMm = 210f, floating = false)
         c.table.finish()
         c.selectTool(DesktopTool.LASSO)
         c.pointerDown(10f, 98f, clock, null, tol, reach)
@@ -210,7 +210,7 @@ class DrawingControllerTest {
     @Test
     fun overATableBorderThePointerShowsItCanBeDragged() = runTest {
         val c = controller()
-        val table = c.table.insert(20f, 100f, rows = 2, columns = 2, header = false, pageWidthMm = 210f)
+        val table = c.table.insert(20f, 100f, rows = 2, columns = 2, header = false, pageWidthMm = 210f, floating = false)
         c.table.finish()
         val border = table.x + table.geometry.columnX[1]
         assertThat(c.cursorAt(border + 0.5f, table.y + 3f, reach)).isEqualTo(PageCursor.COLUMN_BORDER)

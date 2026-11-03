@@ -56,6 +56,8 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.FormatIndentDecrease
 import androidx.compose.material.icons.automirrored.filled.FormatIndentIncrease
+import androidx.compose.material.icons.automirrored.filled.WrapText
+import androidx.compose.material.icons.filled.Layers
 import androidx.compose.material.icons.automirrored.filled.FormatListBulleted
 import androidx.compose.material.icons.automirrored.filled.Redo
 import androidx.compose.material.icons.automirrored.filled.Undo
@@ -136,6 +138,8 @@ object ToolbarTags {
     const val COPY_SELECTION = "copy-selection"
     const val CUT_SELECTION = "cut-selection"
     const val INDENT_SELECTION = "indent-selection"
+    const val INTO_TEXT = "selection-into-text"
+    const val FLOAT = "selection-float"
     const val OUTDENT_SELECTION = "outdent-selection"
     const val PASTE = "paste"
     const val TOOL_SETTINGS = "tool-settings"
@@ -167,6 +171,10 @@ class ToolbarTools(
     val canIndent: Boolean = false,
     val canOutdent: Boolean = false,
     val onIndent: (Int) -> Unit = {},
+    /** The selection can be taken out of its text to float ([canFloat]) or put into the text ([canSink]). */
+    val canFloat: Boolean = false,
+    val canSink: Boolean = false,
+    val onFloating: (Boolean) -> Unit = {},
 )
 
 /** Tool bar above the page: undo/redo, and text formatting while a box is open. */
@@ -407,6 +415,8 @@ fun SelectionBar(strings: Strings, frame: com.stemaker.nibsync.model.geometry.Re
             Action(strings.deleteSelection, Icons.Filled.Delete, true, ToolbarTags.DELETE_SELECTION, t.onDeleteSelection)
             Action(strings.copySelection, Icons.Filled.ContentCopy, true, ToolbarTags.COPY_SELECTION, t.onCopySelection)
             Action(strings.cutSelection, Icons.Filled.ContentCut, true, ToolbarTags.CUT_SELECTION, t.onCutSelection)
+            if (t.canSink) Action(strings.intoText, Icons.AutoMirrored.Filled.WrapText, true, ToolbarTags.INTO_TEXT) { t.onFloating(false) }
+            if (t.canFloat) Action(strings.floatFree, Icons.Filled.Layers, true, ToolbarTags.FLOAT) { t.onFloating(true) }
             if (t.canIndent || t.canOutdent) {
                 Action(strings.outdent, Icons.AutoMirrored.Filled.FormatIndentDecrease, t.canOutdent, ToolbarTags.OUTDENT_SELECTION) { t.onIndent(-1) }
                 Action(strings.indent, Icons.AutoMirrored.Filled.FormatIndentIncrease, t.canIndent, ToolbarTags.INDENT_SELECTION) { t.onIndent(1) }

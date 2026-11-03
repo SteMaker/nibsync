@@ -6,9 +6,17 @@ import com.stemaker.nibsync.model.geometry.Rect
  * Where a block belongs: to the flow [flowId], at [order] among its blocks ([FractionalIndex]
  * keys, equal keys of concurrent inserts go by element id), indented by [indent] steps of
  * [Flow.INDENT_MM] (like list levels, so a picture can belong to a list item). Pictures with the
- * same [order] and a [beside] key stand in one row, ordered by it (see [Flow.rowsOf]).
+ * same [order] and a [beside] key stand in one row, ordered by it (see [Flow.rowsOf]). A [floating]
+ * block (a picture, file, table or to-do alone in its flow) lies over everything else, free of the
+ * text: it neither pushes nor is pushed, and nothing is dropped into it.
  */
-data class FlowSlot(val flowId: StrokeId, val order: String, val indent: Int = 0, val beside: String? = null) {
+data class FlowSlot(
+    val flowId: StrokeId,
+    val order: String,
+    val indent: Int = 0,
+    val beside: String? = null,
+    val floating: Boolean = false,
+) {
     init {
         require(indent in 0..MAX_INDENT) { "indent $indent out of range" }
     }
@@ -60,6 +68,9 @@ data class Flow(val id: StrokeId, val blocks: List<FlowBlock>, val x: Float, val
     init {
         require(blocks.isNotEmpty()) { "A flow needs at least one block" }
     }
+
+    /** A floating block, not part of any text (see [FlowSlot.floating]). */
+    val floating: Boolean get() = blocks.any { it.slot.floating }
 
     val bounds: Rect
         get() = Rect(x, y, blocks.maxOf { it.x + it.widthMm }, blocks.last().let { it.y + it.heightMm })

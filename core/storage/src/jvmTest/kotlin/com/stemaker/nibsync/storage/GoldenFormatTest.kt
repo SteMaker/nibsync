@@ -210,6 +210,21 @@ class GoldenFormatTest {
         ),
     )
 
+    // Added later in format version 1 (block field "ff"); older readers show the block in the text flow.
+    private val floatingOps = listOf(
+        com.stemaker.nibsync.document.DocumentOp.AddFiles(
+            com.stemaker.nibsync.document.OpStamp(18, DEV_A),
+            listOf(sampleImage("88888888-8888-4888-8888-888888888888").copy(slot = com.stemaker.nibsync.model.FlowSlot(com.stemaker.nibsync.model.StrokeId("89898989-8989-4898-8898-898989898989"), "n", floating = true))),
+        ),
+    )
+
+    @Test
+    fun floatingOpsAreStable() {
+        val golden = golden("ops-v1-floating.oplog")
+        assertThat(OpLogCodec.read(Buffer().write(golden)).ops).isEqualTo(floatingOps)
+        assertThat(encodedLog(floatingOps).hex()).isEqualTo(golden.hex())
+    }
+
     @Test
     fun rowOpsAreStable() {
         val golden = golden("ops-v1-rows.oplog")
@@ -240,6 +255,7 @@ class GoldenFormatTest {
         FileSystem.SYSTEM.write(goldenDir / "ops-v1-flows.oplog") { write(encodedLog(flowOps)) }
         FileSystem.SYSTEM.write(goldenDir / "ops-v1-indent.oplog") { write(encodedLog(indentOps)) }
         FileSystem.SYSTEM.write(goldenDir / "ops-v1-rows.oplog") { write(encodedLog(rowOps)) }
+        FileSystem.SYSTEM.write(goldenDir / "ops-v1-floating.oplog") { write(encodedLog(floatingOps)) }
     }
 
     @Test
