@@ -971,7 +971,9 @@ class NoteAppTest {
         tap(400f, 300f)
         waitUntil("editing a new text box") { editing() != null }
         compose.onNodeWithTag(TextTags.EDITOR).performTextInput("eins")
-        editing()!!.controller.setContent(com.stemaker.nibsync.model.RichText.plain("eins\nzwei\ndrei\nvier"))
+        // On the main thread, where the editor changes its text, once the typing is through.
+        compose.waitForIdle()
+        compose.runOnUiThread { editing()!!.controller.setContent(com.stemaker.nibsync.model.RichText.plain("eins\nzwei\ndrei\nvier")) }
         compose.onNodeWithTag(NoteScreenTags.TEXT_DONE).performClick()
         waitUntil("box stored") { textBoxes().size == 1 && editing() == null }
         val box = textBoxes().single()
@@ -1032,7 +1034,9 @@ class NoteAppTest {
         newTextBox(400f, 400f)
         compose.onNodeWithTag(TextTags.EDITOR).performTextInput("Position")
         // Three paragraphs: line spacing on the page must match the editor's.
-        editing()!!.controller.setContent(com.stemaker.nibsync.model.RichText.plain("Position\nzweite Zeile\ndritte Zeile"))
+        // On the main thread, where the editor changes its text, once the typing is through.
+        compose.waitForIdle()
+        compose.runOnUiThread { editing()!!.controller.setContent(com.stemaker.nibsync.model.RichText.plain("Position\nzweite Zeile\ndritte Zeile")) }
         tapOutside()
         val box = textBoxes().single()
         val view = checkNotNull(canvas())
