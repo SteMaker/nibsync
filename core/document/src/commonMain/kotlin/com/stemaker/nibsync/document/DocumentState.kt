@@ -6,6 +6,7 @@ import com.stemaker.nibsync.model.DocumentMeta
 import com.stemaker.nibsync.model.Flow
 import com.stemaker.nibsync.model.FlowBlock
 import com.stemaker.nibsync.model.FileElement
+import com.stemaker.nibsync.model.Layer
 import com.stemaker.nibsync.model.LinkElement
 import com.stemaker.nibsync.model.PageElement
 import com.stemaker.nibsync.model.Stroke
@@ -96,14 +97,14 @@ class DocumentState private constructor(
 
     /**
      * All visible elements, back to front: by layer, then by the stamp of the op that added them;
-     * floating blocks after all others.
+     * floating blocks over text, under handwriting.
      * Tables carry their current cells (the added content overlaid with [DocumentOp.SetTableCells]),
      * blocks their place in their flow.
      */
     val elements: List<PageElement> by lazy {
-        // Floating blocks lie over everything else.
+        // Floating blocks lie over text, tables and the rest, under handwriting (which can mark them).
         entries.values
-            .sortedWith(compareBy<Entry> { (it.element as? FlowBlock)?.slot?.floating == true }.thenBy { it.element.layer.zIndex }.thenBy { it.addedAt })
+            .sortedWith(compareBy<Entry> { if ((it.element as? FlowBlock)?.slot?.floating == true) Layer.TEXT.zIndex + 0.5f else it.element.layer.zIndex.toFloat() }.thenBy { it.addedAt })
             .map { placed[it.element.id] ?: it.element }
     }
 

@@ -315,9 +315,11 @@ draws or hits them.
   "Let it float freely" takes a block out of its text exactly where it is, the text closes up under it
   (`FlowEditing.setFloating`), at the place the drop line showed while dragging it (also beside a
   picture). An open table or to-do has the same switch in the tool bar. Inserted while text is open,
-  a block goes in at the cursor. Floating blocks come last in `DocumentState.elements`: drawn on
-  top and hit first (Android draws them in a last pass). The rule holds for all blocks; handwriting
-  always lies freely on the page.
+  a block goes in at the cursor. Floating blocks are ordered just above the TEXT layer in
+  `DocumentState.elements`: drawn over text and tables and hit before them, under handwriting, so
+  pictures can still be written on (Android draws them in a pass of their own; marker strokes on a
+  floating picture are under it). The rule holds for all blocks; handwriting always lies freely on
+  the page.
 - **Rows of pictures:** pictures with the same `order` and a `FlowSlot.beside` key (record field `"fb"`,
   pictures only) stand side by side, left to right by that key (`Flow.rowsOf`; a row needs two). Each
   keeps its own size, top aligned; the highest sets the row's height. Wider together than the flow's

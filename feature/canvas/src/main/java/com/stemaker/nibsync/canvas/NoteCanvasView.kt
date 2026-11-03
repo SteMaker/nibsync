@@ -563,6 +563,7 @@ class NoteCanvasView(context: Context) : FrameLayout(context) {
                     drawLinks(this, visible, moving)
                     drawTextBoxes(this, visible, moving)
                     drawTables(this, visible, moving)
+                    drawFloating(this, visible, moving)
                     textDrawn = true
                 }
                 if (moving && stroke.id in selection) {
@@ -578,10 +579,8 @@ class NoteCanvasView(context: Context) : FrameLayout(context) {
                 drawLinks(this, visible, moving)
                 drawTextBoxes(this, visible, moving)
                 drawTables(this, visible, moving)
+                drawFloating(this, visible, moving)
             }
-            // Floating pictures, files and tables lie over everything but to-dos.
-            drawFiles(this, null, visible, moving, floating = true)
-            drawTables(this, visible, moving, floating = true)
             drawTodos(this, visible, moving)
         }
         textFrame?.let { f ->
@@ -610,6 +609,12 @@ class NoteCanvasView(context: Context) : FrameLayout(context) {
             }
             canvas.drawPath(lassoDrawPath, selectionPaint)
         }
+    }
+
+    /** Floating pictures, files and tables: over text and tables, under handwriting. */
+    private fun drawFloating(canvas: Canvas, visible: com.stemaker.nibsync.model.geometry.Rect, moving: Boolean) {
+        drawFiles(canvas, null, visible, moving, floating = true)
+        drawTables(canvas, visible, moving, floating = true)
     }
 
     /** Files of [layer] (any if null), the [floating] ones or those in text. */
