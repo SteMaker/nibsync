@@ -49,4 +49,13 @@ class HeadingTest {
         c.state.selection = TextRange(2)
         assertThat(c.lineBreak(soft = false)).isFalse()
     }
+
+    @Test
+    fun theCursorGoesToTheVeryEndOfALongerText() {
+        val c = TextEditController.create(RichText.plain("eins\nzwei"))
+        c.placeCursorAtEnd()
+        assertThat(c.isAtEnd).isTrue()
+        c.placeCursorAtStart()
+        assertThat(c.isAtStart).isTrue()
+    }
 }

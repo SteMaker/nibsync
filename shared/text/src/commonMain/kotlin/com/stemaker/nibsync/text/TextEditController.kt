@@ -350,7 +350,7 @@ class TextEditController internal constructor(internal val state: RichTextState)
     fun placeCursor(paragraph: Int, offset: Int) {
         val ranges = textRanges()
         val (start, end) = ranges.getOrNull(paragraph.coerceIn(0, maxOf(0, ranges.lastIndex))) ?: return
-        state.selection = TextRange((start + offset).coerceIn(start, end))
+        state.selection = TextRange(start + offset.coerceIn(0, end - start))
     }
 
     fun placeCursorAtStart() = placeCursor(0, 0)

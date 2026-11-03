@@ -806,7 +806,7 @@ class NoteAppTest {
         tap(t.mapX(box.x + 2f), t.mapY(box.y + box.heightMm / 2))
         waitUntil("editing the box") { editing()?.boxId == box.id }
         assertThat(strokes()).isEmpty()
-        compose.onNodeWithTag(TextTags.DELETE).performClick()
+        compose.onNodeWithTag(TextTags.DELETE).performScrollTo().performClick()
         waitUntil("removed") { textBoxes().isEmpty() && editing() == null }
         // Undo brings it back.
         compose.onNodeWithTag(NoteScreenTags.UNDO).performClick()
@@ -923,15 +923,13 @@ class NoteAppTest {
         tap(400f, 300f)
         waitUntil("editing a new text box") { editing() != null }
         compose.onNodeWithTag(TextTags.EDITOR).performTextInput("eins")
-        compose.onNodeWithTag(NoteScreenTags.TEXT_DONE).performClick()
-        waitUntil("box stored") { textBoxes().size == 1 && editing() == null }
-        val box = textBoxes().single()
-        compose.onNodeWithTag(NoteScreenTags.INSERT).performClick()
-        compose.onNodeWithTag(NoteScreenTags.INSERT_TABLE).performClick()
+        // The table at the cursor: in the box below the text (without open text it would float).
+        compose.onNodeWithTag(NoteScreenTags.INSERT_TABLE_HERE).performClick()
         compose.onNodeWithTag(com.stemaker.nibsync.theme.TableSizeTags.CONFIRM).performClick()
         waitUntil("table") { session().state.value.tables.size == 1 }
         compose.onNodeWithTag(NoteScreenTags.TEXT_DONE).performClick()
         waitUntil("table closed") { compose.onAllNodesWithTag(NoteScreenTags.TABLE_CELL).fetchSemanticsNodes().isEmpty() }
+        val box = textBoxes().single()
         val tableTop = session().state.value.tables.single().y
         assertThat(tableTop).isGreaterThan(box.bounds.bottom)
 
@@ -966,7 +964,7 @@ class NoteAppTest {
     }
 
     @Test
-    fun aLassoedTableDraggedOntoTextGoesBetweenItsParagraphsAndAnAnchorGoesInAtTheCursor() {
+    fun aTableDraggedOntoTextGoesBetweenItsParagraphsAndAnAnchorGoesInAtTheCursor() {
         compose.onNodeWithTag(NoteScreenTags.TEXT).performClick()
         tap(400f, 300f)
         waitUntil("editing a new text box") { editing() != null }
@@ -974,11 +972,11 @@ class NoteAppTest {
         // On the main thread, where the editor changes its text, once the typing is through.
         compose.waitForIdle()
         compose.runOnUiThread { editing()!!.controller.setContent(com.stemaker.nibsync.model.RichText.plain("eins\nzwei\ndrei\nvier")) }
-        compose.onNodeWithTag(NoteScreenTags.TEXT_DONE).performClick()
-        waitUntil("box stored") { textBoxes().size == 1 && editing() == null }
-        val box = textBoxes().single()
-        compose.onNodeWithTag(NoteScreenTags.INSERT).performClick()
-        compose.onNodeWithTag(NoteScreenTags.INSERT_TABLE).performClick()
+        compose.waitForIdle()
+        compose.runOnUiThread { editing()!!.controller.placeCursorAtEnd() }
+        compose.waitForIdle()
+        // The table at the cursor, below the text in the same box.
+        compose.onNodeWithTag(NoteScreenTags.INSERT_TABLE_HERE).performClick()
         compose.onNodeWithTag(com.stemaker.nibsync.theme.TableSizeTags.CONFIRM).performClick()
         waitUntil("table") { session().state.value.tables.size == 1 }
         compose.onNodeWithTag(NoteScreenTags.TEXT_DONE).performClick()
@@ -986,11 +984,13 @@ class NoteAppTest {
         idleFor(1500)
         compose.waitForIdle()
 
-        // Lasso around the table, then its top dragged to the middle of the text.
+        // The table alone selected by a tap with the lasso (a lasso takes the whole box), then its top
+        // dragged to the middle of the text.
+        val box = textBoxes().single()
         val table = session().state.value.tables.single()
         val t = checkNotNull(canvas()).viewport.documentToView
         compose.onNodeWithTag(NoteScreenTags.LASSO).performClick()
-        drag(loop(t.mapX(table.x - 3f), t.mapY(table.y - 2f), t.mapX(table.bounds.right + 2f), t.mapY(table.bounds.bottom + 2f)))
+        tap(t.mapX(table.x + 10f), t.mapY(table.y + 4f))
         waitUntil("table selected") { selection() == setOf(table.id) }
         val gx = t.mapX(table.x + 10f)
         val grabY = table.y + 4f
