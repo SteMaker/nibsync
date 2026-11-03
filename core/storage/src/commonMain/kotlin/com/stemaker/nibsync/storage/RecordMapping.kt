@@ -169,7 +169,8 @@ internal fun OpRecord.toDomain(): DocumentOp? {
 private val FlowBlock.flowField: String? get() = slot.flowId.value.takeIf { it != id.value }
 private val FlowBlock.orderField: String? get() = slot.order.takeIf { it != FlowSlot.FIRST }
 
-private fun slot(id: String, flow: String?, order: String?) = FlowSlot(StrokeId(flow ?: id), order ?: FlowSlot.FIRST)
+private fun slot(id: String, flow: String?, order: String?, indent: Int) =
+    FlowSlot(StrokeId(flow ?: id), order ?: FlowSlot.FIRST, indent.coerceIn(0, FlowSlot.MAX_INDENT))
 
 internal fun Stroke.toRecord() = StrokeRecord(
     id = id.value,
@@ -211,6 +212,7 @@ internal fun TextBox.toRecord() = TextBoxRecord(
     paragraphs = text.toRecords(),
     flow = flowField,
     order = orderField,
+    indent = slot.indent,
 )
 
 private fun TextMark.toRecord(): MarkRecord = when (val s = style) {
@@ -253,6 +255,7 @@ internal fun TableElement.toRecord(): TableRecord {
         author = author.value,
         flow = flowField,
         order = orderField,
+        indent = slot.indent,
     )
 }
 
@@ -279,7 +282,7 @@ internal fun TableRecord.toDomain(): TableElement? {
         merges = merges.map { CellMerge(StrokeId(it.fromRow), StrokeId(it.fromColumn), StrokeId(it.toRow), StrokeId(it.toColumn)) },
         createdAtEpochMs = createdAtEpochMs,
         author = DeviceId(author),
-        slot = slot(id, flow, order),
+        slot = slot(id, flow, order, indent),
     )
 }
 
@@ -299,6 +302,7 @@ internal fun TodoItem.toRecord(): TodoRecord {
         strokes = (content as? TodoContent.Ink)?.strokes?.map { it.toRecord() },
         flow = flowField,
         order = orderField,
+        indent = slot.indent,
     )
 }
 
@@ -310,7 +314,7 @@ internal fun TodoRecord.toDomain(): TodoItem? {
         strokes != null -> TodoContent.Ink(strokes.mapNotNull { it.toDomain() })
         else -> TodoContent.Text(paragraphs.orEmpty().toRichText())
     }
-    return TodoItem(StrokeId(id), StrokeId(task), q(x), q(y), q(width), q(height), content, createdAtEpochMs, DeviceId(author), slot(id, flow, order))
+    return TodoItem(StrokeId(id), StrokeId(task), q(x), q(y), q(width), q(height), content, createdAtEpochMs, DeviceId(author), slot(id, flow, order, indent))
 }
 
 internal fun TextBoxRecord.toDomain(): TextBox {
@@ -323,7 +327,7 @@ internal fun TextBoxRecord.toDomain(): TextBox {
         text = paragraphs.toRichText(),
         createdAtEpochMs = createdAtEpochMs,
         author = DeviceId(author),
-        slot = slot(id, flow, order),
+        slot = slot(id, flow, order, indent),
     )
 }
 
@@ -354,8 +358,8 @@ private const val MARK_LINK = "l"
 internal fun FileElement.toRecord(): FileElementRecord {
     val p = Quantization::positionToSteps
     return when (this) {
-        is ImageElement -> FileElementRecord(KIND_IMAGE, id.value, p(x), p(y), p(widthMm), p(heightMm), createdAtEpochMs, author.value, asset.sha256, asset.mimeType, flow = flowField, order = orderField)
-        is FileLink -> FileElementRecord(KIND_LINK, id.value, p(x), p(y), p(widthMm), p(heightMm), createdAtEpochMs, author.value, asset.sha256, asset.mimeType, fileName, flowField, orderField)
+        is ImageElement -> FileElementRecord(KIND_IMAGE, id.value, p(x), p(y), p(widthMm), p(heightMm), createdAtEpochMs, author.value, asset.sha256, asset.mimeType, flow = flowField, order = orderField, indent = slot.indent)
+        is FileLink -> FileElementRecord(KIND_LINK, id.value, p(x), p(y), p(widthMm), p(heightMm), createdAtEpochMs, author.value, asset.sha256, asset.mimeType, fileName, flowField, orderField, slot.indent)
     }
 }
 
@@ -365,8 +369,8 @@ internal fun FileElementRecord.toDomain(): FileElement? {
     if (width <= 0 || height <= 0) return null
     val asset = runCatching { Asset(sha256, mimeType) }.getOrNull() ?: return null
     return when (kind) {
-        KIND_IMAGE -> ImageElement(StrokeId(id), q(x), q(y), q(width), q(height), asset, createdAtEpochMs, DeviceId(author), slot(id, flow, order))
-        KIND_LINK -> FileLink(StrokeId(id), q(x), q(y), q(width), q(height), asset, name ?: "", createdAtEpochMs, DeviceId(author), slot(id, flow, order))
+        KIND_IMAGE -> ImageElement(StrokeId(id), q(x), q(y), q(width), q(height), asset, createdAtEpochMs, DeviceId(author), slot(id, flow, order, indent))
+        KIND_LINK -> FileLink(StrokeId(id), q(x), q(y), q(width), q(height), asset, name ?: "", createdAtEpochMs, DeviceId(author), slot(id, flow, order, indent))
         else -> null
     }
 }

@@ -240,8 +240,12 @@ class FlowEditing(private val session: DocumentSession, private val ids: IdGener
         var order = after
         fun slot() = FlowSlot(drop.flowId, FractionalIndex.between(order, high).also { order = it })
         val width = flow?.bounds?.width ?: drafts.maxOf { it.widthMm }
-        val blocks = drafts.map { it.fittedTo(width).inSlot(slot()) }
         val split = drop.split
+        // Under a list item a block goes in like the item's text, under an indented block like it.
+        val indent = if (split != null) indentBelow(split.text.paragraphs[drop.paragraph - 1]) else indentBelow(flow?.blocks?.lastOrNull { it.slot.order == after })
+        val blocks = drafts.map { d ->
+            if (d is TextBoxDraft) d.inSlot(slot()) else d.fittedTo(width - indent * Flow.INDENT_MM).inSlot(slot().copy(indent = indent))
+        }
         if (split == null) {
             replaceElements(emptySet(), blocks)
         } else {
@@ -253,6 +257,41 @@ class FlowEditing(private val session: DocumentSession, private val ids: IdGener
             added.subList(1, added.size - 1)
         }
     }.also { joinText(drop.flowId, measureText) }
+
+    /** The indent of a block right below [above]: a list item's text, an indented block's own. */
+    private fun indentBelow(above: Any?): Int = when (above) {
+        is TextBox -> indentBelow(above.text.paragraphs.last())
+        is com.stemaker.nibsync.model.TextParagraph -> if (above.list == com.stemaker.nibsync.model.ListKind.NONE) 0 else above.indent + 1
+        is FlowBlock -> above.slot.indent
+        else -> 0
+    }.coerceIn(0, FlowSlot.MAX_INDENT)
+
+    /**
+     * Indents the selected tables, pictures, files and to-dos by [delta] steps (one undo step, text
+     * stays as it is). Returns the new ids of the selection.
+     */
+    fun indent(selection: Set<StrokeId>, delta: Int): Set<StrokeId> {
+        val state = session.state.value
+        val blocks = state.elements.filter { it.id in selection }.filterIsInstance<FlowBlock>()
+            .filter { it !is TextBox && (it.slot.indent + delta) in 0..FlowSlot.MAX_INDENT }
+        if (blocks.isEmpty()) return selection
+        return session.edit {
+            val result = LinkedHashSet(selection)
+            for (b in blocks) {
+                val flow = state.flow(b.slot.flowId) ?: continue
+                val slot = b.slot.copy(indent = b.slot.indent + delta)
+                val draft = (b.toDraft() as BlockDraft).let { it.translated(flow.x + slot.offsetMm - it.x, 0f).inSlot(slot) }
+                val added = flowing(flow.id) { replaceElements(listOf(b.id), listOf(draft)) }
+                result -= b.id
+                added.mapTo(result) { it.id }
+            }
+            result
+        }
+    }
+
+    /** True if [delta] steps of [indent] can be applied to something in [selection]. */
+    fun canIndent(selection: Set<StrokeId>, delta: Int): Boolean =
+        session.state.value.elements.any { it.id in selection && it is FlowBlock && it !is TextBox && (it.slot.indent + delta) in 0..FlowSlot.MAX_INDENT }
 
     /** Replaces the picture or file link [element] by [draft] of a new size; what is below moves along. */
     fun resize(element: FileElement, draft: BlockDraft): PageElement = session.edit {

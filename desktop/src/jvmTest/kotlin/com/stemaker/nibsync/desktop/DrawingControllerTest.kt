@@ -143,6 +143,16 @@ class DrawingControllerTest {
         assertThat(moved.y).isGreaterThan(texts[0].bounds.bottom)
         assertThat(texts[1].y).isGreaterThan(moved.bounds.bottom)
         assertThat(c.selection.value).containsExactly(moved.id)
+        // The selected table can be indented, then outdented again, and stays selected.
+        assertThat(c.canIndent(c.selection.value, -1)).isFalse()
+        c.indentSelection(1)
+        val indented = c.session.state.value.tables.single()
+        assertThat(indented.x).isWithin(0.01f).of(texts[0].x + com.stemaker.nibsync.model.Flow.INDENT_MM)
+        assertThat(c.selection.value).containsExactly(indented.id)
+        c.indentSelection(-1)
+        assertThat(c.session.state.value.tables.single().x).isWithin(0.01f).of(texts[0].x)
+        c.session.undo()
+        c.session.undo()
         // Undo: the text whole again, the table back.
         assertThat(c.session.undo()).isTrue()
         assertThat(c.session.state.value.textBoxes.single().text.plainText).isEqualTo("eins\nzwei\ndrei\nvier")

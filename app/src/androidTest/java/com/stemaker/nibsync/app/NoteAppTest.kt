@@ -20,6 +20,7 @@ import androidx.compose.ui.test.swipe
 import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
 import androidx.test.core.app.ActivityScenario
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -778,7 +779,7 @@ class NoteAppTest {
         compose.onNodeWithTag(TextTags.FONT).performClick()
         compose.onNodeWithTag(TextTags.font(TextFont.HANDWRITING)).performClick()
         compose.onNodeWithTag(TextTags.SIZE).performClick()
-        compose.onNodeWithTag(TextTags.size(24f)).performClick()
+        compose.onNodeWithTag(TextTags.size(24f)).performScrollTo().performClick()
         compose.onNodeWithTag(TextTags.BULLETS).performClick()
         compose.waitForIdle()
         compose.onNodeWithTag(TextTags.EDITOR).performTextInput("Punkt")
@@ -843,7 +844,9 @@ class NoteAppTest {
         waitUntil("editing a new text box") { editing() != null }
         val e = checkNotNull(editing())
         val toDoc = view.viewport.viewToDocument
-        assertThat(e.widthMm).isEqualTo(com.stemaker.nibsync.model.TextBox.DEFAULT_WIDTH_MM)
+        // Up to the right margin.
+        val pageWidth = view.viewport.pageWidthMm
+        assertThat(e.widthMm).isWithin(0.5f).of(minOf(com.stemaker.nibsync.model.TextBox.DEFAULT_WIDTH_MM, pageWidth - com.stemaker.nibsync.model.TextBox.MARGIN_MM - toDoc.mapX(300f)))
         assertThat(e.x).isWithin(0.5f).of(toDoc.mapX(300f))
         assertThat(e.y).isWithin(0.5f).of(toDoc.mapY(300f) - com.stemaker.nibsync.model.TextBox.FIRST_LINE_OFFSET_MM)
         compose.onNodeWithTag(TextTags.EDITOR).performTextInput("Getippt")

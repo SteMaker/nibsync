@@ -74,6 +74,8 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.FormatIndentIncrease
+import androidx.compose.material.icons.automirrored.filled.FormatIndentDecrease
 import androidx.compose.material.icons.automirrored.filled.Redo
 import androidx.compose.material.icons.automirrored.filled.Undo
 import androidx.compose.material.icons.filled.BorderColor
@@ -166,6 +168,8 @@ object NoteScreenTags {
     const val MOVE_TEXT = "move-text"
     const val RESIZE_TEXT = "resize-text"
     const val DELETE_SELECTION = "delete-selection"
+    const val INDENT_SELECTION = "indent-selection"
+    const val OUTDENT_SELECTION = "outdent-selection"
     const val COPY_SELECTION = "copy-selection"
     const val PASTE = "paste"
     const val REDO = "redo"
@@ -458,7 +462,10 @@ fun NoteScreen(
                 if (v != null && v.hasSize && selection.isNotEmpty()) {
                     val selected = document.elements.filter { it.id in selection }
                     com.stemaker.nibsync.document.select.selectionBoundsOf(selected)?.let { bounds ->
-                        SelectionBar(bounds, v, onDelete = viewModel::deleteSelection, onCopy = viewModel::copySelection)
+                        SelectionBar(
+                            bounds, v, onDelete = viewModel::deleteSelection, onCopy = viewModel::copySelection,
+                            canIndent = viewModel.canIndent(1), canOutdent = viewModel.canIndent(-1), onIndent = viewModel::indentSelection,
+                        )
                     }
                 }
             }
@@ -874,7 +881,15 @@ private fun PenIcon(icon: ImageVector, colorArgb: Int, label: String) {
  * room above).
  */
 @Composable
-private fun SelectionBar(bounds: com.stemaker.nibsync.model.geometry.Rect, viewport: Viewport, onDelete: () -> Unit, onCopy: () -> Unit) {
+private fun SelectionBar(
+    bounds: com.stemaker.nibsync.model.geometry.Rect,
+    viewport: Viewport,
+    onDelete: () -> Unit,
+    onCopy: () -> Unit,
+    canIndent: Boolean = false,
+    canOutdent: Boolean = false,
+    onIndent: (Int) -> Unit = {},
+) {
     val t = viewport.documentToView
     val density = androidx.compose.ui.platform.LocalDensity.current
     var size by remember { mutableStateOf(IntSize.Zero) }
@@ -903,6 +918,21 @@ private fun SelectionBar(bounds: com.stemaker.nibsync.model.geometry.Rect, viewp
             WithTooltip(copyLabel) {
                 IconButton(onClick = onCopy, modifier = Modifier.testTag(NoteScreenTags.COPY_SELECTION)) {
                     Icon(Icons.Filled.ContentCopy, contentDescription = copyLabel)
+                }
+            }
+            // Tables, pictures, files and to-dos move in steps like list levels.
+            if (canIndent || canOutdent) {
+                val outdentLabel = stringResource(R.string.outdent_selection)
+                WithTooltip(outdentLabel) {
+                    IconButton(onClick = { onIndent(-1) }, enabled = canOutdent, modifier = Modifier.testTag(NoteScreenTags.OUTDENT_SELECTION)) {
+                        Icon(Icons.AutoMirrored.Filled.FormatIndentDecrease, contentDescription = outdentLabel)
+                    }
+                }
+                val indentLabel = stringResource(R.string.indent_selection)
+                WithTooltip(indentLabel) {
+                    IconButton(onClick = { onIndent(1) }, enabled = canIndent, modifier = Modifier.testTag(NoteScreenTags.INDENT_SELECTION)) {
+                        Icon(Icons.AutoMirrored.Filled.FormatIndentIncrease, contentDescription = indentLabel)
+                    }
                 }
             }
         }

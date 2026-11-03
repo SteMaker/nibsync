@@ -129,7 +129,8 @@ class DocumentSession(
         val id = ids.newStrokeId()
         val slot = draft.slot ?: FlowSlot(id, FlowSlot.FIRST)
         val flow = _state.value.flow(slot.flowId)
-        val x = Quantization.quantizePosition(flow?.x ?: draft.x)
+        // A draft is where the block is shown, an indented one right of its flow's edge.
+        val x = Quantization.quantizePosition(flow?.x ?: (draft.x - slot.offsetMm))
         val y = Quantization.quantizePosition(flow?.y ?: draft.y)
         return when (draft) {
             is TextBoxDraft -> TextBox(

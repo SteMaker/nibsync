@@ -12,6 +12,8 @@
     <string name="redo">Wiederholen</string>
     <string name="lasso">Lasso: auswählen</string>
     <string name="delete_selection">Auswahl löschen</string>
+    <string name="indent_selection">Einzug vergrößern</string>
+    <string name="outdent_selection">Einzug verkleinern</string>
     <string name="copy_selection">Auswahl kopieren</string>
     <string name="paste">Einfügen</string>
     <string name="library_menu">Bibliothek</string>

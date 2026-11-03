@@ -8,6 +8,8 @@ import com.stemaker.nibsync.model.DocumentId
 import com.stemaker.nibsync.model.DocumentMeta
 import com.stemaker.nibsync.model.FlowBlock
 import com.stemaker.nibsync.model.MarkStyle
+import com.stemaker.nibsync.model.Flow
+import com.stemaker.nibsync.model.ListKind
 import com.stemaker.nibsync.model.RichText
 import com.stemaker.nibsync.model.TableElement
 import com.stemaker.nibsync.model.TextBox
@@ -141,6 +143,35 @@ class FlowEditingTest {
     }
 
     private fun Setup.plain() = s.state.value.textBoxes.sortedBy { it.y }.map { it.text.plainText }
+
+    @Test
+    fun aTableDroppedBelowAListItemIsIndentedLikeItsTextAndTheNumbersGoOn() {
+        val f = setup()
+        f.text.startNew(20f, 20f, 120f)
+        f.text.editing.value!!.controller.setContent(
+            RichText(listOf(TextParagraph("eins", ListKind.NUMBERED), TextParagraph("zwei", ListKind.NUMBERED), TextParagraph("drei", ListKind.NUMBERED))),
+        )
+        f.text.finish()
+        val box = f.s.state.value.textBoxes.single()
+        val table = f.table(100f)
+        // Between "zwei" and "drei".
+        val moved = f.flows.moveSelection(setOf(table.id), 0f, box.y + 13f - table.y).single()
+        val placed = f.s.state.value.element(moved) as TableElement
+        assertThat(placed.slot.indent).isEqualTo(1)
+        assertThat(placed.x).isWithin(0.01f).of(box.x + Flow.INDENT_MM)
+        val below = f.s.state.value.textBoxes.single { it.text.plainText == "drei" }
+        assertThat(RichTextLayout.annotated(below.text, RichTextLayout.listStart(f.s.state.value, below)) { 5f }.text).isEqualTo("3. drei")
+        // Outdented by hand: back to the flow's edge; one undo step each.
+        val out = f.flows.indent(setOf(moved), -1).single()
+        assertThat((f.s.state.value.element(out) as TableElement).x).isWithin(0.01f).of(box.x)
+        assertThat(f.flows.canIndent(setOf(out), -1)).isFalse()
+        val again = f.flows.indent(setOf(out), 2).single()
+        assertThat((f.s.state.value.element(again) as TableElement).x).isWithin(0.01f).of(box.x + 2 * Flow.INDENT_MM)
+        f.s.undo()
+        assertThat(f.s.state.value.tables.single().x).isWithin(0.01f).of(box.x)
+        // The text stays where it is.
+        assertThat(f.s.state.value.textBoxes.all { it.x == box.x }).isTrue()
+    }
 
     @Test
     fun aTableDraggedOntoTextLandsBetweenItsParagraphs() {

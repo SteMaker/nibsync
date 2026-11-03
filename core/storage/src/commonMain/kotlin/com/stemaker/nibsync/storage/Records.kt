@@ -78,6 +78,7 @@ internal data class FileElementRecord(
     @SerialName("n") val name: String? = null,
     @SerialName("fl") val flow: String? = null,
     @SerialName("fo") val order: String? = null,
+    @SerialName("fi") val indent: Int = 0,
 )
 
 /**
@@ -112,6 +113,7 @@ internal data class TextBoxRecord(
     @SerialName("p") val paragraphs: List<ParagraphRecord>,
     @SerialName("fl") val flow: String? = null,
     @SerialName("fo") val order: String? = null,
+    @SerialName("fi") val indent: Int = 0,
 )
 
 /**
@@ -132,6 +134,7 @@ internal data class TodoRecord(
     @SerialName("s") val strokes: List<StrokeRecord>? = null,
     @SerialName("fl") val flow: String? = null,
     @SerialName("fo") val order: String? = null,
+    @SerialName("fi") val indent: Int = 0,
 )
 
 /**
@@ -153,6 +156,7 @@ internal data class TableRecord(
     @SerialName("a") val author: String,
     @SerialName("fl") val flow: String? = null,
     @SerialName("fo") val order: String? = null,
+    @SerialName("fi") val indent: Int = 0,
 )
 
 @Serializable

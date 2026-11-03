@@ -188,6 +188,25 @@ class GoldenFormatTest {
         return text
     }
 
+    // Added later in format version 1 (block field "fi"); older readers show the block unindented.
+    private val indentOps = listOf(
+        com.stemaker.nibsync.document.DocumentOp.AddFiles(
+            com.stemaker.nibsync.document.OpStamp(16, DEV_A),
+            listOf(
+                sampleImage("85858585-8585-4858-8858-858585858585").copy(
+                    slot = com.stemaker.nibsync.model.FlowSlot(com.stemaker.nibsync.model.StrokeId("81818181-8181-4818-8818-818181818181"), "p", indent = 2),
+                ),
+            ),
+        ),
+    )
+
+    @Test
+    fun indentOpsAreStable() {
+        val golden = golden("ops-v1-indent.oplog")
+        assertThat(OpLogCodec.read(Buffer().write(golden)).ops).isEqualTo(indentOps)
+        assertThat(encodedLog(indentOps).hex()).isEqualTo(golden.hex())
+    }
+
     @Test
     fun goldenFilesCanBeRegenerated() {
         if (System.getenv("NIBSYNC_UPDATE_GOLDEN") != "1") return
@@ -202,6 +221,7 @@ class GoldenFormatTest {
         FileSystem.SYSTEM.write(goldenDir / "ops-v1-continued-line.oplog") { write(encodedLog(continuedLineOps)) }
         FileSystem.SYSTEM.write(goldenDir / "ops-v1-tables.oplog") { write(encodedLog(tableOps)) }
         FileSystem.SYSTEM.write(goldenDir / "ops-v1-flows.oplog") { write(encodedLog(flowOps)) }
+        FileSystem.SYSTEM.write(goldenDir / "ops-v1-indent.oplog") { write(encodedLog(indentOps)) }
     }
 
     @Test

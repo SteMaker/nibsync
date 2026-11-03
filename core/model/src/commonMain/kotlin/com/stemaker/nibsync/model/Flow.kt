@@ -4,12 +4,22 @@ import com.stemaker.nibsync.model.geometry.Rect
 
 /**
  * Where a block belongs: to the flow [flowId], at [order] among its blocks ([FractionalIndex]
- * keys, equal keys of concurrent inserts go by element id).
+ * keys, equal keys of concurrent inserts go by element id), indented by [indent] steps of
+ * [Flow.INDENT_MM] (like list levels, so a picture can belong to a list item).
  */
-data class FlowSlot(val flowId: StrokeId, val order: String) {
+data class FlowSlot(val flowId: StrokeId, val order: String, val indent: Int = 0) {
+    init {
+        require(indent in 0..MAX_INDENT) { "indent $indent out of range" }
+    }
+
+    /** How far (mm) the block sits right of its flow's left edge. */
+    val offsetMm: Float get() = indent * Flow.INDENT_MM
+
     companion object {
         /** Order of the only block of a flow. */
         val FIRST: String = FractionalIndex.between(null, null)
+
+        const val MAX_INDENT = 7
     }
 }
 
@@ -42,15 +52,13 @@ sealed interface BlockDraft : ElementDraft {
 
 /**
  * What the user sees as one box: [blocks] stacked from top to bottom, [GAP_MM] apart, so that
- * they keep their order and distance whatever gets taller or shorter.
+ * they keep their order and distance whatever gets taller or shorter. ([x], [y]) is its top
+ * left corner; an indented block starts further right.
  */
-data class Flow(val id: StrokeId, val blocks: List<FlowBlock>) {
+data class Flow(val id: StrokeId, val blocks: List<FlowBlock>, val x: Float, val y: Float) {
     init {
         require(blocks.isNotEmpty()) { "A flow needs at least one block" }
     }
-
-    val x: Float get() = blocks.first().x
-    val y: Float get() = blocks.first().y
 
     val bounds: Rect
         get() = Rect(x, y, blocks.maxOf { it.x + it.widthMm }, blocks.last().let { it.y + it.heightMm })
@@ -58,6 +66,9 @@ data class Flow(val id: StrokeId, val blocks: List<FlowBlock>) {
     companion object {
         /** Space between two blocks of a flow (mm). */
         const val GAP_MM = 3f
+
+        /** One indent step (mm): a list level of the text (20 pt). */
+        const val INDENT_MM = 20f * 25.4f / 72f
     }
 }
 

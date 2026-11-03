@@ -221,6 +221,14 @@ class CanvasViewModel(
         return snapGrid().snapMove(x, y, dx, dy, state.background, state.meta.format.widthMm)
     }
 
+    /** Whether tables, pictures, files or to-dos in the selection can be indented by [delta] steps. */
+    fun canIndent(delta: Int): Boolean = flows.canIndent(_selection.value, delta)
+
+    /** Indents the selected tables, pictures, files and to-dos by [delta] steps; they stay selected. */
+    fun indentSelection(delta: Int) {
+        _selection.value = flows.indent(_selection.value, delta)
+    }
+
     /** Where blocks of the selection would land in text if moved by ([dx], [dy]) mm. */
     fun dropFor(dx: Float, dy: Float): FlowDrop? = flows.dropFor(_selection.value, dx, dy)
 

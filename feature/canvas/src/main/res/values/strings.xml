@@ -12,6 +12,8 @@
     <string name="redo">Redo</string>
     <string name="lasso">Lasso: select</string>
     <string name="delete_selection">Delete selection</string>
+    <string name="indent_selection">Indent more</string>
+    <string name="outdent_selection">Indent less</string>
     <string name="copy_selection">Copy selection</string>
     <string name="paste">Paste</string>
     <string name="library_menu">Library</string>

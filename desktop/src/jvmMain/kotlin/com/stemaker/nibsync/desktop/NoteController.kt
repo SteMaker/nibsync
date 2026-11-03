@@ -587,6 +587,14 @@ class NoteController(
 
     fun cutSelection(): Boolean = copySelection() && deleteSelection()
 
+    /** Whether tables, pictures, files or to-dos in [selection] can be indented by [delta] steps. */
+    fun canIndent(selection: Set<StrokeId>, delta: Int): Boolean = flows.canIndent(selection, delta)
+
+    /** Indents the selected tables, pictures, files and to-dos by [delta] steps; they stay selected. */
+    fun indentSelection(delta: Int) {
+        _selection.value = flows.indent(_selection.value, delta)
+    }
+
     /** Pastes the copied elements centred at ([cx], [cy]) mm; they become the selection. */
     fun paste(cx: Float, cy: Float): Boolean {
         val clip = clipboard.content.value ?: return false

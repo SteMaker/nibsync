@@ -276,6 +276,12 @@ draws or hits them.
   wider than the box are scaled to it. Pasted blocks of one flow stay together (`place`).
 - At the cursor of an open text box (`TextBoxEditing.insertBlocksAtCursor`, tool bar "Insert ... here",
   also the picture dialog): text before the cursor, the blocks, the rest in a new text block.
+- Blocks other than text can be indented in steps of `Flow.INDENT_MM`, a list level (`FlowSlot.indent`,
+  record field `"fi"`, 0 to 7). Dropped below a list item a block gets the indent of the item's text,
+  below an indented block that block's; so a picture or table belongs to a bullet, and numbering goes
+  on below it. Selected blocks have indent buttons (`FlowEditing.indent`). The flow keeps its left
+  edge (`Flow.x`); a block's stored x is that edge, its shown x adds its indent. Tables keep their
+  width when indented.
 - A text tool tap up to 12 mm below a flow that does not end in text continues it (`continuation`).
 - The handle of an open text box or to-do moves its flow, not into other text: it lands below it (`dragFlow`).
 - While typing, the editors' `flowPreview()` says what will move and how far (later blocks and what

@@ -67,9 +67,10 @@ class DocumentState private constructor(
 
     private fun stacked(flowId: StrokeId, blocks: List<FlowBlock>): Flow {
         val ordered = blocks.sortedWith(compareBy<FlowBlock> { it.slot.order }.thenBy { it.id.value })
+        // Blocks are stored with the flow's position (see DocumentSession.newBlock).
         val (x, top) = flowPositions[flowId]?.second ?: (ordered.first().x to ordered.first().y)
         var y = top
-        return Flow(flowId, ordered.map { b -> b.placedAt(x, y).also { y += it.heightMm + Flow.GAP_MM } })
+        return Flow(flowId, ordered.map { b -> b.placedAt(x + b.slot.offsetMm, y).also { y += it.heightMm + Flow.GAP_MM } }, x, top)
     }
 
     /**
