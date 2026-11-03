@@ -596,7 +596,7 @@ class NoteCanvasView(context: Context) : FrameLayout(context) {
             }
         }
         selectionDrop?.let { d ->
-            canvas.drawLine(transform.mapX(d.left), transform.mapY(d.y), transform.mapX(d.right), transform.mapY(d.y), dropPaint)
+            canvas.drawLine(transform.mapX(d.left), transform.mapY(d.y), transform.mapX(d.right), transform.mapY(d.bottom), dropPaint)
         }
         lassoPath?.let { path ->
             lassoDrawPath.reset()

@@ -113,4 +113,44 @@ class BoxEditingTest {
         session.undo()
         assertThat(blocks()[2].widthMm).isGreaterThan(100f)
     }
+
+    private fun picture(w: Float, h: Float) = ImageDraft(0f, 0f, w, h, Asset("e".repeat(64), Asset.PNG))
+
+    @Test
+    fun picturesDroppedBesideAPictureStandInARowAsHighAsEachOtherFillingTheBox() {
+        text.startNew(20f, 20f, 120f)
+        text.editing.value!!.controller.setContent(RichText.plain("oben\nunten"))
+        text.editing.value!!.controller.placeCursor(0, 4)
+        val first = text.insertBlocksAtCursor(listOf(picture(60f, 30f))).single()
+        text.finish()
+        val second = flows.place(listOf(picture(40f, 40f).translated(150f, 150f))).single()
+        // Dragged onto the right part of the first picture: a line upright beside it.
+        val b = first.bounds
+        val dx = b.right - 5f - (second.bounds.left + second.bounds.right) / 2
+        val dy = (b.top + b.bottom) / 2 - (second.bounds.top + second.bounds.bottom) / 2
+        val drop = flows.dropFor(setOf(second.id), dx, dy)!!
+        assertThat(drop.left).isEqualTo(drop.right)
+        assertThat(drop.left).isGreaterThan(b.right)
+        flows.moveSelection(setOf(second.id), dx, dy)
+        val flow = session.state.value.flows.single()
+        assertThat(flow.blocks.map { it::class.simpleName }).containsExactly("TextBox", "ImageElement", "ImageElement", "TextBox").inOrder()
+        val (left, right) = flow.blocks.filterIsInstance<ImageElement>()
+        // Same height, side by side, together as wide as the text (120 mm less one gap).
+        assertThat(left.heightMm).isWithin(0.01f).of(right.heightMm)
+        assertThat(left.widthMm / left.heightMm).isWithin(0.01f).of(2f)
+        assertThat(right.widthMm / right.heightMm).isWithin(0.01f).of(1f)
+        assertThat(right.x).isWithin(0.01f).of(left.bounds.right + com.stemaker.nibsync.model.Flow.GAP_MM)
+        assertThat(right.bounds.right).isWithin(0.01f).of(20f + 120f)
+        assertThat(left.y).isEqualTo(right.y)
+        // The text below comes after the row.
+        assertThat(flow.blocks.last().y).isGreaterThan(left.bounds.bottom)
+        // Dragged out below the box again: the first picture stands alone at its size.
+        flows.moveSelection(setOf(right.id), 0f, 200f)
+        val alone = session.state.value.flows.first { it.blocks.size > 1 }.blocks.filterIsInstance<ImageElement>().single()
+        assertThat(alone.widthMm / alone.heightMm).isWithin(0.01f).of(2f)
+        assertThat(alone.widthMm).isAtMost(120f)
+        // Undo puts the row back.
+        session.undo()
+        assertThat(session.state.value.flows.single().blocks.filterIsInstance<ImageElement>().map { it.y }.distinct()).hasSize(1)
+    }
 }

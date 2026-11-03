@@ -79,6 +79,8 @@ internal data class FileElementRecord(
     @SerialName("fl") val flow: String? = null,
     @SerialName("fo") val order: String? = null,
     @SerialName("fi") val indent: Int = 0,
+    // Place in a row of pictures (FlowSlot.beside).
+    @SerialName("fb") val beside: String? = null,
 )
 
 /**

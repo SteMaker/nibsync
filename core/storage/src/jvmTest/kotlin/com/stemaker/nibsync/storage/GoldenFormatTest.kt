@@ -200,6 +200,23 @@ class GoldenFormatTest {
         ),
     )
 
+    // Added later in format version 1 (picture field "fb"); older readers show the pictures one below the other.
+    private val rowOps = listOf(
+        com.stemaker.nibsync.document.DocumentOp.AddFiles(
+            com.stemaker.nibsync.document.OpStamp(17, DEV_A),
+            listOf("86868686-8686-4868-8868-868686868686" to "h", "87878787-8787-4878-8878-878787878787" to "p").map { (id, beside) ->
+                sampleImage(id).copy(slot = com.stemaker.nibsync.model.FlowSlot(com.stemaker.nibsync.model.StrokeId("81818181-8181-4818-8818-818181818181"), "t", beside = beside))
+            },
+        ),
+    )
+
+    @Test
+    fun rowOpsAreStable() {
+        val golden = golden("ops-v1-rows.oplog")
+        assertThat(OpLogCodec.read(Buffer().write(golden)).ops).isEqualTo(rowOps)
+        assertThat(encodedLog(rowOps).hex()).isEqualTo(golden.hex())
+    }
+
     @Test
     fun indentOpsAreStable() {
         val golden = golden("ops-v1-indent.oplog")
@@ -222,6 +239,7 @@ class GoldenFormatTest {
         FileSystem.SYSTEM.write(goldenDir / "ops-v1-tables.oplog") { write(encodedLog(tableOps)) }
         FileSystem.SYSTEM.write(goldenDir / "ops-v1-flows.oplog") { write(encodedLog(flowOps)) }
         FileSystem.SYSTEM.write(goldenDir / "ops-v1-indent.oplog") { write(encodedLog(indentOps)) }
+        FileSystem.SYSTEM.write(goldenDir / "ops-v1-rows.oplog") { write(encodedLog(rowOps)) }
     }
 
     @Test

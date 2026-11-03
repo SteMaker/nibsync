@@ -254,7 +254,7 @@ class PagePainter(private val text: DesktopTextLayout, private val media: MediaC
         when (gesture) {
             is GesturePreview.Moving -> {
                 val d = gesture.drop
-                if (d != null) drawLine(DROP, Offset(t.mapX(d.left), t.mapY(d.y)), Offset(t.mapX(d.right), t.mapY(d.y)), strokeWidth = 3f)
+                if (d != null) drawLine(DROP, Offset(t.mapX(d.left), t.mapY(d.y)), Offset(t.mapX(d.right), t.mapY(d.bottom)), strokeWidth = 3f)
             }
             is GesturePreview.ColumnBorder -> drawLine(
                 selection,

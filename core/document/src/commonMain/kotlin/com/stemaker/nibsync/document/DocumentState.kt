@@ -10,6 +10,7 @@ import com.stemaker.nibsync.model.LinkElement
 import com.stemaker.nibsync.model.PageElement
 import com.stemaker.nibsync.model.Stroke
 import com.stemaker.nibsync.model.StrokeId
+import com.stemaker.nibsync.model.ImageElement
 import com.stemaker.nibsync.model.TextBox
 import com.stemaker.nibsync.model.TodoItem
 import com.stemaker.nibsync.model.TableElement
@@ -70,7 +71,23 @@ class DocumentState private constructor(
         // Blocks are stored with the flow's position (see DocumentSession.newBlock).
         val (x, top) = flowPositions[flowId]?.second ?: (ordered.first().x to ordered.first().y)
         var y = top
-        return Flow(flowId, ordered.map { b -> b.placedAt(x + b.slot.offsetMm, y).also { y += it.heightMm + Flow.GAP_MM } }, x, top)
+        val textWidth = ordered.filterIsInstance<TextBox>().maxOfOrNull { it.widthMm }
+        val placed = Flow.rowsOf(ordered).flatMap { row ->
+            if (row.size == 1) {
+                listOf(row.single().placedAt(x + row.single().slot.offsetMm, y).also { y += it.heightMm + Flow.GAP_MM })
+            } else {
+                // Pictures side by side, all as high as fills the width of the text (or as wide as they are).
+                val left = x + row.first().slot.offsetMm
+                val width = (textWidth?.minus(row.first().slot.offsetMm) ?: row.sumOf { it.widthMm.toDouble() }.toFloat() + Flow.GAP_MM * (row.size - 1))
+                val ratios = row.map { it.widthMm / maxOf(0.1f, it.heightMm) }
+                val h = maxOf(1f, (width - Flow.GAP_MM * (row.size - 1)) / ratios.sum())
+                var cx = left
+                row.mapIndexed { i, b ->
+                    (b as ImageElement).copy(x = cx, y = y, widthMm = ratios[i] * h, heightMm = h).also { cx += it.widthMm + Flow.GAP_MM }
+                }.also { y += h + Flow.GAP_MM }
+            }
+        }
+        return Flow(flowId, placed, x, top)
     }
 
     /**

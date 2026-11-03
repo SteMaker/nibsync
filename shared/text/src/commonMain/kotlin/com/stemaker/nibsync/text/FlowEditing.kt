@@ -13,6 +13,7 @@ import com.stemaker.nibsync.model.FlowSlot
 import com.stemaker.nibsync.model.FractionalIndex
 import com.stemaker.nibsync.model.IdGenerator
 import com.stemaker.nibsync.model.ImageDraft
+import com.stemaker.nibsync.model.ImageElement
 import com.stemaker.nibsync.model.MarkStyle
 import com.stemaker.nibsync.model.NoteLinkDraft
 import com.stemaker.nibsync.model.PageElement
@@ -28,7 +29,9 @@ import com.stemaker.nibsync.model.geometry.Rect
 /**
  * Where blocks would land in the flow [flowId]: behind the block with the order [after] (null: in
  * front of all), in the text box [split] (if any) between its paragraphs [paragraph] - 1 and
- * [paragraph]. [y], [left] and [right] (mm) give the line to show there while dragging.
+ * [paragraph]; or pictures beside the picture [besideOf] (left or [toTheRight]). The line to show
+ * there while dragging goes from ([left], [y]) to ([right], [bottom]) mm: across the box, or upright
+ * beside a picture.
  */
 data class FlowDrop(
     val flowId: StrokeId,
@@ -38,6 +41,10 @@ data class FlowDrop(
     internal val after: String?,
     internal val split: TextBox? = null,
     internal val paragraph: Int = 0,
+    val bottom: Float = y,
+    internal val besideOf: StrokeId? = null,
+    internal val toTheRight: Boolean = false,
+    internal val moving: Set<StrokeId> = emptySet(),
 )
 
 /** Where a new text block continues the flow [slot] belongs to, see [FlowEditing.continuation]. */
@@ -52,17 +59,34 @@ class FlowEditing(private val session: DocumentSession, private val ids: IdGener
     /** Height in mm of a text at a given width; the platform sets its real text layout. */
     var measureText: (RichText, Float) -> Float = { text, _ -> text.paragraphs.size * RichText.DEFAULT_SIZE_PT * RichText.MM_PER_PT * 1.4f }
 
-    /** Where something landing at ([x], [y]) mm would go in a flow, not counting the blocks [moving]. */
-    fun dropAt(x: Float, y: Float, moving: Set<StrokeId> = emptySet()): FlowDrop? {
+    /**
+     * Where something landing at ([x], [y]) mm would go in a flow, not counting the blocks [moving].
+     * [pictures] landing on the outer part of a picture go beside it.
+     */
+    fun dropAt(x: Float, y: Float, moving: Set<StrokeId> = emptySet(), pictures: Boolean = false): FlowDrop? {
         for (flow in session.state.value.flows) {
             val blocks = flow.blocks.filter { it.id !in moving }
             if (blocks.isEmpty()) continue
+            if (pictures) besideDrop(flow, blocks, x, y, moving)?.let { return it }
             val b = flow.bounds
             val bottom = blocks.last().bounds.bottom
             if (x < b.left || x > b.right || y < blocks.first().y || y > bottom + Flow.GAP_MM) continue
             return dropIn(flow, blocks, blocks.last { it.y <= y }, y)
         }
         return null
+    }
+
+    /** On the left or right [BESIDE_SHARE] of a picture: beside it, in its row. */
+    private fun besideDrop(flow: Flow, blocks: List<FlowBlock>, x: Float, y: Float, moving: Set<StrokeId>): FlowDrop? {
+        val picture = blocks.firstOrNull { it is ImageElement && it.bounds.contains(x, y) } ?: return null
+        val b = picture.bounds
+        val right = when {
+            x < b.left + b.width * BESIDE_SHARE -> false
+            x > b.right - b.width * BESIDE_SHARE -> true
+            else -> return null
+        }
+        val lineX = if (right) b.right + Flow.GAP_MM / 2 else b.left - Flow.GAP_MM / 2
+        return FlowDrop(flow.id, b.top, lineX, lineX, null, bottom = b.bottom, besideOf = picture.id, toTheRight = right, moving = moving)
     }
 
     private fun dropIn(flow: Flow, blocks: List<FlowBlock>, at: FlowBlock, y: Float): FlowDrop {
@@ -105,7 +129,11 @@ class FlowEditing(private val session: DocumentSession, private val ids: IdGener
         if (blocks.isEmpty()) return null
         val left = blocks.minOf { it.x }
         val right = blocks.maxOf { it.x + it.widthMm }
-        return dropAt((left + right) / 2 + dx, blocks.minOf { it.y } + dy, blocks.mapTo(HashSet()) { it.id })
+        val pictures = blocks.all { it is ImageElement }
+        val ids = blocks.mapTo(HashSet()) { it.id }
+        // Pictures land where the pointer is: their middle, to go beside a picture.
+        if (pictures) dropAt((left + right) / 2 + dx, (blocks.minOf { it.y } + blocks.maxOf { it.bounds.bottom }) / 2 + dy, ids, pictures = true)?.takeIf { it.besideOf != null }?.let { return it }
+        return dropAt((left + right) / 2 + dx, blocks.minOf { it.y } + dy, ids)
     }
 
     /**
@@ -232,8 +260,39 @@ class FlowEditing(private val session: DocumentSession, private val ids: IdGener
         return replaceElements(emptySet(), slotted)
     }
 
+    /**
+     * Puts the pictures [drafts] beside the picture [FlowDrop.besideOf], in its row: the row's pictures
+     * get new keys left to right (a picture alone becomes a row with the new ones).
+     */
+    private fun DocumentSession.Transaction.insertBeside(drop: FlowDrop, drafts: List<BlockDraft>): List<PageElement> = flowing(drop.flowId) {
+        val anchor = state.element(drop.besideOf!!) as FlowBlock
+        val flow = state.flow(drop.flowId)!!
+        val row = Flow.rowsOf(flow.blocks).first { r -> r.any { it.id == anchor.id } }.filter { it.id !in drop.moving }
+        val at = row.indexOfFirst { it.id == anchor.id } + if (drop.toTheRight) 1 else 0
+        val items: List<Any> = row.subList(0, at) + drafts + row.subList(at, row.size)
+        var key: String? = null
+        fun slot() = anchor.slot.copy(beside = FractionalIndex.between(key, null).also { key = it })
+        val replaced = ArrayList<StrokeId>()
+        val out = ArrayList<BlockDraft>()
+        val newOnes = ArrayList<Int>()
+        for (item in items) {
+            if (item is FlowBlock) {
+                replaced += item.id
+                out += (item.toDraft() as BlockDraft).inSlot(slot())
+            } else {
+                newOnes += out.size
+                out += (item as BlockDraft).inSlot(slot())
+            }
+        }
+        val added = replaceElements(replaced, out)
+        newOnes.map { added[it] }
+    }
+
     /** Puts [drafts] into the flow at [drop]; the text box it lands in is split at the paragraph. */
-    private fun DocumentSession.Transaction.insert(drop: FlowDrop, drafts: List<BlockDraft>): List<PageElement> = flowing(drop.flowId) {
+    private fun DocumentSession.Transaction.insert(drop: FlowDrop, drafts: List<BlockDraft>): List<PageElement> =
+        if (drop.besideOf != null && drafts.all { it is ImageDraft }) insertBeside(drop, drafts) else insertBetween(drop, drafts)
+
+    private fun DocumentSession.Transaction.insertBetween(drop: FlowDrop, drafts: List<BlockDraft>): List<PageElement> = flowing(drop.flowId) {
         val flow = state.flow(drop.flowId)
         val after = drop.after
         val high = flow?.blocks?.firstOrNull { after == null || it.slot.order > after }?.slot?.order
@@ -321,6 +380,9 @@ class FlowEditing(private val session: DocumentSession, private val ids: IdGener
     private companion object {
         /** How far below a flow (mm) new text still continues it. */
         const val CONTINUE_MM = 12f
+
+        /** Share of a picture's width at either side where pictures dropped go beside it. */
+        const val BESIDE_SHARE = 0.3f
     }
 }
 

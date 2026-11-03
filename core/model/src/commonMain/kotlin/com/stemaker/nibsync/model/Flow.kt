@@ -5,9 +5,10 @@ import com.stemaker.nibsync.model.geometry.Rect
 /**
  * Where a block belongs: to the flow [flowId], at [order] among its blocks ([FractionalIndex]
  * keys, equal keys of concurrent inserts go by element id), indented by [indent] steps of
- * [Flow.INDENT_MM] (like list levels, so a picture can belong to a list item).
+ * [Flow.INDENT_MM] (like list levels, so a picture can belong to a list item). Pictures with the
+ * same [order] and a [beside] key stand in one row, ordered by it (see [Flow.rowsOf]).
  */
-data class FlowSlot(val flowId: StrokeId, val order: String, val indent: Int = 0) {
+data class FlowSlot(val flowId: StrokeId, val order: String, val indent: Int = 0, val beside: String? = null) {
     init {
         require(indent in 0..MAX_INDENT) { "indent $indent out of range" }
     }
@@ -69,6 +70,26 @@ data class Flow(val id: StrokeId, val blocks: List<FlowBlock>, val x: Float, val
 
         /** One indent step (mm): a list level of the text (20 pt). */
         const val INDENT_MM = 20f * 25.4f / 72f
+
+        /**
+         * [ordered] blocks (by order) grouped into what stands on one line: a single block, or
+         * pictures of a row (same order, a [FlowSlot.beside] key, at least two), left to right.
+         */
+        fun rowsOf(ordered: List<FlowBlock>): List<List<FlowBlock>> {
+            val out = ArrayList<List<FlowBlock>>()
+            var i = 0
+            while (i < ordered.size) {
+                val b = ordered[i]
+                var j = i + 1
+                if (b is ImageElement && b.slot.beside != null) {
+                    while (j < ordered.size && ordered[j].let { it is ImageElement && it.slot.beside != null && it.slot.order == b.slot.order }) j++
+                }
+                val group = ordered.subList(i, j)
+                if (group.size > 1) out += group.sortedWith(compareBy<FlowBlock> { it.slot.beside }.thenBy { it.id.value }) else out += listOf(b)
+                i = j
+            }
+            return out
+        }
     }
 }
 

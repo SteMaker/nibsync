@@ -294,6 +294,13 @@ draws or hits them.
   on below it. Selected blocks have indent buttons (`FlowEditing.indent`). The flow keeps its left
   edge (`Flow.x`); a block's stored x is that edge, its shown x adds its indent. Tables keep their
   width when indented.
+- **Rows of pictures:** pictures with the same `order` and a `FlowSlot.beside` key (record field `"fb"`,
+  pictures only) stand side by side, left to right by that key (`Flow.rowsOf`; a row needs two). They
+  are all as high as makes the row exactly as wide as the flow's text (less the first one's indent),
+  or, without text, as wide as they are together; the shown size is derived like the position, the
+  aspect ratio is the stored one's. Pictures dragged onto the left or right 30 % of a picture go beside
+  it (`FlowDrop.besideOf`, an upright drop line); the row's pictures get new keys. Dragged out, a
+  picture is a paragraph again; one left alone shows at its own size. Older readers stack them.
 - A text tool tap up to 12 mm below a flow that does not end in text continues it (`continuation`).
 - The handle of an open box or to-do moves its flow, not into other text: it lands below it (`dragFlow`).
 - While typing, the editors' `flowPreview()` says what will move and how far (later blocks and what

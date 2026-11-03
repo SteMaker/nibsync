@@ -358,7 +358,7 @@ private const val MARK_LINK = "l"
 internal fun FileElement.toRecord(): FileElementRecord {
     val p = Quantization::positionToSteps
     return when (this) {
-        is ImageElement -> FileElementRecord(KIND_IMAGE, id.value, p(x), p(y), p(widthMm), p(heightMm), createdAtEpochMs, author.value, asset.sha256, asset.mimeType, flow = flowField, order = orderField, indent = slot.indent)
+        is ImageElement -> FileElementRecord(KIND_IMAGE, id.value, p(x), p(y), p(widthMm), p(heightMm), createdAtEpochMs, author.value, asset.sha256, asset.mimeType, flow = flowField, order = orderField, indent = slot.indent, beside = slot.beside)
         is FileLink -> FileElementRecord(KIND_LINK, id.value, p(x), p(y), p(widthMm), p(heightMm), createdAtEpochMs, author.value, asset.sha256, asset.mimeType, fileName, flowField, orderField, slot.indent)
     }
 }
@@ -369,7 +369,7 @@ internal fun FileElementRecord.toDomain(): FileElement? {
     if (width <= 0 || height <= 0) return null
     val asset = runCatching { Asset(sha256, mimeType) }.getOrNull() ?: return null
     return when (kind) {
-        KIND_IMAGE -> ImageElement(StrokeId(id), q(x), q(y), q(width), q(height), asset, createdAtEpochMs, DeviceId(author), slot(id, flow, order, indent))
+        KIND_IMAGE -> ImageElement(StrokeId(id), q(x), q(y), q(width), q(height), asset, createdAtEpochMs, DeviceId(author), slot(id, flow, order, indent).copy(beside = beside))
         KIND_LINK -> FileLink(StrokeId(id), q(x), q(y), q(width), q(height), asset, name ?: "", createdAtEpochMs, DeviceId(author), slot(id, flow, order, indent))
         else -> null
     }
