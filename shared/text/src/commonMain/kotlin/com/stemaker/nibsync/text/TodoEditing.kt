@@ -139,6 +139,13 @@ class TodoEditing(private val session: DocumentSession, private val ids: IdGener
         _editing.value = e.copy(itemId = item.id, taskId = item.taskId, x = item.x, y = item.y, slot = slot, movedX = 0f, movedY = 0f)
     }
 
+    /** True if the typed to-do needs another height than the stored one. */
+    fun heightChanged(): Boolean {
+        val e = _editing.value ?: return false
+        val stored = saved?.takeIf { e.itemId != null } ?: return false
+        return kotlin.math.abs(fitted(e).heightMm - stored.heightMm) > HEIGHT_TOLERANCE_MM
+    }
+
     // On the storage grid, so an unchanged to-do compares equal to what was loaded.
     private fun q(mm: Float) = Quantization.quantizePosition(mm)
 

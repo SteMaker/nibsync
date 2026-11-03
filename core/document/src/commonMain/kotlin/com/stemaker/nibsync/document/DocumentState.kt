@@ -76,15 +76,19 @@ class DocumentState private constructor(
             if (row.size == 1) {
                 listOf(row.single().placedAt(x + row.single().slot.offsetMm, y).also { y += it.heightMm + Flow.GAP_MM })
             } else {
-                // Pictures side by side, all as high as fills the width of the text (or as wide as they are).
+                // Pictures side by side at their own size, top aligned; the highest sets the row's height.
+                // If they do not fit the width of the text, all of them are scaled down alike.
                 val left = x + row.first().slot.offsetMm
-                val width = (textWidth?.minus(row.first().slot.offsetMm) ?: row.sumOf { it.widthMm.toDouble() }.toFloat() + Flow.GAP_MM * (row.size - 1))
-                val ratios = row.map { it.widthMm / maxOf(0.1f, it.heightMm) }
-                val h = maxOf(1f, (width - Flow.GAP_MM * (row.size - 1)) / ratios.sum())
+                val gaps = Flow.GAP_MM * (row.size - 1)
+                val natural = row.sumOf { it.widthMm.toDouble() }.toFloat()
+                val room = textWidth?.minus(row.first().slot.offsetMm)?.minus(gaps)
+                val scale = if (room != null && natural > room) maxOf(0.05f, room / natural) else 1f
                 var cx = left
-                row.mapIndexed { i, b ->
-                    (b as ImageElement).copy(x = cx, y = y, widthMm = ratios[i] * h, heightMm = h).also { cx += it.widthMm + Flow.GAP_MM }
-                }.also { y += h + Flow.GAP_MM }
+                val pictures = row.map { b ->
+                    (b as ImageElement).copy(x = cx, y = y, widthMm = b.widthMm * scale, heightMm = b.heightMm * scale).also { cx += it.widthMm + Flow.GAP_MM }
+                }
+                y += pictures.maxOf { it.heightMm } + Flow.GAP_MM
+                pictures
             }
         }
         return Flow(flowId, placed, x, top)
@@ -108,6 +112,9 @@ class DocumentState private constructor(
 
     /** The flow the element [id] belongs to, or null if it is not a block. */
     fun flowOf(id: StrokeId): Flow? = placed[id]?.let { laidOut[it.slot.flowId] }
+
+    /** The element [id] as stored: a picture in a row at its own size, not the size it is shown at. */
+    fun stored(id: StrokeId): PageElement? = entries[id]?.element
 
     /** A table with its cells as set by [DocumentOp.SetTableCells]; other elements unchanged. */
     private fun resolved(e: PageElement): PageElement {

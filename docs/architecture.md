@@ -295,13 +295,18 @@ draws or hits them.
   edge (`Flow.x`); a block's stored x is that edge, its shown x adds its indent. Tables keep their
   width when indented.
 - **Rows of pictures:** pictures with the same `order` and a `FlowSlot.beside` key (record field `"fb"`,
-  pictures only) stand side by side, left to right by that key (`Flow.rowsOf`; a row needs two). They
-  are all as high as makes the row exactly as wide as the flow's text (less the first one's indent),
-  or, without text, as wide as they are together; the shown size is derived like the position, the
-  aspect ratio is the stored one's. Pictures dragged onto the left or right 30 % of a picture go beside
-  it (`FlowDrop.besideOf`, an upright drop line); the row's pictures get new keys. Dragged out, a
-  picture is a paragraph again; one left alone shows at its own size. Older readers stack them.
-- A text tool tap up to 12 mm below a flow that does not end in text continues it (`continuation`).
+  pictures only) stand side by side, left to right by that key (`Flow.rowsOf`; a row needs two). Each
+  keeps its own size, top aligned; the highest sets the row's height. Wider together than the flow's
+  text (less the first one's indent), all are scaled down alike; the shown size is derived like the
+  position, the stored one stays (`DocumentState.stored`, `naturalDraft`). Pictures dragged onto the
+  left or right 30 % of a picture go beside it (`FlowDrop.besideOf`, an upright drop line); the row's
+  pictures get new keys. Dragged out, a picture is a paragraph again. Older readers stack them.
+- A text tool tap in the gap between two lines of a flow that are not text (pictures, rows, tables,
+  files, to-dos; the outer 3 mm of a picture count as gap), or up to 12 mm below a flow that does not
+  end in text, starts text there in the flow (`continuation`). Right or down from the end of a table's
+  last cell goes behind the table, into new text if nothing follows.
+- Typed text, table cells and to-dos are stored at once when their height changes (`saveWhileTyping`),
+  so the box, the row and what is below follow a new line right away; else 1.5 s after typing stops.
 - The handle of an open box or to-do moves its flow, not into other text: it lands below it (`dragFlow`).
 - While typing, the editors' `flowPreview()` says what will move and how far (later blocks and what
   is below the flow), so the content follows the growing editor before the save.

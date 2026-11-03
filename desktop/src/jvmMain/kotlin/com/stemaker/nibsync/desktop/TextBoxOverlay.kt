@@ -66,7 +66,7 @@ fun TextBoxOverlay(editing: TextEditing, viewport: Viewport, strings: Strings, c
     val focus = remember(editing.key) { FocusRequester() }
     LaunchedEffect(editing.key) {
         focus.requestFocus()
-        snapshotFlow { editing.controller.contentVersion }.drop(1).debounce(SAVE_DELAY_MS).collect { controller.text.save() }
+        com.stemaker.nibsync.text.saveWhileTyping(editing.controller, controller.text::heightChanged, controller.text::save, SAVE_DELAY_MS)
     }
     Box(Modifier.offset { IntOffset(t.mapX(editing.x).roundToInt(), t.mapY(editing.y).roundToInt()) }) {
         TextBoxEditor(
@@ -159,7 +159,7 @@ fun TableCellOverlay(edit: com.stemaker.nibsync.text.TableEdit, table: com.stema
     val focus = remember(edit.key) { FocusRequester() }
     LaunchedEffect(edit.key) {
         focus.requestFocus()
-        snapshotFlow { edit.controller.contentVersion }.drop(1).debounce(SAVE_DELAY_MS).collect { controller.table.save() }
+        com.stemaker.nibsync.text.saveWhileTyping(edit.controller, controller.table::heightChanged, controller.table::save, SAVE_DELAY_MS)
     }
     val accent = MaterialTheme.colorScheme.primary
     // The open cell framed in the accent colour.

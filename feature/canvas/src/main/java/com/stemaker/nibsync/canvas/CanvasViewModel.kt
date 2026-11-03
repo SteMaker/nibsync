@@ -449,6 +449,14 @@ class CanvasViewModel(
         // A tap into the open to-do keeps it open.
         if (open != null && hit is TodoItem && hit.id == open.itemId) return
         finishText()
+        // With the text tool, a tap between pictures and tables of a box (or just below it) writes there.
+        if (_tools.value.tool == Tool.TEXT && hit !is TextBox) {
+            flows.continuation(x, y)?.let { next ->
+                clearSelection()
+                text.startNew(next.x, next.y, next.widthMm, next.slot)
+                return
+            }
+        }
         when (hit) {
             is TodoItem -> if (_tools.value.tool == Tool.LASSO && !lassoByTap) selectTemporarily(setOf(hit.id)) else openTodo(hit)
             is TextBox -> {
@@ -538,6 +546,12 @@ class CanvasViewModel(
 
     /** Stores the edited box if it changed (one undo step). Called while typing and when done. */
     fun saveText() = text.save()
+
+    /** True if the typed text needs another height than the stored box: stored at once then. */
+    fun textHeightChanged(): Boolean = text.heightChanged()
+
+    /** True if the typed to-do needs another height than the stored one. */
+    fun todoHeightChanged(): Boolean = todo.heightChanged()
 
     /** Ends editing; a box left empty is removed. */
     fun finishText() {

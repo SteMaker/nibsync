@@ -20,6 +20,7 @@ import com.stemaker.nibsync.model.PageElement
 import com.stemaker.nibsync.model.RichText
 import com.stemaker.nibsync.model.Stroke
 import com.stemaker.nibsync.model.StrokeId
+import com.stemaker.nibsync.model.TableElement
 import com.stemaker.nibsync.model.TextBox
 import com.stemaker.nibsync.model.TextBoxDraft
 import com.stemaker.nibsync.model.TextMark
@@ -161,7 +162,7 @@ class FlowEditing(private val session: DocumentSession, private val ids: IdGener
                 flow.blocks.mapTo(result) { it.id }
             }
             val placed = if (single.isEmpty()) emptyList() else {
-                val drafts = single.map { (it.toDraft() as BlockDraft).translated(dx, dy) }
+                val drafts = single.map { state.naturalDraft(it).translated(dx, dy) }
                 if (drop != null) insert(drop, drafts) else newFlow(drafts)
             }
             removeBlocks(single.map { it.id }, measureText, pull = true)
@@ -278,7 +279,7 @@ class FlowEditing(private val session: DocumentSession, private val ids: IdGener
         for (item in items) {
             if (item is FlowBlock) {
                 replaced += item.id
-                out += (item.toDraft() as BlockDraft).inSlot(slot())
+                out += state.naturalDraft(item).inSlot(slot())
             } else {
                 newOnes += out.size
                 out += (item as BlockDraft).inSlot(slot())
@@ -364,22 +365,42 @@ class FlowEditing(private val session: DocumentSession, private val ids: IdGener
     fun remove(ids: Collection<StrokeId>, pull: Boolean = true) = session.edit { removeBlocks(ids, measureText, pull) }
 
     /**
-     * Where a text box begun at ([x], [y]) mm continues a flow: just below one that does not end
-     * in text, within [CONTINUE_MM], so text can go on after a table. Null if it is a new box.
+     * Where text begun at ([x], [y]) mm goes into a box: in the gap between two lines of it that are
+     * not text (pictures, a row of them, tables, files, to-dos; the outer [BAND_MM] of a picture
+     * counts as gap, so it is easy to hit), or up to [CONTINUE_MM] below a box that does not end in
+     * text. Null if it is a new box of its own.
      */
     fun continuation(x: Float, y: Float): FlowContinuation? {
-        val flow = session.state.value.flows.firstOrNull { f ->
-            val b = f.bounds
-            f.blocks.last() !is TextBox && x >= b.left && x <= b.right && y > b.bottom && y <= b.bottom + CONTINUE_MM
-        } ?: return null
-        val b = flow.bounds
-        val slot = FlowSlot(flow.id, FractionalIndex.between(flow.blocks.last().slot.order, null))
-        return FlowContinuation(b.left, b.bottom + Flow.GAP_MM, b.width, slot)
+        for (flow in session.state.value.flows) {
+            val b = flow.bounds
+            if (x < b.left || x > b.right) continue
+            val lines = Flow.rowsOf(flow.blocks)
+            for ((i, line) in lines.withIndex()) {
+                if (line.size == 1 && line.single() is TextBox) continue
+                val next = lines.getOrNull(i + 1)
+                if (next != null && next.size == 1 && next.single() is TextBox) continue
+                val bottom = line.maxOf { it.bounds.bottom }
+                val from = bottom - if (line.any { it is TableElement }) 0f else BAND_MM
+                val to = when {
+                    next == null -> bottom + CONTINUE_MM
+                    next.any { it is TableElement } -> next.minOf { it.y }
+                    else -> next.minOf { it.y } + BAND_MM
+                }
+                if (y <= from || y > to) continue
+                val slot = FlowSlot(flow.id, FractionalIndex.between(line.first().slot.order, next?.first()?.slot?.order))
+                val width = flow.blocks.filterIsInstance<TextBox>().maxOfOrNull { it.widthMm } ?: b.width
+                return FlowContinuation(b.left, bottom + Flow.GAP_MM, width, slot)
+            }
+        }
+        return null
     }
 
     private companion object {
         /** How far below a flow (mm) new text still continues it. */
         const val CONTINUE_MM = 12f
+
+        /** How far into a picture (mm) a text tap still counts as the gap next to it. */
+        const val BAND_MM = 3f
 
         /** Share of a picture's width at either side where pictures dropped go beside it. */
         const val BESIDE_SHARE = 0.3f
@@ -452,6 +473,13 @@ internal fun DocumentState.flowPreview(block: FlowBlock?, flowId: StrokeId?, aft
     val (below, _) = Reflow.plan(elements, flow.blocks.mapTo(HashSet()) { it.id }, b, Rect(b.left, b.top, maxOf(b.right, after.right), b.bottom + dy))
     val later = if (block == null) emptyList() else flow.blocks.dropWhile { it.id != block.id }.drop(1)
     return FlowPreview((below + later).mapTo(HashSet()) { it.id }, dy).takeIf { it.ids.isNotEmpty() }
+}
+
+/** [block] as a draft where it is shown, a picture of a row at its own size (not as scaled down there). */
+internal fun DocumentState.naturalDraft(block: FlowBlock): BlockDraft {
+    val draft = block.toDraft() as BlockDraft
+    val own = stored(block.id) as? ImageElement ?: return draft
+    return (draft as ImageDraft).copy(widthMm = own.widthMm, heightMm = own.heightMm)
 }
 
 /** What shows an anchor or link in text, and its mark; null for other drafts. */

@@ -138,6 +138,16 @@ class TableEditing(private val session: DocumentSession, private val ids: IdGene
         session.edit { flowing(table.slot.flowId) { setTableCells(table.tableId, listOf(CellUpdate(e.cell, cell))) } }
     }
 
+    /** True if the typed cell text is higher or lower than the stored cell. */
+    fun heightChanged(): Boolean {
+        val e = _editing.value ?: return false
+        val table = tableOf(e.tableId) ?: return false
+        val area = table.geometry.areaOf(e.cell) ?: return false
+        val text = e.controller.text
+        val h = if (text.isBlank) 0f else measureText(text, TableText.contentRect(table, area).width)
+        return kotlin.math.abs(h - (table.cells[e.cell]?.heightMm ?: 0f)) > HEIGHT_TOLERANCE_MM
+    }
+
     /** What moves, and how far, if the open cell were stored as typed now. */
     fun flowPreview(): FlowPreview? {
         val e = _editing.value ?: return null

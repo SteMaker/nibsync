@@ -63,7 +63,7 @@ fun TodoOverlay(edit: TodoEdit, viewport: Viewport, strings: Strings, controller
         val focus = remember(edit.key) { FocusRequester() }
         LaunchedEffect(edit.key) {
             focus.requestFocus()
-            snapshotFlow { text.contentVersion }.drop(1).debounce(SAVE_DELAY_MS).collect { controller.todo.save() }
+            com.stemaker.nibsync.text.saveWhileTyping(text, controller.todo::heightChanged, controller.todo::save, SAVE_DELAY_MS)
         }
         Box(Modifier.offset { IntOffset(t.mapX(edit.x + TodoItem.CONTENT_OFFSET_MM).roundToInt(), t.mapY(edit.y + TodoItem.PADDING_MM).roundToInt()) }) {
             TextBoxEditor(

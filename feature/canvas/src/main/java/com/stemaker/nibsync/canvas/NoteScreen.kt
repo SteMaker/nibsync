@@ -235,7 +235,7 @@ fun NoteScreen(
     // Store a typed to-do while typing, too.
     todoEditing?.text?.let { controller ->
         LaunchedEffect(todoEditing?.key) {
-            snapshotFlow { controller.contentVersion }.drop(1).debounce(TEXT_SAVE_DELAY_MS).collect { viewModel.saveTodo() }
+            com.stemaker.nibsync.text.saveWhileTyping(controller, viewModel::todoHeightChanged, viewModel::saveTodo, TEXT_SAVE_DELAY_MS)
         }
     }
 
@@ -252,14 +252,14 @@ fun NoteScreen(
     // Store a table cell while typing, too.
     tableEditing?.let { edit ->
         LaunchedEffect(edit.key) {
-            snapshotFlow { edit.controller.contentVersion }.drop(1).debounce(TEXT_SAVE_DELAY_MS).collect { viewModel.tables.save() }
+            com.stemaker.nibsync.text.saveWhileTyping(edit.controller, viewModel.tables::heightChanged, viewModel.tables::save, TEXT_SAVE_DELAY_MS)
         }
     }
 
     // Store the text while typing, so nothing is lost if the app goes away.
     textEditing?.let { editing ->
         LaunchedEffect(editing.key) {
-            snapshotFlow { editing.controller.contentVersion }.drop(1).debounce(TEXT_SAVE_DELAY_MS).collect { viewModel.saveText() }
+            com.stemaker.nibsync.text.saveWhileTyping(editing.controller, viewModel::textHeightChanged, viewModel::saveText, TEXT_SAVE_DELAY_MS)
         }
     }
 

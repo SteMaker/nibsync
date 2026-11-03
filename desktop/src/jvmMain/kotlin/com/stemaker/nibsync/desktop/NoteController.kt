@@ -446,7 +446,18 @@ class NoteController(
         lastClickTime = timeMs
         lastClickX = x
         lastClickY = y
-        when (val hit = elementAt(x, y)) {
+        val hit = elementAt(x, y)
+        // With the text tool, a click between pictures and tables of a box (or just below it) writes there.
+        if (_tools.value.tool == DesktopTool.TEXT && hit !is TextBox) {
+            flows.continuation(x, y)?.let { next ->
+                table.finish()
+                todo.finish()
+                clearSelection()
+                text.startNew(next.x, next.y, next.widthMm, next.slot)
+                return
+            }
+        }
+        when (hit) {
             is TextBox -> if (!copyCode(hit, x, y) && !followLink(hit, x, y)) {
                 endTemporarySelection()
                 clickAt(x, y, pageWidthMm)

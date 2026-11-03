@@ -135,13 +135,19 @@ class BoxEditingTest {
         val flow = session.state.value.flows.single()
         assertThat(flow.blocks.map { it::class.simpleName }).containsExactly("TextBox", "ImageElement", "ImageElement", "TextBox").inOrder()
         val (left, right) = flow.blocks.filterIsInstance<ImageElement>()
-        // Same height, side by side, together as wide as the text (120 mm less one gap).
-        assertThat(left.heightMm).isWithin(0.01f).of(right.heightMm)
-        assertThat(left.widthMm / left.heightMm).isWithin(0.01f).of(2f)
-        assertThat(right.widthMm / right.heightMm).isWithin(0.01f).of(1f)
+        // Side by side at their own sizes (60 + 40 mm fit into 120 mm), top aligned; the higher one sets the row.
+        assertThat(left.widthMm).isWithin(0.01f).of(60f)
+        assertThat(right.widthMm).isWithin(0.01f).of(40f)
         assertThat(right.x).isWithin(0.01f).of(left.bounds.right + com.stemaker.nibsync.model.Flow.GAP_MM)
-        assertThat(right.bounds.right).isWithin(0.01f).of(20f + 120f)
         assertThat(left.y).isEqualTo(right.y)
+        assertThat(flow.blocks.last().y).isWithin(0.01f).of(right.bounds.bottom + com.stemaker.nibsync.model.Flow.GAP_MM)
+        // Too wide for a narrower box: both scaled down alike to fit, and back when wider again.
+        box.setWidth(flow.id, 70f)
+        val (l2, r2) = session.state.value.flows.single().blocks.filterIsInstance<ImageElement>()
+        assertThat(r2.bounds.right).isWithin(0.01f).of(20f + 70f)
+        assertThat(l2.widthMm / r2.widthMm).isWithin(0.01f).of(1.5f)
+        box.setWidth(flow.id, 120f)
+        assertThat(session.state.value.flows.single().blocks.filterIsInstance<ImageElement>().map { it.widthMm }).containsExactly(60f, 40f).inOrder()
         // The text below comes after the row.
         assertThat(flow.blocks.last().y).isGreaterThan(left.bounds.bottom)
         // Dragged out below the box again: the first picture stands alone at its size.
@@ -149,8 +155,37 @@ class BoxEditingTest {
         val alone = session.state.value.flows.first { it.blocks.size > 1 }.blocks.filterIsInstance<ImageElement>().single()
         assertThat(alone.widthMm / alone.heightMm).isWithin(0.01f).of(2f)
         assertThat(alone.widthMm).isAtMost(120f)
-        // Undo puts the row back.
+        // Undo puts the row back (and the widths before).
+        session.undo()
+        session.undo()
         session.undo()
         assertThat(session.state.value.flows.single().blocks.filterIsInstance<ImageElement>().map { it.y }.distinct()).hasSize(1)
+    }
+
+    @Test
+    fun textGoesBetweenAPictureAndATableAndBehindTheLastCell() {
+        text.startNew(20f, 20f, 120f)
+        text.editing.value!!.controller.setContent(RichText.plain("oben"))
+        text.editing.value!!.controller.placeCursorAtEnd()
+        val pic = text.insertBlocksAtCursor(listOf(picture(60f, 30f))).single()
+        box.fromBlock(pic.id, BlockKey.ENTER)
+        tables.insertInto(text, rows = 1, columns = 2, header = false)
+        tables.finish()
+        // A text tap just above the table's top, inside the picture's lower edge: text between them.
+        val next = flows.continuation(30f, pic.bounds.bottom - 1f)!!
+        text.startNew(next.x, next.y, next.widthMm, next.slot)
+        text.editing.value!!.controller.setContent(RichText.plain("dazwischen"))
+        text.finish()
+        assertThat(blocks().map { it::class.simpleName }).containsExactly("TextBox", "ImageElement", "TextBox", "TableElement").inOrder()
+        // Inside the picture or the table: no.
+        assertThat(flows.continuation(30f, pic.bounds.top + 10f)).isNull()
+        // From behind the last character of the last cell, right goes behind the table.
+        val table = blocks().last() as TableElement
+        tables.open(table, table.geometry.key(table.geometry.areas.last()))
+        assertThat(box.fromCell(Boundary.RIGHT)).isEmpty()
+        assertThat(tables.editing.value).isNull()
+        text.editing.value!!.controller.setContent(RichText.plain("danach"))
+        text.finish()
+        assertThat(blocks().map { it::class.simpleName }).containsExactly("TextBox", "ImageElement", "TextBox", "TableElement", "TextBox").inOrder()
     }
 }

@@ -102,6 +102,16 @@ class TextBoxEditing(private val session: DocumentSession, private val ids: IdGe
         _editing.value = e.copy(boxId = box.id, x = box.x, y = box.y, slot = slot, movedX = 0f, movedY = 0f)
     }
 
+    /**
+     * True if the typed text is higher or lower than the stored box. A new box is not stored yet
+     * (one undo step for all of it; what is below follows by the preview meanwhile).
+     */
+    fun heightChanged(): Boolean {
+        val e = _editing.value ?: return false
+        val stored = e.boxId?.let { session.state.value.element(it) } as? TextBox ?: return false
+        return kotlin.math.abs(measureText(e.controller.text, e.widthMm) - stored.heightMm) > HEIGHT_TOLERANCE_MM
+    }
+
     /** Ends editing; a box left empty is removed. Returns false if nothing was being edited. */
     fun finish(): Boolean {
         val e = _editing.value ?: return false
@@ -191,3 +201,6 @@ class TextBoxEditing(private val session: DocumentSession, private val ids: IdGe
     fun resize(dw: Float) =
         _editing.update { it?.copy(widthMm = maxOf(TextBox.MIN_WIDTH_MM, it.widthMm + dw)) }
 }
+
+/** Height differences (mm) below this are rounding, not a new line. */
+internal const val HEIGHT_TOLERANCE_MM = 0.1f

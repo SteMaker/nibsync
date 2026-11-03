@@ -60,9 +60,9 @@ class BoxEditing(
         val index = g.areas.indexOf(area)
         return when (boundary) {
             Boundary.UP -> if (tables.move(CellMove.UP)) emptySet() else enter(neighbour(table, -1), fromBelow = true)
-            Boundary.DOWN -> if (tables.move(CellMove.DOWN)) emptySet() else enter(neighbour(table, 1), fromBelow = false)
+            Boundary.DOWN -> if (tables.move(CellMove.DOWN)) emptySet() else enter(neighbour(table, 1), fromBelow = false) ?: afterTable(table)
             Boundary.LEFT -> if (index > 0 && tables.move(CellMove.PREVIOUS)) emptySet() else enter(neighbour(table, -1), fromBelow = true)
-            Boundary.RIGHT -> if (index < g.areas.lastIndex && tables.move(CellMove.NEXT)) emptySet() else enter(neighbour(table, 1), fromBelow = false)
+            Boundary.RIGHT -> if (index < g.areas.lastIndex && tables.move(CellMove.NEXT)) emptySet() else enter(neighbour(table, 1), fromBelow = false) ?: afterTable(table)
             Boundary.BACKSPACE, Boundary.DELETE -> null
         }
     }
@@ -79,19 +79,27 @@ class BoxEditing(
             BlockKey.DOWN, BlockKey.RIGHT -> enter(neighbour(block, 1), fromBelow = false)
             BlockKey.ENTER -> {
                 val next = neighbour(block, 1)
-                if (next is TextBox) {
-                    text.open(next) { it.placeCursorAtStart() }
-                } else {
-                    // A new, empty paragraph of text right below the block.
-                    val flow = session.state.value.flowOf(block.id) ?: return null
-                    val slot = FlowSlot(flow.id, FractionalIndex.between(block.slot.order, next?.slot?.order))
-                    tables.finish()
-                    text.startNew(flow.x, block.bounds.bottom + Flow.GAP_MM, widthOf(flow), slot)
-                }
+                if (next is TextBox) text.open(next) { it.placeCursorAtStart() } else startTextAfter(block)
                 emptySet()
             }
             BlockKey.BACKSPACE, BlockKey.DELETE -> remove(block)
         }
+    }
+
+    /** Out of a table at the end of its box: text goes on below it. */
+    private fun afterTable(table: TableElement): Set<StrokeId> {
+        startTextAfter(table)
+        return emptySet()
+    }
+
+    /** A new, empty paragraph of text right below [block] (and its row). */
+    private fun startTextAfter(block: FlowBlock) {
+        val flow = session.state.value.flowOf(block.id) ?: return
+        val line = Flow.rowsOf(flow.blocks).first { l -> l.any { it.id == block.id } }
+        val next = flow.blocks.firstOrNull { it.slot.order > block.slot.order }
+        val slot = FlowSlot(flow.id, FractionalIndex.between(block.slot.order, next?.slot?.order))
+        tables.finish()
+        text.startNew(flow.x, line.maxOf { it.bounds.bottom } + Flow.GAP_MM, widthOf(flow), slot)
     }
 
     private fun remove(block: FlowBlock): Set<StrokeId> {
@@ -173,7 +181,8 @@ class BoxEditing(
                             val added = replaceElements(listOf(b.id), listOf(draft)).single() as TableElement
                             setTableCells(added.tableId, cells)
                         }
-                        b is FileElement && b.widthMm > room ->
+                        // Pictures of a row: the row scales them itself.
+                        b is FileElement && b.slot.beside == null && b.widthMm > room ->
                             replaceElements(listOf(b.id), listOf((b.toDraft() as BlockDraft).fittedTo(room)))
                     }
                 }
