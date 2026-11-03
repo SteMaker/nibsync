@@ -217,13 +217,14 @@ object RichTextLayout {
     }
 
     /** Where each anchor of [text] is in its [layout] (px): the box of its sign, drawn as a flag. */
-    fun anchorBoxes(text: RichText, layout: TextLayoutResult, start: ListStart = ListStart.NONE): List<Rect> {
+    fun anchorBoxes(text: RichText, layout: TextLayoutResult, start: ListStart = ListStart.NONE): List<Pair<MarkStyle.Anchor, Rect>> {
         val starts = textStarts(text, prefixes(text, start))
         val length = layout.layoutInput.text.length
         return text.paragraphs.flatMapIndexed { i, p ->
-            p.marks.filter { it.style is MarkStyle.Anchor }.mapNotNull { m ->
+            p.marks.mapNotNull { m ->
+                val anchor = m.style as? MarkStyle.Anchor ?: return@mapNotNull null
                 val at = starts[i] + m.start
-                if (at >= length) null else layout.getBoundingBox(at)
+                if (at >= length) null else anchor to layout.getBoundingBox(at)
             }
         }
     }

@@ -354,6 +354,7 @@ private fun DocumentPane(
             linkAt = { box, x, y -> textLayout.linkAt(box, x, y, RichTextLayout.listStart(s.state.value, box)) }
             codeToCopyAt = { box, x, y -> textLayout.codeToCopyAt(box, x, y, RichTextLayout.listStart(s.state.value, box)) }
             snapGrid = { settings.snapGrid }
+            anchorPlace = { box, anchorId -> textLayout.anchorPlace(box, anchorId, RichTextLayout.listStart(s.state.value, box)) }
             taskAt = { element, x, y ->
                 when (element) {
                     is com.stemaker.nibsync.model.TextBox -> textLayout.taskAt(element, x, y, RichTextLayout.listStart(s.state.value, element))
@@ -488,6 +489,8 @@ private fun DocumentPane(
             onInsertTodoHere = controller::insertTodoHere,
             openBlockFloating = if (tableEdit != null || todoEdit != null) controller.openBlockFloating() else null,
             onToggleOpenBlock = controller::toggleOpenBlockFloating,
+            canRename = controller.selectedAnchor(selection) != null,
+            onRename = { controller.selectedAnchor(selection)?.let { anchorDialog = AnchorDialog(it) } },
             onPaste = ::pasteHere,
             onTodo = controller::selectTodo,
             onTodoInk = controller::selectTodoInk,
@@ -636,6 +639,19 @@ private fun DocumentPane(
                         onRename = header.onRename,
                         state = headerState,
                         onEditingChange = { titleEditing.value = it },
+                    )
+                }
+                // An anchor in the open text was clicked: its bar, as for an anchor on the page.
+                val openText = editing
+                val textAnchor = if (openText != null) controller.selectedTextAnchor() else null
+                if (viewport.hasSize && openText != null && textAnchor != null) {
+                    val box = openText.boxId?.let { doc.element(it) } as? com.stemaker.nibsync.model.TextBox
+                    val (ax, ay) = box?.let { controller.anchorPlace(it, textAnchor.anchorId) } ?: (openText.x to openText.y)
+                    TextAnchorBar(
+                        strings, com.stemaker.nibsync.model.geometry.Rect(ax, ay, ax + 3f, ay + 5f), viewport,
+                        onRename = { anchorDialog = AnchorDialog(textAnchor) },
+                        onFloat = controller::floatTextAnchor,
+                        onDelete = controller::deleteTextAnchor,
                     )
                 }
                 if (viewport.hasSize && selection.isNotEmpty() && gesture !is GesturePreview.Moving && gesture !is GesturePreview.Resizing) {

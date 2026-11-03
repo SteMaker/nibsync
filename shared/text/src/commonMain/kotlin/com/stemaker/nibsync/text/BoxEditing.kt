@@ -195,5 +195,28 @@ class BoxEditing(
             }
         }
     }
-}
 
+    /**
+     * Renames the anchor [anchorId] in text: in the open editor if it is there (typing goes on),
+     * else in its stored box. False if no text has it.
+     */
+    fun renameAnchor(anchorId: StrokeId, name: String): Boolean {
+        val e = text.editing.value
+        if (e != null && e.controller.renameAnchor(anchorId, name)) {
+            text.save()
+            return true
+        }
+        return flows.renameInText(anchorId, name)
+    }
+
+    /**
+     * Lets the anchor [anchorId] float: out of its text (ending editing), onto the page where
+     * [place] says its sign is. Returns the anchor on the page.
+     */
+    fun floatAnchor(anchorId: StrokeId, place: (TextBox, StrokeId) -> Pair<Float, Float>?): com.stemaker.nibsync.model.PageElement? {
+        text.finish()
+        val box = session.state.value.textBoxes.firstOrNull { b -> b.anchors.any { it.anchorId == anchorId } } ?: return null
+        val (x, y) = place(box, anchorId) ?: (box.x to box.y + (box.anchors.first { it.anchorId == anchorId }.y - box.y))
+        return flows.floatAnchor(anchorId, x, y)
+    }
+}

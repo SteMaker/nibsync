@@ -359,7 +359,12 @@ follows the link or renames the anchor.
 
 In text they are letters: `MarkStyle.Anchor` on the character `§`, `MarkStyle.NoteLink` on its
 title (record marks `"a"` and `"l"`). The `§` is drawn invisible, with a small flag over it like a free
-anchor's (`RichTextPainter.drawAnchorFlag`, page and editor). They go along with the text and are one unit in the editor
+anchor's (`RichTextPainter.drawAnchorFlag`, page and editor). A click or tap on an anchor in text selects it: the box opens
+with its sign selected (`TextEditController.selectAnchor`), text goes before or after it as anywhere,
+and a bar like the selection bar offers rename, delete and "Let it float freely" (`BoxEditing.floatAnchor`:
+out of the text onto the page where its sign is, the same `anchorId`). A free anchor on text has
+"Put into the text" and rename in its selection bar (`FlowEditing.anchorIntoText`). A right click on
+an anchor (PC, on the page or in a closed box) renames it. They go along with the text and are one unit in the editor
 (`LinkRun`, atomic, typed text stays outside). Tool bar "Insert ... here" puts them at the cursor;
 an anchor or link inserted or dragged onto a text goes in front of (anchor) or behind (link) the
 paragraph there; elsewhere it stays a free `LinkElement`, so handwriting has anchors too.

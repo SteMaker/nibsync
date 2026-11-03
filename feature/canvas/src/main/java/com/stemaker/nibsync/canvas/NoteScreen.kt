@@ -7,6 +7,7 @@ import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material.icons.filled.SwapHoriz
 import androidx.compose.material.icons.filled.Layers
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.CheckBox
 import androidx.compose.material.icons.automirrored.filled.WrapText
 import androidx.compose.material.icons.filled.AttachFile
@@ -175,6 +176,7 @@ object NoteScreenTags {
     const val INDENT_SELECTION = "indent-selection"
     const val BOX_FRAME = "box-frame"
     const val INTO_TEXT = "selection-into-text"
+    const val RENAME_ANCHOR = "rename-anchor"
     const val FLOAT = "selection-float"
     const val OUTDENT_SELECTION = "outdent-selection"
     const val COPY_SELECTION = "copy-selection"
@@ -394,6 +396,7 @@ fun NoteScreen(
                             viewModel.measureText = it.textRenderer::heightMm
                             viewModel.linkAt = it.textRenderer::linkAt
                             viewModel.codeToCopyAt = it.textRenderer::codeToCopyAt
+                            viewModel.anchorPlace = it.textRenderer::anchorPlace
                             viewModel.taskAt = { element, x, y ->
                                 when (element) {
                                     is com.stemaker.nibsync.model.TextBox -> it.textRenderer.taskAt(element, x, y)
@@ -493,6 +496,18 @@ fun NoteScreen(
                     )
                 }
                 if (v != null && v.hasSize) pageOverlay(v)
+                // An anchor in the open text was tapped: its bar, as for an anchor on the page.
+                val textAnchor = if (textEditing != null) viewModel.selectedTextAnchor() else null
+                if (v != null && v.hasSize && textEditing != null && textAnchor != null) {
+                    val stored = textEditing!!.boxId?.let { document.element(it) } as? com.stemaker.nibsync.model.TextBox
+                    val (ax, ay) = stored?.let { viewModel.anchorPlace(it, textAnchor.anchorId) } ?: (textEditing!!.x to textEditing!!.y)
+                    SelectionBar(
+                        com.stemaker.nibsync.model.geometry.Rect(ax, ay, ax + 3f, ay + 5f), v,
+                        onDelete = viewModel::deleteTextAnchor, onCopy = null,
+                        canFloat = true, onFloating = { viewModel.floatTextAnchor() },
+                        onRename = { viewModel.editAnchor(textAnchor) },
+                    )
+                }
                 if (v != null && v.hasSize && selection.isNotEmpty()) {
                     val selected = document.elements.filter { it.id in selection }
                     com.stemaker.nibsync.document.select.selectionBoundsOf(selected)?.let { bounds ->
@@ -500,6 +515,7 @@ fun NoteScreen(
                             bounds, v, onDelete = viewModel::deleteSelection, onCopy = viewModel::copySelection,
                             canIndent = viewModel.canIndent(1), canOutdent = viewModel.canIndent(-1), onIndent = viewModel::indentSelection,
                             canFloat = viewModel.canSetFloating(true), canSink = viewModel.canSetFloating(false), onFloating = viewModel::setFloating,
+                            onRename = viewModel.selectedAnchor()?.let { a -> { viewModel.editAnchor(a) } },
                         )
                     }
                 }
@@ -979,13 +995,15 @@ private fun SelectionBar(
     bounds: com.stemaker.nibsync.model.geometry.Rect,
     viewport: Viewport,
     onDelete: () -> Unit,
-    onCopy: () -> Unit,
+    onCopy: (() -> Unit)?,
     canIndent: Boolean = false,
     canOutdent: Boolean = false,
     onIndent: (Int) -> Unit = {},
     canFloat: Boolean = false,
     canSink: Boolean = false,
     onFloating: (Boolean) -> Unit = {},
+    /** Rename the one selected anchor; null: no such button. */
+    onRename: (() -> Unit)? = null,
 ) {
     val t = viewport.documentToView
     val density = androidx.compose.ui.platform.LocalDensity.current
@@ -1011,10 +1029,20 @@ private fun SelectionBar(
                     Icon(Icons.Filled.Delete, contentDescription = deleteLabel)
                 }
             }
-            val copyLabel = stringResource(R.string.copy_selection)
-            WithTooltip(copyLabel) {
-                IconButton(onClick = onCopy, modifier = Modifier.testTag(NoteScreenTags.COPY_SELECTION)) {
-                    Icon(Icons.Filled.ContentCopy, contentDescription = copyLabel)
+            if (onCopy != null) {
+                val copyLabel = stringResource(R.string.copy_selection)
+                WithTooltip(copyLabel) {
+                    IconButton(onClick = onCopy, modifier = Modifier.testTag(NoteScreenTags.COPY_SELECTION)) {
+                        Icon(Icons.Filled.ContentCopy, contentDescription = copyLabel)
+                    }
+                }
+            }
+            if (onRename != null) {
+                val renameLabel = stringResource(R.string.rename_anchor_action)
+                WithTooltip(renameLabel) {
+                    IconButton(onClick = onRename, modifier = Modifier.testTag(NoteScreenTags.RENAME_ANCHOR)) {
+                        Icon(Icons.Filled.Edit, contentDescription = renameLabel)
+                    }
                 }
             }
             // Into the text where it lies, or out of it to float freely over the page.

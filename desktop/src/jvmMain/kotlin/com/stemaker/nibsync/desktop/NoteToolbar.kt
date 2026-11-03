@@ -58,6 +58,7 @@ import androidx.compose.material.icons.automirrored.filled.FormatIndentDecrease
 import androidx.compose.material.icons.automirrored.filled.FormatIndentIncrease
 import androidx.compose.material.icons.automirrored.filled.WrapText
 import androidx.compose.material.icons.filled.Layers
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.CheckBox
 import androidx.compose.material.icons.automirrored.filled.FormatListBulleted
 import androidx.compose.material.icons.automirrored.filled.Redo
@@ -141,6 +142,8 @@ object ToolbarTags {
     const val CUT_SELECTION = "cut-selection"
     const val INDENT_SELECTION = "indent-selection"
     const val INTO_TEXT = "selection-into-text"
+    const val RENAME_ANCHOR = "rename-anchor"
+    const val ANCHOR_BAR = "anchor-bar"
     const val FLOAT = "selection-float"
     const val OUTDENT_SELECTION = "outdent-selection"
     const val PASTE = "paste"
@@ -178,6 +181,9 @@ class ToolbarTools(
     val canSink: Boolean = false,
     val onFloating: (Boolean) -> Unit = {},
     val onInsertTodoHere: () -> Unit = {},
+    /** The one selected anchor can be renamed. */
+    val canRename: Boolean = false,
+    val onRename: () -> Unit = {},
     /** The open table or to-do: floating (true), in text (false) or none (null), and the switch. */
     val openBlockFloating: Boolean? = null,
     val onToggleOpenBlock: () -> Unit = {},
@@ -412,6 +418,36 @@ private fun PenOptions(strings: Strings, t: ToolbarTools) {
 /** Actions for the selection, floating just above it on the page (below it without room above). */
 @Composable
 fun SelectionBar(strings: Strings, frame: com.stemaker.nibsync.model.geometry.Rect, viewport: com.stemaker.nibsync.model.geometry.Viewport, t: ToolbarTools) {
+    FloatingBar(frame, viewport, ToolbarTags.SELECTION_BAR) {
+        Action(strings.deleteSelection, Icons.Filled.Delete, true, ToolbarTags.DELETE_SELECTION, t.onDeleteSelection)
+        Action(strings.copySelection, Icons.Filled.ContentCopy, true, ToolbarTags.COPY_SELECTION, t.onCopySelection)
+        Action(strings.cutSelection, Icons.Filled.ContentCut, true, ToolbarTags.CUT_SELECTION, t.onCutSelection)
+        if (t.canRename) Action(strings.renameAnchor, Icons.Filled.Edit, true, ToolbarTags.RENAME_ANCHOR, t.onRename)
+        if (t.canSink) Action(strings.intoText, Icons.AutoMirrored.Filled.WrapText, true, ToolbarTags.INTO_TEXT) { t.onFloating(false) }
+        if (t.canFloat) Action(strings.floatFree, Icons.Filled.Layers, true, ToolbarTags.FLOAT) { t.onFloating(true) }
+        if (t.canIndent || t.canOutdent) {
+            Action(strings.outdent, Icons.AutoMirrored.Filled.FormatIndentDecrease, t.canOutdent, ToolbarTags.OUTDENT_SELECTION) { t.onIndent(-1) }
+            Action(strings.indent, Icons.AutoMirrored.Filled.FormatIndentIncrease, t.canIndent, ToolbarTags.INDENT_SELECTION) { t.onIndent(1) }
+        }
+    }
+}
+
+/**
+ * The bar of an anchor selected in open text (its sign was clicked), as for a selected anchor on the
+ * page: rename it, let it float, delete it. [frame] is its sign (mm).
+ */
+@Composable
+fun TextAnchorBar(strings: Strings, frame: com.stemaker.nibsync.model.geometry.Rect, viewport: com.stemaker.nibsync.model.geometry.Viewport, onRename: () -> Unit, onFloat: () -> Unit, onDelete: () -> Unit) {
+    FloatingBar(frame, viewport, ToolbarTags.ANCHOR_BAR) {
+        Action(strings.deleteSelection, Icons.Filled.Delete, true, ToolbarTags.DELETE_SELECTION, onDelete)
+        Action(strings.renameAnchor, Icons.Filled.Edit, true, ToolbarTags.RENAME_ANCHOR, onRename)
+        Action(strings.floatFree, Icons.Filled.Layers, true, ToolbarTags.FLOAT, onFloat)
+    }
+}
+
+/** A row of actions floating just above [frame] (mm) on the page, below it without room above. */
+@Composable
+private fun FloatingBar(frame: com.stemaker.nibsync.model.geometry.Rect, viewport: com.stemaker.nibsync.model.geometry.Viewport, tag: String, content: @Composable () -> Unit) {
     val tr = viewport.documentToView
     var size by remember { mutableStateOf(androidx.compose.ui.unit.IntSize.Zero) }
     val gap = 10f
@@ -426,19 +462,9 @@ fun SelectionBar(strings: Strings, frame: com.stemaker.nibsync.model.geometry.Re
         modifier = Modifier
             .offset { androidx.compose.ui.unit.IntOffset(x.toInt(), y.toInt()) }
             .onSizeChanged { size = it }
-            .testTag(ToolbarTags.SELECTION_BAR),
+            .testTag(tag),
     ) {
-        Row(Modifier.padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-            Action(strings.deleteSelection, Icons.Filled.Delete, true, ToolbarTags.DELETE_SELECTION, t.onDeleteSelection)
-            Action(strings.copySelection, Icons.Filled.ContentCopy, true, ToolbarTags.COPY_SELECTION, t.onCopySelection)
-            Action(strings.cutSelection, Icons.Filled.ContentCut, true, ToolbarTags.CUT_SELECTION, t.onCutSelection)
-            if (t.canSink) Action(strings.intoText, Icons.AutoMirrored.Filled.WrapText, true, ToolbarTags.INTO_TEXT) { t.onFloating(false) }
-            if (t.canFloat) Action(strings.floatFree, Icons.Filled.Layers, true, ToolbarTags.FLOAT) { t.onFloating(true) }
-            if (t.canIndent || t.canOutdent) {
-                Action(strings.outdent, Icons.AutoMirrored.Filled.FormatIndentDecrease, t.canOutdent, ToolbarTags.OUTDENT_SELECTION) { t.onIndent(-1) }
-                Action(strings.indent, Icons.AutoMirrored.Filled.FormatIndentIncrease, t.canIndent, ToolbarTags.INDENT_SELECTION) { t.onIndent(1) }
-            }
-        }
+        Row(Modifier.padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) { content() }
     }
 }
 

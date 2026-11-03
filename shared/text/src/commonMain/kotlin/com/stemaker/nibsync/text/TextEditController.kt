@@ -302,6 +302,66 @@ class TextEditController internal constructor(internal val state: RichTextState)
         return TextParagraph(sign + text, marks = listOf(TextMark(0, sign.length, MarkStyle.Task(taskId))) + marks)
     }
 
+    /** The anchor whose sign is exactly what is selected (it was tapped), or null. */
+    val selectedAnchor: MarkStyle.Anchor?
+        get() {
+            val sel = state.selection
+            if (sel.collapsed) return null
+            val (index, offset) = paragraphAt(sel.min) ?: return null
+            val p = text.paragraphs.getOrNull(index) ?: return null
+            return p.marks.firstOrNull { it.style is MarkStyle.Anchor && it.start == offset && it.end == offset + sel.length }?.style as? MarkStyle.Anchor
+        }
+
+    /** Selects the sign of the anchor [anchorId]; false if the text has none. */
+    fun selectAnchor(anchorId: StrokeId): Boolean {
+        val ranges = textRanges()
+        text.paragraphs.forEachIndexed { i, p ->
+            val m = p.marks.firstOrNull { (it.style as? MarkStyle.Anchor)?.anchorId == anchorId } ?: return@forEachIndexed
+            val start = ranges.getOrNull(i)?.first ?: return false
+            state.selection = TextRange(start + m.start, start + m.end)
+            return true
+        }
+        return false
+    }
+
+    /** Gives the anchor [anchorId] in this text the name [name]; the selection stays. False if it is not here. */
+    fun renameAnchor(anchorId: StrokeId, name: String): Boolean {
+        val content = text
+        if (content.paragraphs.none { p -> p.marks.any { (it.style as? MarkStyle.Anchor)?.anchorId == anchorId } }) return false
+        val selection = state.selection
+        setContent(
+            RichText(
+                content.paragraphs.map { p ->
+                    p.copy(marks = p.marks.map { m -> (m.style as? MarkStyle.Anchor)?.takeIf { it.anchorId == anchorId }?.let { m.copy(style = it.copy(name = name)) } ?: m })
+                },
+            ),
+        )
+        state.selection = selection
+        return true
+    }
+
+    /** Takes the anchor [anchorId] out of this text; the cursor stays where it was. False if it is not here. */
+    fun removeAnchor(anchorId: StrokeId): Boolean {
+        val content = text
+        val index = content.paragraphs.indexOfFirst { p -> p.marks.any { (it.style as? MarkStyle.Anchor)?.anchorId == anchorId } }
+        if (index < 0) return false
+        val p = content.paragraphs[index]
+        val m = p.marks.first { (it.style as? MarkStyle.Anchor)?.anchorId == anchorId }
+        val length = m.end - m.start
+        val marks = p.marks.filter { it !== m }.mapNotNull { k ->
+            when {
+                k.end <= m.start -> k
+                k.start >= m.end -> k.shifted(-length)
+                else -> TextMark(minOf(k.start, m.start), maxOf(m.start, k.end - length), k.style).takeIf { it.start < it.end }
+            }
+        }
+        val paragraphs = content.paragraphs.toMutableList()
+        paragraphs[index] = p.copy(text = p.text.removeRange(m.start, m.end), marks = marks)
+        setContent(RichText(paragraphs))
+        placeCursor(index, m.start)
+        return true
+    }
+
     /** Enter at the end of heading [index]: a new paragraph below it, in normal text. */
     private fun afterHeading(content: RichText, index: Int) {
         val paragraphs = content.paragraphs.toMutableList()

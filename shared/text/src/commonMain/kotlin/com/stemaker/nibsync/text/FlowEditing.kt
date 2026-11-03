@@ -255,6 +255,48 @@ class FlowEditing(private val session: DocumentSession, private val ids: IdGener
         return true
     }
 
+    /**
+     * Takes the anchor [anchorId] out of its text: it floats as an anchor on the page at ([x], [y]) mm
+     * (where its sign was), the same anchor, so links to it keep working. One undo step; returns the
+     * anchor on the page, or null if no text has it.
+     */
+    fun floatAnchor(anchorId: StrokeId, x: Float, y: Float): PageElement? = session.edit {
+        val box = state.textBoxes.firstOrNull { b -> b.anchors.any { it.anchorId == anchorId } } ?: return@edit null
+        val mark = box.text.paragraphs.flatMap { it.marks }.first { (it.style as? MarkStyle.Anchor)?.anchorId == anchorId }.style as MarkStyle.Anchor
+        val text = RichText(
+            box.text.paragraphs.map { p ->
+                val m = p.marks.firstOrNull { (it.style as? MarkStyle.Anchor)?.anchorId == anchorId } ?: return@map p
+                val n = m.end - m.start
+                p.copy(
+                    text = p.text.removeRange(m.start, m.end),
+                    marks = p.marks.filter { it !== m }.map { k -> if (k.start >= m.end) k.copy(start = k.start - n, end = k.end - n) else k },
+                )
+            },
+        ).withAnchorsPlaced(box.widthMm, measureText)
+        flowing(box.slot.flowId) {
+            if (text.isBlank) {
+                replaceElements(listOf(box.id), emptyList())
+            } else {
+                replaceElements(listOf(box.id), listOf(TextBoxDraft(box.x, box.y, box.widthMm, measureText(text, box.widthMm), text, box.slot)))
+            }
+        }
+        replaceElements(emptySet(), listOf(AnchorDraft(x, y, mark.name, anchorId))).single()
+    }
+
+    /** Puts the anchor [id] lying on the page into the text there, as a letter. False if there is no text. */
+    fun anchorIntoText(id: StrokeId): Boolean = session.edit {
+        val anchor = state.element(id) as? com.stemaker.nibsync.model.Anchor ?: return@edit false
+        if (!intoText(AnchorDraft(anchor.x, anchor.y, anchor.name, anchor.anchorId))) return@edit false
+        replaceElements(listOf(id), emptyList())
+        true
+    }
+
+    /** True if the anchor [id] lies on text, so it can go into it. */
+    fun canAnchorGoIntoText(id: StrokeId): Boolean {
+        val anchor = session.state.value.element(id) as? com.stemaker.nibsync.model.Anchor ?: return false
+        return session.state.value.textBoxes.any { it.bounds.contains(anchor.x, anchor.y) }
+    }
+
     /** Gives the anchor [anchorId] in a text the name [name]. Returns false if no text has it. */
     fun renameInText(anchorId: StrokeId, name: String): Boolean {
         val box = session.state.value.textBoxes.firstOrNull { b -> b.anchors.any { it.anchorId == anchorId } } ?: return false

@@ -89,6 +89,13 @@ class TextBoxRenderer(context: Context) {
         canvas.restoreToCount(save)
     }
 
+    /** Where the sign of the anchor [anchorId] is in [box] (mm, top left), or null. */
+    fun anchorPlace(box: TextBox, anchorId: StrokeId): Pair<Float, Float>? {
+        val start = listStart(box)
+        return RichTextLayout.anchorBoxes(box.text, layoutOf(box, start), start).firstOrNull { it.first.anchorId == anchorId }?.second
+            ?.let { r -> box.x + r.left / LAYOUT_PX_PER_MM to box.y + r.top / LAYOUT_PX_PER_MM }
+    }
+
     /** The to-do whose check box is at ([x], [y]) mm in [box], or null. */
     fun taskAt(box: TextBox, x: Float, y: Float): com.stemaker.nibsync.model.MarkStyle.Task? {
         val start = listStart(box)

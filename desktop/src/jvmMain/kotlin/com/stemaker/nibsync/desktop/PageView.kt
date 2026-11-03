@@ -14,6 +14,7 @@ import androidx.compose.ui.input.pointer.PointerIcon
 import androidx.compose.ui.input.pointer.PointerType
 import androidx.compose.ui.input.pointer.pointerHoverIcon
 import androidx.compose.ui.input.pointer.isPrimaryPressed
+import androidx.compose.ui.input.pointer.isSecondaryPressed
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
 import kotlinx.coroutines.delay
@@ -99,7 +100,9 @@ fun PageView(
                         val tolerance = CLICK_TOLERANCE_DP * density / viewport.scale
                         val now = System.currentTimeMillis()
                         when (event.type) {
-                            PointerEventType.Press -> if (event.buttons.isPrimaryPressed) {
+                            PointerEventType.Press -> if (event.buttons.isSecondaryPressed) {
+                                controller.secondaryClick(x, y)
+                            } else if (event.buttons.isPrimaryPressed) {
                                 controller.pointerDown(x, y, now, pressure, tolerance, HANDLE_REACH_DP * density / viewport.scale)
                             }
                             PointerEventType.Move -> if (event.buttons.isPrimaryPressed) {

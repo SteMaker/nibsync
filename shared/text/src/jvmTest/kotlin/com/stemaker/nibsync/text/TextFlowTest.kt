@@ -317,6 +317,42 @@ class LinksInTextTest {
     }
 
     @Test
+    fun anAnchorInTextIsSelectedRenamedFloatedAndPutBack() {
+        val f = setup()
+        f.open("eins\nzwei")
+        f.text.editing.value!!.controller.state.selection = TextRange(5)
+        f.text.insertLinkAtCursor(com.stemaker.nibsync.model.AnchorDraft(0f, 0f, "Kapitel"))
+        f.text.finish()
+        val anchorId = f.s.state.value.anchors.single().anchorId
+        // Opened with its sign selected: text goes before and after it as anywhere.
+        f.text.open(f.s.state.value.textBoxes.single()) { it.selectAnchor(anchorId) }
+        val c = f.text.editing.value!!.controller
+        assertThat(c.selectedAnchor!!.anchorId).isEqualTo(anchorId)
+        assertThat(c.renameAnchor(anchorId, "Mitte")).isTrue()
+        assertThat(c.selectedAnchor!!.name).isEqualTo("Mitte")
+        c.placeCursor(1, 0)
+        c.state.replaceSelectedText("vor ")
+        f.text.finish()
+        assertThat(f.s.state.value.textBoxes.single().text.plainText).isEqualTo("eins\nvor ${MarkStyle.Anchor.SIGN}zwei")
+        // Floating: out of the text onto the page, the same anchor.
+        val free = f.flows.floatAnchor(anchorId, 30f, 26f)!! as com.stemaker.nibsync.model.Anchor
+        assertThat(free.anchorId).isEqualTo(anchorId)
+        assertThat(free.name).isEqualTo("Mitte")
+        assertThat(f.s.state.value.textBoxes.single().text.plainText).isEqualTo("eins\nvor zwei")
+        // Back into the text it lies on: a letter again.
+        assertThat(f.flows.canAnchorGoIntoText(free.id)).isTrue()
+        assertThat(f.flows.anchorIntoText(free.id)).isTrue()
+        assertThat(f.s.state.value.links).isEmpty()
+        assertThat(f.s.state.value.anchors.single().anchorId).isEqualTo(anchorId)
+        assertThat(f.s.state.value.textBoxes.single().text.plainText).contains(MarkStyle.Anchor.SIGN)
+        // Deleted in the editor: gone.
+        f.text.open(f.s.state.value.textBoxes.single()) { it.selectAnchor(anchorId) }
+        assertThat(f.text.editing.value!!.controller.removeAnchor(anchorId)).isTrue()
+        f.text.finish()
+        assertThat(f.s.state.value.anchors).isEmpty()
+    }
+
+    @Test
     fun anAnchorAtTheCursorIsALetterThatGoesAlongWithTheText() {
         val f = setup()
         f.open("eins\nzwei")

@@ -20,7 +20,7 @@ object RichTextPainter {
             if (area.text != null) drawCopySymbol(RichTextLayout.copyButton(area, layout))
         }
         for ((task, r) in RichTextLayout.taskBoxes(text, layout, start)) drawCheckBox(r, done(task.taskId))
-        for (r in RichTextLayout.anchorBoxes(text, layout, start)) drawAnchorFlag(r)
+        for ((_, r) in RichTextLayout.anchorBoxes(text, layout, start)) drawAnchorFlag(r)
         drawText(layout)
     }
 

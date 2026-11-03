@@ -184,7 +184,7 @@ class CanvasViewModel(
     /** Gives the anchor a new name; it stays the same anchor, so links to it keep working. */
     fun renameAnchor(anchor: Anchor, name: String) {
         val current = session.state.value.anchor(anchor.anchorId) ?: return
-        if (name.isNotBlank() && name != current.name && flows.renameInText(anchor.anchorId, name.trim())) return
+        if (name.isNotBlank() && name != current.name && box.renameAnchor(anchor.anchorId, name.trim())) return
         if (name.isBlank() || name.trim() == current.name) return
         val added = session.replaceElements(listOf(current.id), listOf(AnchorDraft(current.x, current.y, name.trim(), current.anchorId)))
         if (current.id in _selection.value) _selection.value = added.mapTo(LinkedHashSet()) { it.id }
@@ -263,11 +263,43 @@ class CanvasViewModel(
     }
 
     /** Whether the selection can be made [floating] (or be put into text). */
-    fun canSetFloating(floating: Boolean): Boolean = flows.canSetFloating(_selection.value, floating)
+    fun canSetFloating(floating: Boolean): Boolean {
+        val anchor = selectedAnchor()
+        if (anchor != null) return !floating && flows.canAnchorGoIntoText(anchor.id)
+        return flows.canSetFloating(_selection.value, floating)
+    }
 
     /** Takes the selected blocks out of their text to float, or puts floating ones into the text there. */
     fun setFloating(floating: Boolean) {
+        // A free anchor goes into the text it lies on as a letter.
+        val anchor = selectedAnchor()
+        if (anchor != null) {
+            if (!floating && flows.anchorIntoText(anchor.id)) leaveTemporaryMode()
+            return
+        }
         _selection.value = flows.setFloating(_selection.value, floating)
+    }
+
+    /** The one selected anchor on the page, to rename from the selection bar, or null. */
+    fun selectedAnchor(): Anchor? = _selection.value.singleOrNull()?.let { session.state.value.element(it) } as? Anchor
+
+    /** Where an anchor's sign is in a text box (mm, top left); set by the screen, which has the text layout. */
+    var anchorPlace: (TextBox, StrokeId) -> Pair<Float, Float>? = { _, _ -> null }
+
+    /** The anchor selected in the open text (its sign was tapped), or null. */
+    fun selectedTextAnchor(): Anchor? = text.editing.value?.controller?.selectedAnchor?.let { session.state.value.anchor(it.anchorId) }
+
+    /** Lets the anchor selected in the open text float on the page where its sign is; it is selected then. */
+    fun floatTextAnchor() {
+        val anchor = text.editing.value?.controller?.selectedAnchor ?: return
+        box.floatAnchor(anchor.anchorId, anchorPlace)?.let { selectTemporarily(setOf(it.id)) }
+    }
+
+    /** Deletes the anchor selected in the open text. */
+    fun deleteTextAnchor() {
+        val e = text.editing.value ?: return
+        val anchor = e.controller.selectedAnchor ?: return
+        if (e.controller.removeAnchor(anchor.anchorId)) text.save()
     }
 
     /** Whether tables, pictures, files or to-dos in the selection can be indented by [delta] steps. */
@@ -519,11 +551,16 @@ class CanvasViewModel(
                     copyText(it)
                     return
                 }
-                // With a tool other than text, a tap on an anchor or link in text works it.
-                val mark = if (_tools.value.tool == Tool.TEXT) null else linkAt(hit, x, y)
-                when (mark) {
-                    is MarkStyle.NoteLink -> openNote(mark.linkTarget)
-                    is MarkStyle.Anchor -> session.state.value.anchor(mark.anchorId)?.let(editAnchor)
+                // A tap on an anchor in text selects it (the box opens with its sign selected, its bar
+                // offers renaming and floating); with a tool other than text a tap on a link follows it.
+                val mark = linkAt(hit, x, y)
+                when {
+                    mark is MarkStyle.Anchor -> {
+                        enterTextMode()
+                        clearSelection()
+                        text.open(hit) { it.selectAnchor(mark.anchorId) }
+                    }
+                    mark is MarkStyle.NoteLink && _tools.value.tool != Tool.TEXT -> openNote(mark.linkTarget)
                     else -> {
                         enterTextMode()
                         clearSelection()

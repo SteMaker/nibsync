@@ -156,15 +156,52 @@ class NoteController(
         return true
     }
 
-    /** With a tool other than text, a click on an anchor or link in text works it; else the box opens. */
+    /**
+     * A click on an anchor in text selects it (the box opens with its sign selected: its bar offers
+     * renaming and floating, text goes before or after it); with a tool other than text a click on a
+     * link follows it. Else (false) the box just opens.
+     */
     private fun followLink(box: TextBox, x: Float, y: Float): Boolean {
-        if (_tools.value.tool == DesktopTool.TEXT) return false
         when (val mark = linkAt(box, x, y)) {
-            is MarkStyle.NoteLink -> openNote(mark.linkTarget)
-            is MarkStyle.Anchor -> session.state.value.anchor(mark.anchorId)?.let(editAnchor)
+            is MarkStyle.Anchor -> {
+                clearSelection()
+                text.open(box) { it.selectAnchor(mark.anchorId) }
+            }
+            is MarkStyle.NoteLink -> if (_tools.value.tool == DesktopTool.TEXT) return false else openNote(mark.linkTarget)
             else -> return false
         }
         return true
+    }
+
+    /** Where an anchor's sign is in a text box (mm, top left); set by the app, which has the text layout. */
+    var anchorPlace: (TextBox, StrokeId) -> Pair<Float, Float>? = { _, _ -> null }
+
+    /** The anchor selected in the open text (its sign was clicked), or null. */
+    fun selectedTextAnchor(): Anchor? =
+        text.editing.value?.controller?.selectedAnchor?.let { session.state.value.anchor(it.anchorId) }
+
+    /** Lets the anchor selected in the open text float on the page where its sign is; it is selected then. */
+    fun floatTextAnchor() {
+        val anchor = text.editing.value?.controller?.selectedAnchor ?: return
+        box.floatAnchor(anchor.anchorId, anchorPlace)?.let { selectByClick(it.id) }
+    }
+
+    /** Deletes the anchor selected in the open text. */
+    fun deleteTextAnchor() {
+        val e = text.editing.value ?: return
+        val anchor = e.controller.selectedAnchor ?: return
+        if (e.controller.removeAnchor(anchor.anchorId)) text.save()
+    }
+
+    /** A right click: on an anchor (on the page or in text) it asks for a new name. */
+    fun secondaryClick(x: Float, y: Float) {
+        val hit = elementAt(x, y)
+        val anchor = when (hit) {
+            is Anchor -> hit
+            is TextBox -> (linkAt(hit, x, y) as? MarkStyle.Anchor)?.let { session.state.value.anchor(it.anchorId) }
+            else -> null
+        } ?: return
+        editAnchor(anchor)
     }
 
     /** Copies files of pasted elements from the document they were copied in; set by the app. */
@@ -693,10 +730,26 @@ class NoteController(
     }
 
     /** Whether tables, pictures, files or to-dos in [selection] can be made [floating] (or put into text). */
-    fun canSetFloating(selection: Set<StrokeId>, floating: Boolean): Boolean = flows.canSetFloating(selection, floating)
+    fun canSetFloating(selection: Set<StrokeId>, floating: Boolean): Boolean {
+        val anchor = selection.singleOrNull()?.let { session.state.value.element(it) } as? Anchor
+        if (anchor != null) return !floating && flows.canAnchorGoIntoText(anchor.id)
+        return flows.canSetFloating(selection, floating)
+    }
+
+    /** The one selected anchor on the page, to rename from the selection bar, or null. */
+    fun selectedAnchor(selection: Set<StrokeId>): Anchor? = selection.singleOrNull()?.let { session.state.value.element(it) } as? Anchor
 
     /** Takes the selected blocks out of their text to float, or puts floating ones into the text there. */
     fun setFloating(floating: Boolean) {
+        // A free anchor goes into the text it lies on as a letter.
+        val anchor = _selection.value.singleOrNull()?.let { session.state.value.element(it) } as? Anchor
+        if (anchor != null && !floating) {
+            if (flows.anchorIntoText(anchor.id)) {
+                clearSelection()
+                endTemporarySelection()
+            }
+            return
+        }
         _selection.value = flows.setFloating(_selection.value, floating)
     }
 
@@ -777,7 +830,7 @@ class NoteController(
     fun renameAnchor(anchor: Anchor, name: String) {
         val current = session.state.value.anchor(anchor.anchorId) ?: return
         if (name.isBlank() || name == current.name) return
-        if (flows.renameInText(anchor.anchorId, name.trim())) return
+        if (box.renameAnchor(anchor.anchorId, name.trim())) return
         val added = session.replaceElements(listOf(current.id), listOf(AnchorDraft(current.x, current.y, name.trim(), current.anchorId)))
         if (current.id in _selection.value) _selection.value = added.mapTo(LinkedHashSet()) { it.id }
     }

@@ -43,6 +43,11 @@ class DesktopTextLayout {
     fun codeToCopyAt(box: TextBox, x: Float, y: Float, start: ListStart = ListStart.NONE): String? =
         RichTextLayout.codeToCopyAt(box.text, layoutOf(box, start), (x - box.x) * LAYOUT_PX_PER_MM, (y - box.y) * LAYOUT_PX_PER_MM, start)
 
+    /** Where the sign of the anchor [anchorId] is in [box] (mm, top left), or null. */
+    fun anchorPlace(box: TextBox, anchorId: StrokeId, start: ListStart = ListStart.NONE): Pair<Float, Float>? =
+        RichTextLayout.anchorBoxes(box.text, layoutOf(box, start), start).firstOrNull { it.first.anchorId == anchorId }?.second
+            ?.let { r -> box.x + r.left / LAYOUT_PX_PER_MM to box.y + r.top / LAYOUT_PX_PER_MM }
+
     /** The to-do whose check box is at ([x], [y]) mm in [box], or null. */
     fun taskAt(box: TextBox, x: Float, y: Float, start: ListStart = ListStart.NONE): com.stemaker.nibsync.model.MarkStyle.Task? =
         RichTextLayout.taskAt(box.text, layoutOf(box, start), (x - box.x) * LAYOUT_PX_PER_MM, (y - box.y) * LAYOUT_PX_PER_MM, start)

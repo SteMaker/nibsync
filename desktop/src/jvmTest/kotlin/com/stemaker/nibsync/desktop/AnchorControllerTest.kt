@@ -45,4 +45,42 @@ class AnchorControllerTest {
         c.click(nameX, midY, at = 6200)
         assertThat(renamed).isEqualTo(anchor)
     }
+
+    @Test
+    fun anAnchorInTextIsSelectedByAClickRenamedByARightClickAndFloats() = runTest {
+        val c = controller()
+        c.clickAt(20f, 40f, 210f)
+        c.text.editing.value!!.controller.setContent(com.stemaker.nibsync.model.RichText.plain("Kapitel"))
+        c.text.editing.value!!.controller.placeCursorAtStart()
+        c.insert(listOf(AnchorDraft(0f, 0f, "Start")))
+        c.text.finish()
+        val anchor = c.session.state.value.anchors.single()
+        val box = c.session.state.value.textBoxes.single()
+        // The layout says the anchor's sign is at the box's top left.
+        c.linkAt = { _, x, y -> if (x < box.x + 2f && y < box.y + 5f) box.text.paragraphs[0].marks.first().style else null }
+        c.anchorPlace = { b, _ -> b.x to b.y }
+        c.click(box.x + 1f, box.y + 2f, at = 1000)
+        assertThat(c.text.editing.value!!.boxId).isEqualTo(box.id)
+        assertThat(c.selectedTextAnchor()!!.anchorId).isEqualTo(anchor.anchorId)
+        // A right click on it asks for a new name.
+        c.text.finish()
+        var renamed: Anchor? = null
+        c.editAnchor = { renamed = it }
+        c.secondaryClick(box.x + 1f, box.y + 2f)
+        assertThat(renamed!!.anchorId).isEqualTo(anchor.anchorId)
+        c.renameAnchor(renamed!!, "Anfang")
+        assertThat(c.session.state.value.anchors.single().name).isEqualTo("Anfang")
+        // Selected in the text again, it floats on the page where its sign was, selected.
+        c.click(box.x + 1f, box.y + 2f, at = 3000)
+        c.floatTextAnchor()
+        val free = c.session.state.value.links.single() as Anchor
+        assertThat(free.anchorId).isEqualTo(anchor.anchorId)
+        assertThat(c.selection.value).containsExactly(free.id)
+        assertThat(c.selectedAnchor(c.selection.value)).isEqualTo(free)
+        // And back into the text from the selection bar.
+        assertThat(c.canSetFloating(c.selection.value, false)).isTrue()
+        c.setFloating(false)
+        assertThat(c.session.state.value.links).isEmpty()
+        assertThat(c.session.state.value.anchors.single().name).isEqualTo("Anfang")
+    }
 }
