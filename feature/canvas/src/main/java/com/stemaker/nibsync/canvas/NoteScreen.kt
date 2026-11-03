@@ -7,6 +7,7 @@ import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material.icons.filled.SwapHoriz
 import androidx.compose.material.icons.filled.Layers
+import androidx.compose.material.icons.filled.CheckBox
 import androidx.compose.material.icons.automirrored.filled.WrapText
 import androidx.compose.material.icons.filled.AttachFile
 import androidx.compose.material.icons.filled.TableChart
@@ -154,6 +155,7 @@ object NoteScreenTags {
     const val SELECTION_BAR = "selection-bar"
     const val INSERT_TABLE = "insert-table"
     const val INSERT_TABLE_HERE = "insert-table-here"
+    const val INSERT_TODO_HERE = "insert-todo-here"
     const val INSERT_FILE_HERE = "insert-file-here"
     const val INSERT_ANCHOR_HERE = "insert-anchor-here"
     const val INSERT_LINK_HERE = "insert-link-here"
@@ -383,6 +385,14 @@ fun NoteScreen(
                             viewModel.measureText = it.textRenderer::heightMm
                             viewModel.linkAt = it.textRenderer::linkAt
                             viewModel.codeToCopyAt = it.textRenderer::codeToCopyAt
+                            viewModel.taskAt = { element, x, y ->
+                                when (element) {
+                                    is com.stemaker.nibsync.model.TextBox -> it.textRenderer.taskAt(element, x, y)
+                                    is com.stemaker.nibsync.model.TableElement -> it.textRenderer.taskAt(element, x, y)
+                                    else -> null
+                                }
+                            }
+                            it.textRenderer.isDone = { task -> viewModel.isDone(task) }
                             viewModel.copyText = { code ->
                                 val clipboard = it.context.getSystemService(android.content.ClipboardManager::class.java)
                                 clipboard.setPrimaryClip(android.content.ClipData.newPlainText("code", code))
@@ -722,6 +732,15 @@ private fun Toolbar(
                 }
                 Divider()
                 ScrollingRow(Modifier.weight(1f)) {
+                    // A to-do at the cursor: a paragraph with a check box, in text and in table cells.
+                    if (table != null || textBoxOpen) {
+                        val todoLabel = stringResource(R.string.insert_todo_here)
+                        WithTooltip(todoLabel) {
+                            IconButton(onClick = { textEditing.insertTask(com.stemaker.nibsync.model.IdGenerator().newStrokeId()) }, modifier = Modifier.testTag(NoteScreenTags.INSERT_TODO_HERE)) {
+                                Icon(Icons.Filled.CheckBox, contentDescription = todoLabel)
+                            }
+                        }
+                    }
                     if (table != null) {
                         TableMenu(table)
                         Divider()

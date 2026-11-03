@@ -74,7 +74,7 @@ internal object RichTextConversion {
             MarkStyle.Italic -> RichTextSpanMark.Italic(range)
             is MarkStyle.Size -> RichTextSpanMark.FontSize(range, s.pt.sp)
             is MarkStyle.Font -> RichTextSpanMark.Custom(range, FontRun(s.font))
-            is MarkStyle.Anchor, is MarkStyle.NoteLink -> RichTextSpanMark.Custom(range, LinkRun(s))
+            is MarkStyle.Anchor, is MarkStyle.NoteLink, is MarkStyle.Task -> RichTextSpanMark.Custom(range, LinkRun(s))
         }
     }
 

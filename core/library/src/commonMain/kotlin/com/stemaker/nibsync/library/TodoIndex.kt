@@ -26,9 +26,9 @@ object TodoIndex {
             openTodos(doc).map { OpenTodo(node.id.asDocumentId, path, it) }
         }
 
-    /** The document's open to-dos from top to bottom, left to right. */
+    /** The document's open to-dos, on their own and in text, from top to bottom, left to right. */
     fun openTodos(doc: DocumentState): List<TodoItem> =
-        doc.todos.filter { !doc.isDone(it.taskId) }.sortedWith(compareBy<TodoItem> { it.y }.thenBy { it.x })
+        (doc.todos + doc.textTodos).filter { !doc.isDone(it.taskId) }.sortedWith(compareBy<TodoItem> { it.y }.thenBy { it.x })
 }
 
 /**

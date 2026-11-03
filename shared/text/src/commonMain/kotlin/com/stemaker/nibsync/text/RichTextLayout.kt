@@ -188,12 +188,37 @@ object RichTextLayout {
         text.paragraphs.forEachIndexed { index, p ->
             val start = pos + prefixes[index].length
             if (offset in start until start + p.text.length) {
-                return p.marks.firstOrNull { offset - start >= it.start && offset - start < it.end && (it.style is MarkStyle.Anchor || it.style is MarkStyle.NoteLink) }?.style
+                return p.marks.firstOrNull { offset - start >= it.start && offset - start < it.end && (it.style is MarkStyle.Anchor || it.style is MarkStyle.NoteLink || it.style is MarkStyle.Task) }?.style
             }
             pos = start + p.text.length + 1
         }
         return null
     }
+
+    /** Where the check box of each to-do in [text] is drawn in its [layout] (px), with its task. */
+    fun taskBoxes(text: RichText, layout: TextLayoutResult, start: ListStart = ListStart.NONE): List<Pair<MarkStyle.Task, Rect>> {
+        val starts = textStarts(text, prefixes(text, start))
+        val length = layout.layoutInput.text.length
+        return text.paragraphs.flatMapIndexed { i, p ->
+            p.marks.mapNotNull { m ->
+                val task = m.style as? MarkStyle.Task ?: return@mapNotNull null
+                val at = starts[i] + m.start
+                if (at >= length) return@mapNotNull null
+                val line = layout.getLineForOffset(at)
+                val top = layout.getLineTop(line)
+                val bottom = layout.getLineBottom(line)
+                val left = layout.getHorizontalPosition(at, true)
+                // A square as high as the letters, on the first line.
+                val size = (bottom - top) * 0.62f
+                val y = top + (bottom - top - size) / 2
+                task to Rect(left, y, left + size, y + size)
+            }
+        }
+    }
+
+    /** The to-do whose check box is at ([x], [y]) px in [layout], or null. */
+    fun taskAt(text: RichText, layout: TextLayoutResult, x: Float, y: Float, start: ListStart = ListStart.NONE): MarkStyle.Task? =
+        taskBoxes(text, layout, start).firstOrNull { (_, r) -> r.inflate(r.width * 0.4f).contains(Offset(x, y)) }?.first
 
     /** The anchor or link shown at ([x], [y]) px in [layout], the layout of [text], or null. */
     fun linkAt(text: RichText, layout: TextLayoutResult, x: Float, y: Float, start: ListStart = ListStart.NONE): MarkStyle? {
@@ -234,6 +259,8 @@ object RichTextLayout {
         is MarkStyle.Size -> SpanStyle(fontSize = pt.sp)
         is MarkStyle.Font -> SpanStyle(fontFamily = TextFonts.family(font))
         is MarkStyle.Anchor, is MarkStyle.NoteLink -> linkStyle(this)
+        // Blank characters: the painter draws the check box over them.
+        is MarkStyle.Task -> SpanStyle()
     }
 
     /** How an anchor or link in the text looks. */

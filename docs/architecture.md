@@ -182,6 +182,15 @@ versions side by side, nothing is lost.
 
 ## To-dos
 
+**To-dos in text** (also in table cells): a paragraph starting with a `MarkStyle.Task` (mark kind `"t"`)
+on `Task.SIGN`, three en spaces (the fonts have no box glyph): the check box is drawn over them on
+the page (`RichTextPainter`, ticked by the document's done register for its task, the same
+`SetTodoDone` as for to-do elements) and in the editor (`LinkRun`, never ticked there). "To-do here" in
+the text tool bar puts one at the cursor (`TextEditController.insertTask`); Enter at its end starts the
+next, Enter in an empty one ends the list; deleting the box (one letter) makes it plain text. A tap on
+the box ticks it with any tool. The open to-dos page lists them with the others (`DocumentState.textTodos`,
+`TodoIndex.openTodos`). Handwritten to-dos stay to-do elements; new ones on the page float.
+
 - `TodoItem` (`core/model`) is a page element on its own top layer `Layer.TODO`: a card with a
   red check circle on the left and either typed text (`TodoContent.Text`) or handwriting
   (`TodoContent.Ink`, stroke points relative to the content area, so moving needs no rewrite).

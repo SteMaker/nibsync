@@ -136,6 +136,16 @@ class NoteController(
     /** The code of a code block whose copy symbol is at a place (mm) in a text box; set by the app. */
     var codeToCopyAt: (TextBox, Float, Float) -> String? = { _, _, _ -> null }
 
+    /** The to-do whose check box is at a place (mm) in a text box or table; set by the app, which has the text layout. */
+    var taskAt: (PageElement, Float, Float) -> MarkStyle.Task? = { _, _, _ -> null }
+
+    /** A click on the check box of a to-do in text ticks it off or on, with any tool. */
+    private fun tickTask(element: PageElement, x: Float, y: Float): Boolean {
+        val task = taskAt(element, x, y) ?: return false
+        session.setTodoDone(task.taskId, !session.state.value.isDone(task.taskId))
+        return true
+    }
+
     /** Puts text on the system clipboard; set by the app. */
     var copyText: (String) -> Unit = {}
 
@@ -457,6 +467,7 @@ class NoteController(
                 return
             }
         }
+        if (hit != null && tickTask(hit, x, y)) return
         when (hit) {
             is TextBox -> if (!copyCode(hit, x, y) && !followLink(hit, x, y)) {
                 endTemporarySelection()

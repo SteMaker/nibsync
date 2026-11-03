@@ -138,6 +138,33 @@ class DocumentState private constructor(
     /** Visible to-dos, back to front. */
     val todos: List<TodoItem> by lazy { elements.filterIsInstance<TodoItem>() }
 
+    /**
+     * The to-dos written in text (boxes and table cells, [com.stemaker.nibsync.model.MarkStyle.Task])
+     * as typed to-do items where their paragraph is, for the list of open to-dos: the id is the task's.
+     */
+    val textTodos: List<TodoItem> by lazy {
+        fun todos(text: com.stemaker.nibsync.model.RichText, x: Float, y: Float, owner: PageElement): List<TodoItem> =
+            text.paragraphs.mapNotNull { p ->
+                val mark = p.marks.firstOrNull { it.start == 0 && it.style is com.stemaker.nibsync.model.MarkStyle.Task } ?: return@mapNotNull null
+                val task = mark.style as com.stemaker.nibsync.model.MarkStyle.Task
+                val rest = p.text.substring(mark.end)
+                val marks = p.marks.filter { it.start >= mark.end }.map { it.copy(start = it.start - mark.end, end = it.end - mark.end) }
+                val content = com.stemaker.nibsync.model.TodoContent.Text(com.stemaker.nibsync.model.RichText(listOf(com.stemaker.nibsync.model.TextParagraph(rest, marks = marks))))
+                // About one line per 45 characters, as the list shows it.
+                val lines = 1 + rest.length / 45
+                TodoItem(
+                    task.taskId, task.taskId, x, y + task.yMm, TodoItem.DEFAULT_WIDTH_MM,
+                    TodoItem.MIN_HEIGHT_MM + (lines - 1) * 5f, content, owner.createdAtEpochMs, owner.author,
+                )
+            }
+        textBoxes.flatMap { todos(it.text, it.x, it.y, it) } + tables.flatMap { t ->
+            t.geometry.areas.flatMap { area ->
+                val r = t.geometry.rect(area)
+                todos(t.cell(t.geometry.key(area)).text, t.x + r.left, t.y + r.top, t)
+            }
+        }
+    }
+
     /** Visible anchors and links to notes, back to front. */
     val links: List<LinkElement> by lazy { elements.filterIsInstance<LinkElement>() }
 

@@ -37,6 +37,7 @@ kotlin {
             resources.srcDir("src/androidMain/res/font")
         }
         jvmTest.dependencies {
+            implementation(project(":core:library"))
             implementation(kotlin("test"))
             implementation(libs.truth)
         }

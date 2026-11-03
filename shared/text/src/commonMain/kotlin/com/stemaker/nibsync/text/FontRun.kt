@@ -19,7 +19,19 @@ internal class LinkRun(val style: MarkStyle) : RichSpanStyle {
     override val acceptsNewTextAtEdges: Boolean get() = false
     override val isAtomic: Boolean get() = true
 
-    override fun getSpanStyle(config: RichTextConfig): SpanStyle = RichTextLayout.linkStyle(style)
+    override fun getSpanStyle(config: RichTextConfig): SpanStyle = if (style is MarkStyle.Task) SpanStyle() else RichTextLayout.linkStyle(style)
+
+    /** A to-do's check box, as on the page (not ticked here: the editor does not know). */
+    override fun DrawScope.drawCustomStyle(layoutResult: TextLayoutResult, textRange: TextRange, richTextConfig: RichTextConfig, topPadding: Float, startPadding: Float) {
+        if (style !is MarkStyle.Task || textRange.start >= layoutResult.layoutInput.text.length) return
+        val line = layoutResult.getLineForOffset(textRange.start)
+        val top = layoutResult.getLineTop(line)
+        val bottom = layoutResult.getLineBottom(line)
+        val size = (bottom - top) * 0.62f
+        val left = layoutResult.getHorizontalPosition(textRange.start, true) + startPadding
+        val y = top + (bottom - top - size) / 2 + topPadding
+        with(RichTextPainter) { drawCheckBox(androidx.compose.ui.geometry.Rect(left, y, left + size, y + size), done = false) }
+    }
 
     override fun equals(other: Any?): Boolean = other is LinkRun && other.style == style
 

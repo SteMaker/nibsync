@@ -22,6 +22,7 @@ import com.mohamedrejeb.richeditor.document.RichTextBlockType
 import com.stemaker.nibsync.model.ListKind
 import com.stemaker.nibsync.model.MarkStyle
 import com.stemaker.nibsync.model.RichText
+import com.stemaker.nibsync.model.StrokeId
 import com.stemaker.nibsync.model.TextMark
 import com.stemaker.nibsync.model.TextParagraph
 import com.stemaker.nibsync.model.withoutStrayBreaks
@@ -232,6 +233,10 @@ class TextEditController internal constructor(internal val state: RichTextState)
             afterHeading(content, index)
             return true
         }
+        if (!soft && taskOf(p) != null) {
+            afterTask(content, index, offset)
+            return true
+        }
         if (if (soft) p.list == ListKind.NONE else !p.continued) return false
         val span = state.currentSpanStyle
         val rich = state.currentRichSpanStyle
@@ -251,6 +256,50 @@ class TextEditController internal constructor(internal val state: RichTextState)
         state.addSpanStyle(span)
         if (rich is FontRun) state.addRichSpan(rich)
         return true
+    }
+
+    /**
+     * Puts a new to-do at the cursor: the paragraph there becomes one if it is empty, else a new
+     * paragraph below it; the cursor goes behind its check box.
+     */
+    fun insertTask(taskId: StrokeId) {
+        val content = text
+        val index = paragraphAt(state.selection.start)?.first ?: content.paragraphs.lastIndex
+        val paragraphs = content.paragraphs.toMutableList()
+        val task = taskParagraph(taskId, "")
+        val at = if (paragraphs[index].text.isEmpty()) index.also { paragraphs[it] = task } else (index + 1).also { paragraphs.add(it, task) }
+        setContent(RichText(paragraphs))
+        placeCursor(at, MarkStyle.Task.SIGN.length)
+    }
+
+    /**
+     * Enter in to-do [index] at [offset]: the text behind the cursor becomes the next to-do; in an
+     * empty to-do the box goes away (the list of to-dos ends).
+     */
+    private fun afterTask(content: RichText, index: Int, offset: Int) {
+        val p = content.paragraphs[index]
+        val sign = MarkStyle.Task.SIGN.length
+        val paragraphs = content.paragraphs.toMutableList()
+        if (p.text.length <= sign) {
+            paragraphs[index] = TextParagraph("", p.list, p.indent)
+            setContent(RichText(paragraphs))
+            placeCursor(index, 0)
+            return
+        }
+        val at = offset.coerceIn(sign, p.text.length)
+        paragraphs[index] = p.copy(text = p.text.substring(0, at), marks = p.marks.mapNotNull { it.clipped(0, at) })
+        val rest = p.text.substring(at)
+        val restMarks = p.marks.mapNotNull { it.clipped(at, p.text.length)?.shifted(sign - at) }
+        paragraphs.add(index + 1, taskParagraph(com.stemaker.nibsync.model.IdGenerator().newStrokeId(), rest, restMarks))
+        setContent(RichText(paragraphs))
+        placeCursor(index + 1, sign)
+    }
+
+    private fun taskOf(p: TextParagraph): MarkStyle.Task? = p.marks.firstOrNull { it.start == 0 && it.style is MarkStyle.Task }?.style as? MarkStyle.Task
+
+    private fun taskParagraph(taskId: StrokeId, text: String, marks: List<TextMark> = emptyList()): TextParagraph {
+        val sign = MarkStyle.Task.SIGN
+        return TextParagraph(sign + text, marks = listOf(TextMark(0, sign.length, MarkStyle.Task(taskId))) + marks)
     }
 
     /** Enter at the end of heading [index]: a new paragraph below it, in normal text. */

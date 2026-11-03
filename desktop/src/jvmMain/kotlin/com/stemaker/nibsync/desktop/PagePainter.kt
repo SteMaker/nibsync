@@ -130,7 +130,7 @@ class PagePainter(private val text: DesktopTextLayout, private val media: MediaC
             is TodoItem -> drawTodo(scope, element, doc.isDone(element.taskId))
             is Anchor -> drawAnchor(scope, element, selected)
             is NoteLink -> drawNoteLink(scope, element)
-            is TableElement -> drawTable(scope, element, tableCell?.takeIf { it.first == element.tableId }?.second)
+            is TableElement -> drawTable(scope, element, tableCell?.takeIf { it.first == element.tableId }?.second, doc)
         }
     }
 
@@ -303,12 +303,12 @@ class PagePainter(private val text: DesktopTextLayout, private val media: MediaC
             translate(box.x, box.y)
             scale(f, f, pivot = Offset.Zero)
         }) {
-            com.stemaker.nibsync.text.RichTextPainter.draw(this, box.text, layout, start)
+            com.stemaker.nibsync.text.RichTextPainter.draw(this, box.text, layout, start, doc::isDone)
         }
     }
 
     /** A table: tinted header row, the cells' texts (not [hidden], being typed) and the grid. */
-    private fun drawTable(scope: DrawScope, table: TableElement, hidden: com.stemaker.nibsync.model.CellKey?) = with(scope) {
+    private fun drawTable(scope: DrawScope, table: TableElement, hidden: com.stemaker.nibsync.model.CellKey?, doc: DocumentState) = with(scope) {
         val g = table.geometry
         // On white, so the paper's lines do not run through the cells.
         drawRect(Color.White, Offset(table.x, table.y), Size(g.widthMm, g.heightMm))
@@ -324,7 +324,7 @@ class PagePainter(private val text: DesktopTextLayout, private val media: MediaC
             withTransform({
                 translate(table.x + r.left, table.y + r.top)
                 scale(f, f, pivot = Offset.Zero)
-            }) { drawText(layout) }
+            }) { com.stemaker.nibsync.text.RichTextPainter.draw(this, shown, layout, done = doc::isDone) }
         }
         for (area in g.areas) {
             val r = g.rect(area)

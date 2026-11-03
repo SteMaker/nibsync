@@ -43,6 +43,20 @@ class DesktopTextLayout {
     fun codeToCopyAt(box: TextBox, x: Float, y: Float, start: ListStart = ListStart.NONE): String? =
         RichTextLayout.codeToCopyAt(box.text, layoutOf(box, start), (x - box.x) * LAYOUT_PX_PER_MM, (y - box.y) * LAYOUT_PX_PER_MM, start)
 
+    /** The to-do whose check box is at ([x], [y]) mm in [box], or null. */
+    fun taskAt(box: TextBox, x: Float, y: Float, start: ListStart = ListStart.NONE): com.stemaker.nibsync.model.MarkStyle.Task? =
+        RichTextLayout.taskAt(box.text, layoutOf(box, start), (x - box.x) * LAYOUT_PX_PER_MM, (y - box.y) * LAYOUT_PX_PER_MM, start)
+
+    /** The to-do whose check box is at ([x], [y]) mm in a cell of [table], or null. */
+    fun taskAt(table: com.stemaker.nibsync.model.TableElement, x: Float, y: Float): com.stemaker.nibsync.model.MarkStyle.Task? {
+        val g = table.geometry
+        val area = g.areaAtPoint(x - table.x, y - table.y) ?: return null
+        val shown = com.stemaker.nibsync.text.TableText.shown(table, area)
+        val r = com.stemaker.nibsync.text.TableText.contentRect(table, area)
+        val layout = layoutOf(table.tableId, g.key(area), shown, r.width)
+        return RichTextLayout.taskAt(shown, layout, (x - table.x - r.left) * LAYOUT_PX_PER_MM, (y - table.y - r.top) * LAYOUT_PX_PER_MM)
+    }
+
     /** [box] laid out, its lists going on from [start]; cached per box. */
     fun layoutOf(box: TextBox, start: ListStart = ListStart.NONE): TextLayoutResult {
         cache[box.id]?.let { (cached, s, result) -> if (cached == box && s == start) return result }

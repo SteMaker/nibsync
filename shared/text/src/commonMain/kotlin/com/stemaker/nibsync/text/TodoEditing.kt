@@ -126,7 +126,8 @@ class TodoEditing(private val session: DocumentSession, private val ids: IdGener
         _editing.value = e
         val content = content(e)
         if (content.isEmpty && e.itemId == null) return
-        val slot = e.slot ?: FlowSlot(ids.newStrokeId(), FlowSlot.FIRST)
+        // A new to-do on the page is not part of any text: it floats there.
+        val slot = e.slot ?: FlowSlot(ids.newStrokeId(), FlowSlot.FIRST, floating = true)
         val draft = TodoDraft(q(e.x), q(e.y), q(e.widthMm), q(e.heightMm), content, e.taskId, slot)
         if (draft == saved && e.itemId != null && e.itemId in session.state.value) return
         // What is below the flow moves with its height.

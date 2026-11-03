@@ -218,6 +218,34 @@ class GoldenFormatTest {
         ),
     )
 
+    // Added later in format version 1 (mark kind "t"); older readers drop the mark and show blank space.
+    private val taskOps = listOf(
+        com.stemaker.nibsync.document.DocumentOp.AddTextBoxes(
+            com.stemaker.nibsync.document.OpStamp(19, DEV_A),
+            listOf(
+                com.stemaker.nibsync.model.TextBox(
+                    com.stemaker.nibsync.model.StrokeId("8a8a8a8a-8a8a-48a8-88a8-8a8a8a8a8a8a"), 10f, 20f, 100f, 6f,
+                    com.stemaker.nibsync.model.RichText(
+                        listOf(
+                            com.stemaker.nibsync.model.TextParagraph(
+                                com.stemaker.nibsync.model.MarkStyle.Task.SIGN + "Milch",
+                                marks = listOf(com.stemaker.nibsync.model.TextMark(0, 3, com.stemaker.nibsync.model.MarkStyle.Task(com.stemaker.nibsync.model.StrokeId("8b8b8b8b-8b8b-48b8-88b8-8b8b8b8b8b8b"), 6f))),
+                            ),
+                        ),
+                    ),
+                    1_700_000_000_006, DEV_A,
+                ),
+            ),
+        ),
+    )
+
+    @Test
+    fun taskOpsAreStable() {
+        val golden = golden("ops-v1-tasks.oplog")
+        assertThat(OpLogCodec.read(Buffer().write(golden)).ops).isEqualTo(taskOps)
+        assertThat(encodedLog(taskOps).hex()).isEqualTo(golden.hex())
+    }
+
     @Test
     fun floatingOpsAreStable() {
         val golden = golden("ops-v1-floating.oplog")
@@ -256,6 +284,7 @@ class GoldenFormatTest {
         FileSystem.SYSTEM.write(goldenDir / "ops-v1-indent.oplog") { write(encodedLog(indentOps)) }
         FileSystem.SYSTEM.write(goldenDir / "ops-v1-rows.oplog") { write(encodedLog(rowOps)) }
         FileSystem.SYSTEM.write(goldenDir / "ops-v1-floating.oplog") { write(encodedLog(floatingOps)) }
+        FileSystem.SYSTEM.write(goldenDir / "ops-v1-tasks.oplog") { write(encodedLog(taskOps)) }
     }
 
     @Test

@@ -487,6 +487,10 @@ internal fun DocumentSession.Transaction.joinText(flowId: StrokeId, measure: (Ri
 /** Moves the flow [flowId] by ([dx], [dy]) mm (its open block's handle was dragged), not onto other text. */
 internal fun DocumentSession.Transaction.dragFlow(flowId: StrokeId, dx: Float, dy: Float) {
     val flow = state.flow(flowId) ?: return
+    if (flow.floating) {
+        moveFlow(flowId, maxOf(0f, flow.x + dx), maxOf(0f, flow.y + dy))
+        return
+    }
     val b = flow.bounds
     val x = maxOf(0f, flow.x + dx)
     moveFlow(flowId, x, state.freeTop(x, x + b.width, maxOf(0f, flow.y + dy), flowId))
@@ -538,14 +542,23 @@ internal fun linkText(draft: ElementDraft, ids: IdGenerator): Pair<String, MarkS
     else -> null
 }
 
-/** The text with its anchors' [MarkStyle.Anchor.yMm] set for a box [widthMm] wide. */
+/** The text with its anchors' [MarkStyle.Anchor.yMm] and to-dos' [MarkStyle.Task.yMm] set for a box [widthMm] wide. */
 internal fun RichText.withAnchorsPlaced(widthMm: Float, measure: (RichText, Float) -> Float): RichText {
-    if (paragraphs.none { p -> p.marks.any { it.style is MarkStyle.Anchor } }) return this
+    fun placed(m: TextMark) = m.style is MarkStyle.Anchor || m.style is MarkStyle.Task
+    if (paragraphs.none { p -> p.marks.any(::placed) }) return this
     return RichText(
         paragraphs.mapIndexed { i, p ->
-            if (p.marks.none { it.style is MarkStyle.Anchor }) return@mapIndexed p
+            if (p.marks.none(::placed)) return@mapIndexed p
             val y = if (i == 0) 0f else measure(RichText(paragraphs.subList(0, i)), widthMm)
-            p.copy(marks = p.marks.map { m -> (m.style as? MarkStyle.Anchor)?.let { m.copy(style = it.copy(yMm = y)) } ?: m })
+            p.copy(
+                marks = p.marks.map { m ->
+                    when (val st = m.style) {
+                        is MarkStyle.Anchor -> m.copy(style = st.copy(yMm = y))
+                        is MarkStyle.Task -> m.copy(style = st.copy(yMm = y))
+                        else -> m
+                    }
+                },
+            )
         },
     )
 }

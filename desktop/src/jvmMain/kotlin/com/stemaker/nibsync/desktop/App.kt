@@ -351,6 +351,13 @@ private fun DocumentPane(
             linkAt = { box, x, y -> textLayout.linkAt(box, x, y, RichTextLayout.listStart(s.state.value, box)) }
             codeToCopyAt = { box, x, y -> textLayout.codeToCopyAt(box, x, y, RichTextLayout.listStart(s.state.value, box)) }
             snapGrid = { settings.snapGrid }
+            taskAt = { element, x, y ->
+                when (element) {
+                    is com.stemaker.nibsync.model.TextBox -> textLayout.taskAt(element, x, y, RichTextLayout.listStart(s.state.value, element))
+                    is com.stemaker.nibsync.model.TableElement -> textLayout.taskAt(element, x, y)
+                    else -> null
+                }
+            }
             copyText = { code -> java.awt.Toolkit.getDefaultToolkit().systemClipboard.setContents(java.awt.datatransfer.StringSelection(code), null) }
             openFile = { link -> if (!DesktopMedia.open(container.repository, id, link)) message = strings.mediaNotSynced }
             copyAssets = { from, to, assets -> DesktopMedia.copyAssets(container.repository, from, to, assets) }

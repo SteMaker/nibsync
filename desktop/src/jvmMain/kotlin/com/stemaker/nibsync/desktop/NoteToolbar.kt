@@ -58,6 +58,7 @@ import androidx.compose.material.icons.automirrored.filled.FormatIndentDecrease
 import androidx.compose.material.icons.automirrored.filled.FormatIndentIncrease
 import androidx.compose.material.icons.automirrored.filled.WrapText
 import androidx.compose.material.icons.filled.Layers
+import androidx.compose.material.icons.filled.CheckBox
 import androidx.compose.material.icons.automirrored.filled.FormatListBulleted
 import androidx.compose.material.icons.automirrored.filled.Redo
 import androidx.compose.material.icons.automirrored.filled.Undo
@@ -117,6 +118,7 @@ object ToolbarTags {
     const val TEXT_DONE = "text-done"
     const val INSERT_TABLE = "insert-table"
     const val INSERT_TABLE_HERE = "insert-table-here"
+    const val INSERT_TODO_HERE = "insert-todo-here"
     const val INSERT_FILE_HERE = "insert-file-here"
     const val INSERT_ANCHOR_HERE = "insert-anchor-here"
     const val INSERT_LINK_HERE = "insert-link-here"
@@ -232,6 +234,8 @@ fun NoteToolbar(
                 Action(strings.outdent, Icons.AutoMirrored.Filled.FormatIndentDecrease, editing.canOutdent, TextTags.OUTDENT, editing::outdent)
                 Action(strings.indent, Icons.AutoMirrored.Filled.FormatIndentIncrease, editing.canIndent, TextTags.INDENT, editing::indent)
                 Divider()
+                // A to-do at the cursor: a paragraph with a check box, in text and in table cells.
+                Action(strings.insertTodoHere, Icons.Filled.CheckBox, true, ToolbarTags.INSERT_TODO_HERE) { editing.insertTask(com.stemaker.nibsync.model.IdGenerator().newStrokeId()) }
                 if (table != null) {
                     TableMenu(strings, table)
                     Divider()

@@ -169,6 +169,12 @@ class CanvasViewModel(
     /** The code of a code block whose copy symbol is at a place (mm) in a text box; set by the screen. */
     var codeToCopyAt: (TextBox, Float, Float) -> String? = { _, _, _ -> null }
 
+    /** The to-do whose check box is at a place (mm) in a text box or table; set by the screen. */
+    var taskAt: (PageElement, Float, Float) -> MarkStyle.Task? = { _, _, _ -> null }
+
+    /** Whether the to-do task [taskId] is done. */
+    fun isDone(taskId: StrokeId): Boolean = session.state.value.isDone(taskId)
+
     /** Puts text on the system clipboard; set by the screen. */
     var copyText: (String) -> Unit = {}
 
@@ -457,6 +463,13 @@ class CanvasViewModel(
         // A tap into the open to-do keeps it open.
         if (open != null && hit is TodoItem && hit.id == open.itemId) return
         finishText()
+        // A tap on the check box of a to-do in text ticks it off or on, with any tool.
+        if (hit != null) {
+            taskAt(hit, x, y)?.let { task ->
+                session.setTodoDone(task.taskId, !session.state.value.isDone(task.taskId))
+                return
+            }
+        }
         // With the text tool, a tap between pictures and tables of a box (or just below it) writes there.
         if (_tools.value.tool == Tool.TEXT && hit !is TextBox) {
             flows.continuation(x, y)?.let { next ->

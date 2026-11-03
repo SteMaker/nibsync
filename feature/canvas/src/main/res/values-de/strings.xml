@@ -12,6 +12,7 @@
     <string name="redo">Wiederholen</string>
     <string name="lasso">Lasso: auswählen</string>
     <string name="delete_selection">Auswahl löschen</string>
+    <string name="insert_todo_here">To-do hier einfügen</string>
     <string name="into_text">In den Text einfügen</string>
     <string name="float_free">Frei schweben lassen</string>
     <string name="indent_selection">Einzug vergrößern</string>

@@ -109,6 +109,19 @@ sealed interface MarkStyle {
         }
     }
 
+    /**
+     * A to-do in the text: the check box at the start of its paragraph, on the characters [SIGN]
+     * (blank in the fonts: the box is drawn over them). Done or not is the document's register for
+     * [taskId], as for a [com.stemaker.nibsync.model.TodoItem]; the paragraph is the task. [yMm]
+     * is its distance from the top of the text when stored, like an anchor's.
+     */
+    data class Task(val taskId: StrokeId, val yMm: Float = 0f) : MarkStyle {
+        companion object {
+            /** Three en spaces: room for the box (one em) and a gap after it. */
+            const val SIGN = "\u2002\u2002\u2002"
+        }
+    }
+
     /** A link to the document [target] (to its anchor [anchorId], if any) on the text it covers. */
     data class NoteLink(val target: DocumentId, val anchorId: StrokeId?, val anchorName: String?) : MarkStyle {
         val linkTarget: LinkTarget get() = LinkTarget(target, anchorId)

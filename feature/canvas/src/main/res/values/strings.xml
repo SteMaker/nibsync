@@ -12,6 +12,7 @@
     <string name="redo">Redo</string>
     <string name="lasso">Lasso: select</string>
     <string name="delete_selection">Delete selection</string>
+    <string name="insert_todo_here">To-do here</string>
     <string name="into_text">Put into the text</string>
     <string name="float_free">Let it float freely</string>
     <string name="indent_selection">Indent more</string>

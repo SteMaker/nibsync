@@ -26,6 +26,9 @@ class TextBoxRenderer(context: Context) {
     private val measurer = TextMeasurer(createFontFamilyResolver(context), density, LayoutDirection.Ltr, cacheSize = 0)
     private val cache = HashMap<StrokeId, Triple<TextBox, ListStart, TextLayoutResult>>()
 
+    /** Whether a to-do's task is done (its box gets a tick); set by the view. */
+    var isDone: (com.stemaker.nibsync.model.StrokeId) -> Boolean = { false }
+
     /** Lists of a box go on from the text above it in its flow; set by the view. */
     var listStart: (TextBox) -> ListStart = { ListStart.NONE }
 
@@ -65,7 +68,7 @@ class TextBoxRenderer(context: Context) {
         canvas.translate(box.x, box.y)
         canvas.scale(1f / LAYOUT_PX_PER_MM, 1f / LAYOUT_PX_PER_MM)
         val size = Size(result.size.width.toFloat(), result.size.height.toFloat())
-        drawScope.draw(density, LayoutDirection.Ltr, Canvas(canvas), size) { RichTextPainter.draw(this, box.text, result, start) }
+        drawScope.draw(density, LayoutDirection.Ltr, Canvas(canvas), size) { RichTextPainter.draw(this, box.text, result, start, isDone) }
         canvas.restoreToCount(save)
     }
 
@@ -81,8 +84,24 @@ class TextBoxRenderer(context: Context) {
         val save = canvas.save()
         canvas.translate(x, y)
         canvas.scale(1f / LAYOUT_PX_PER_MM, 1f / LAYOUT_PX_PER_MM)
-        TextPainter.paint(Canvas(canvas), result)
+        val size = Size(result.size.width.toFloat(), result.size.height.toFloat())
+        drawScope.draw(density, LayoutDirection.Ltr, Canvas(canvas), size) { RichTextPainter.draw(this, text, result, done = isDone) }
         canvas.restoreToCount(save)
+    }
+
+    /** The to-do whose check box is at ([x], [y]) mm in [box], or null. */
+    fun taskAt(box: TextBox, x: Float, y: Float): com.stemaker.nibsync.model.MarkStyle.Task? {
+        val start = listStart(box)
+        return RichTextLayout.taskAt(box.text, layoutOf(box, start), (x - box.x) * LAYOUT_PX_PER_MM, (y - box.y) * LAYOUT_PX_PER_MM, start)
+    }
+
+    /** The to-do whose check box is at ([x], [y]) mm in a cell of [table], or null. */
+    fun taskAt(table: com.stemaker.nibsync.model.TableElement, x: Float, y: Float): com.stemaker.nibsync.model.MarkStyle.Task? {
+        val g = table.geometry
+        val area = g.areaAtPoint(x - table.x, y - table.y) ?: return null
+        val shown = TableText.shown(table, area)
+        val r = TableText.contentRect(table, area)
+        return RichTextLayout.taskAt(shown, layout(shown, r.width), (x - table.x - r.left) * LAYOUT_PX_PER_MM, (y - table.y - r.top) * LAYOUT_PX_PER_MM)
     }
 
     /** Drops cached layouts of boxes no longer shown. */
