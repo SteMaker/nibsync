@@ -32,6 +32,7 @@ import com.stemaker.nibsync.model.RichText
 import com.stemaker.nibsync.model.ShapeRecognizer
 import com.stemaker.nibsync.model.Stroke
 import com.stemaker.nibsync.model.StrokeDraft
+import com.stemaker.nibsync.model.SnapGrid
 import com.stemaker.nibsync.model.StrokeId
 import com.stemaker.nibsync.model.StrokePoint
 import com.stemaker.nibsync.model.TextBox
@@ -108,6 +109,38 @@ class NoteController(
 
     /** The anchor or link at a place (mm) in a text box; set by the app, which has the text layout. */
     var linkAt: (TextBox, Float, Float) -> MarkStyle? = { _, _, _ -> null }
+
+    /**
+     * The table and column whose right border is within [reachMm] of ([x], [y]): the open table's,
+     * or with the text tool or the lasso any table's. Dragging it changes the column's width.
+     */
+    private fun columnBorderAt(x: Float, y: Float, reachMm: Float): Pair<TableElement, Int>? {
+        val tool = _tools.value.tool
+        val tables = table.table()?.let(::listOf) ?: if (tool == DesktopTool.TEXT || tool == DesktopTool.LASSO) session.state.value.tables else emptyList()
+        for (t in tables) {
+            if (y !in t.y..(t.y + t.heightMm)) continue
+            val col = t.geometry.columnX.indexOfFirst { abs(x - (t.x + it)) <= reachMm } - 1
+            if (col >= 0) return t to col
+        }
+        return null
+    }
+
+    /** The mouse pointer to show over ([x], [y]) mm: a resize arrow over a column border that can be dragged. */
+    fun cursorAt(x: Float, y: Float, reachMm: Float): PageCursor =
+        if (active == null && columnBorderAt(x, y, reachMm) != null) PageCursor.COLUMN_BORDER else PageCursor.DEFAULT
+
+    /** The code of a code block whose copy symbol is at a place (mm) in a text box; set by the app. */
+    var codeToCopyAt: (TextBox, Float, Float) -> String? = { _, _, _ -> null }
+
+    /** Puts text on the system clipboard; set by the app. */
+    var copyText: (String) -> Unit = {}
+
+    /** A click on a code block's copy symbol copies the code, with any tool. */
+    private fun copyCode(box: TextBox, x: Float, y: Float): Boolean {
+        val code = codeToCopyAt(box, x, y) ?: return false
+        copyText(code)
+        return true
+    }
 
     /** With a tool other than text, a click on an anchor or link in text works it; else the box opens. */
     private fun followLink(box: TextBox, x: Float, y: Float): Boolean {
@@ -206,7 +239,8 @@ class NoteController(
         class Draw(val draft: MutableList<StrokePoint>, val tool: InputTool, val hold: HoldDetector, val startTime: Long, val onElement: Boolean, val intoTodo: Boolean = false) : Active
         class Erase(val gesture: EraseGesture) : Active
         class Lasso(val path: ArrayList<Float>) : Active
-        class Move(val startX: Float, val startY: Float, var dx: Float = 0f, var dy: Float = 0f) : Active
+        /** [point] is where the selection snaps to the grid. */
+        class Move(val startX: Float, val startY: Float, val point: Pair<Float, Float>?, var dx: Float = 0f, var dy: Float = 0f) : Active
         class Resize(val element: PageElement, val anchorDist: Float, var factor: Float = 1f) : Active
         class Column(val table: TableElement, val col: Int, val startX: Float, var dx: Float = 0f) : Active
         class Check(val taskId: StrokeId) : Active
@@ -241,16 +275,12 @@ class NoteController(
                 return
             }
         }
-        table.table()?.let { t ->
-            // The right border of a column of the open table can be dragged.
-            val col = t.geometry.columnX.indexOfFirst { abs(x - (t.x + it)) <= handleReachMm } - 1
-            if (col >= 0 && y in t.y..(t.y + t.heightMm)) {
-                active = Active.Column(t, col, t.x + t.geometry.columnX[col + 1])
-                _gesture.value = GesturePreview.ColumnBorder(t.x + t.geometry.columnX[col + 1], t.y, t.y + t.heightMm)
-                return
-            }
-            if (!t.bounds.contains(x, y)) table.finish()
+        columnBorderAt(x, y, handleReachMm)?.let { (t, col) ->
+            active = Active.Column(t, col, t.x + t.geometry.columnX[col + 1])
+            _gesture.value = GesturePreview.ColumnBorder(t.x + t.geometry.columnX[col + 1], t.y, t.y + t.heightMm)
+            return
         }
+        table.table()?.let { t -> if (!t.bounds.contains(x, y)) table.finish() }
         if (_selection.value.isNotEmpty() && state.tool != DesktopTool.ERASER) {
             val resizable = resizable()
             val frame = selectionFrame()
@@ -261,7 +291,7 @@ class NoteController(
                 return
             }
             if (frame != null && frame.contains(x, y)) {
-                active = Active.Move(x, y)
+                active = Active.Move(x, y, SnapGrid.pointOf(selected()))
                 _gesture.value = GesturePreview.Moving(0f, 0f)
                 return
             }
@@ -314,8 +344,9 @@ class NoteController(
                 _gesture.value = GesturePreview.Lassoing(a.path.toFloatArray())
             }
             is Active.Move -> {
-                a.dx = x - a.startX
-                a.dy = y - a.startY
+                val (dx, dy) = snapped(a.point, x - a.startX, y - a.startY)
+                a.dx = dx
+                a.dy = dy
                 _gesture.value = GesturePreview.Moving(a.dx, a.dy, flows.dropFor(_selection.value, a.dx, a.dy))
             }
             is Active.Resize -> {
@@ -376,6 +407,9 @@ class NoteController(
             is Active.Column -> if (abs(a.dx) > 0.2f) {
                 val col = a.table.columns[a.col]
                 table.setColumnWidth(a.table, col.colId, col.widthMm + a.dx)
+            } else if (table.table()?.id != a.table.id) {
+                // Only clicked near a border: into the cell, as anywhere in a table.
+                click(pressX, pressY, timeMs, pageWidthMm)
             }
             null -> Unit
         }
@@ -409,7 +443,7 @@ class NoteController(
         lastClickX = x
         lastClickY = y
         when (val hit = elementAt(x, y)) {
-            is TextBox -> if (!followLink(hit, x, y)) {
+            is TextBox -> if (!copyCode(hit, x, y) && !followLink(hit, x, y)) {
                 endTemporarySelection()
                 clickAt(x, y, pageWidthMm)
             }
@@ -501,9 +535,22 @@ class NoteController(
         if (next != null) {
             text.startNew(next.x, next.y, next.widthMm, next.slot)
         } else {
-            val (left, top, width) = TextBox.placeNew(x, y, pageWidthMm)
+            val (sx, sy) = snapGrid().snap(x, y, session.state.value.background, pageWidthMm)
+            val (left, top, width) = TextBox.placeNew(sx, sy, pageWidthMm)
             text.startNew(left, top, width)
         }
+    }
+
+    /** The grid moved and new things snap to; set by the app from the settings. */
+    var snapGrid: () -> SnapGrid = { SnapGrid() }
+
+    /** A move by ([dx], [dy]) mm adjusted so that [point] lands on the grid. */
+    private fun snapped(point: Pair<Float, Float>?, dx: Float, dy: Float): Pair<Float, Float> {
+        if (point == null) return dx to dy
+        // Not moved yet (a click): nothing jumps to the grid.
+        if (abs(dx) <= MIN_MOVE_MM && abs(dy) <= MIN_MOVE_MM) return dx to dy
+        val state = session.state.value
+        return snapGrid().snapMove(point.first, point.second, dx, dy, state.background, state.meta.format.widthMm)
     }
 
     // ---- selection ---------------------------------------------------------------------------
@@ -672,3 +719,6 @@ private fun PageElement.frame(): Triple<Float, Float, Float> = when (this) {
     is TableElement -> Triple(x, y, widthMm)
     else -> Triple(bounds.left, bounds.top, bounds.width)
 }
+
+/** Mouse pointers over the page. */
+enum class PageCursor { DEFAULT, COLUMN_BORDER }

@@ -20,6 +20,11 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import com.stemaker.nibsync.model.BrushFamily
 import com.stemaker.nibsync.model.PenWidths
+import com.stemaker.nibsync.model.SnapGrid
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.SegmentedButton
+import androidx.compose.material3.SegmentedButtonDefaults
+import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.MaterialTheme
@@ -43,6 +48,7 @@ object SettingsTags {
     const val SHOW_CREATED = "settings-show-created"
     fun penWidth(family: BrushFamily, index: Int) = "settings-pen-width-${family.name}-$index"
     const val PEN_WIDTHS_RESET = "settings-pen-widths-reset"
+    fun grid(grid: SnapGrid) = "settings-grid-${grid.toSetting()}"
 }
 
 /** Display choices of the settings dialog. */
@@ -57,6 +63,8 @@ class DisplaySettings(
     val onThemeMode: (ThemeMode) -> Unit = {},
     val palette: NibSyncPalette = NibSyncPalette.GREY,
     val onPalette: (NibSyncPalette) -> Unit = {},
+    val snapGrid: SnapGrid = SnapGrid(),
+    val onSnapGrid: (SnapGrid) -> Unit = {},
 )
 
 /** App settings, grouped in sections; new settings get their own section here. */
@@ -82,12 +90,32 @@ fun SettingsDialog(
                 Text(strings.settingsDisplay, style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary)
                 SwitchLine(strings.showTitle, display.showTitle, display.onShowTitle, SettingsTags.SHOW_TITLE)
                 SwitchLine(strings.showCreated, display.showCreated, display.onShowCreated, SettingsTags.SHOW_CREATED)
+                Text(strings.settingsGrid, style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary)
+                SnapGridSettings(strings, display.snapGrid, display.onSnapGrid)
                 Text(strings.settingsPens, style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary)
                 PenWidthSettings(strings, display.penWidths, display.onPenWidths)
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End, verticalAlignment = Alignment.CenterVertically) {
                     TextButton(onClick = onClose, modifier = Modifier.testTag(SettingsTags.CLOSE)) { Text(strings.close) }
                 }
             }
+        }
+    }
+}
+
+/** Off, the page's own lines and dots, or a fixed grid size. */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun SnapGridSettings(strings: Strings, grid: SnapGrid, onChange: (SnapGrid) -> Unit) {
+    Text(strings.gridHint, style = MaterialTheme.typography.bodyMedium)
+    val choices = listOf(SnapGrid(SnapGrid.Mode.OFF), SnapGrid()) + SnapGrid.FIXED_SIZES_MM.map { SnapGrid(SnapGrid.Mode.FIXED, it) }
+    SingleChoiceSegmentedButtonRow {
+        choices.forEachIndexed { i, choice ->
+            SegmentedButton(
+                selected = choice.toSetting() == grid.toSetting(),
+                onClick = { onChange(choice) },
+                shape = SegmentedButtonDefaults.itemShape(i, choices.size),
+                modifier = Modifier.testTag(SettingsTags.grid(choice)),
+            ) { Text(strings.grid(choice)) }
         }
     }
 }

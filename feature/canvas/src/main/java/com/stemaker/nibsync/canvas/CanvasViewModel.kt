@@ -45,6 +45,7 @@ import com.stemaker.nibsync.model.BrushFamily
 import com.stemaker.nibsync.model.ShapeRecognizer
 import com.stemaker.nibsync.model.Stroke
 import com.stemaker.nibsync.model.StrokeDraft
+import com.stemaker.nibsync.model.SnapGrid
 import com.stemaker.nibsync.model.StrokeId
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -163,6 +164,15 @@ class CanvasViewModel(
     /** The anchor or link at a place (mm) in a text box; set by the screen, which has the text layout. */
     var linkAt: (TextBox, Float, Float) -> MarkStyle? = { _, _, _ -> null }
 
+    /** The code of a code block whose copy symbol is at a place (mm) in a text box; set by the screen. */
+    var codeToCopyAt: (TextBox, Float, Float) -> String? = { _, _, _ -> null }
+
+    /** Puts text on the system clipboard; set by the screen. */
+    var copyText: (String) -> Unit = {}
+
+    /** Where the lists of [box] start: numbering goes on from the text above it in its flow. */
+    fun listStart(box: TextBox): com.stemaker.nibsync.text.ListStart = com.stemaker.nibsync.text.RichTextLayout.listStart(session.state.value, box)
+
     /** Gives the anchor a new name; it stays the same anchor, so links to it keep working. */
     fun renameAnchor(anchor: Anchor, name: String) {
         val current = session.state.value.anchor(anchor.anchorId) ?: return
@@ -197,6 +207,18 @@ class CanvasViewModel(
         val after = flows.moveSelection(before, dx, dy)
         _selection.value = after
         return CommittedEdit(session.state.value.elements.filter { it.id in after }, before - after)
+    }
+
+    /** The grid moved and new things snap to; set by the app from the settings. */
+    var snapGrid: () -> SnapGrid = { SnapGrid() }
+
+    /** A move of the selection by ([dx], [dy]) mm, adjusted so that it lands on the grid. */
+    fun snapMove(dx: Float, dy: Float): Pair<Float, Float> {
+        // Not moved yet (a tap): nothing jumps to the grid.
+        if (kotlin.math.abs(dx) <= MIN_SNAP_MOVE_MM && kotlin.math.abs(dy) <= MIN_SNAP_MOVE_MM) return dx to dy
+        val state = session.state.value
+        val (x, y) = SnapGrid.pointOf(state.elements.filter { it.id in _selection.value }) ?: return dx to dy
+        return snapGrid().snapMove(x, y, dx, dy, state.background, state.meta.format.widthMm)
     }
 
     /** Where blocks of the selection would land in text if moved by ([dx], [dy]) mm. */
@@ -420,6 +442,11 @@ class CanvasViewModel(
         when (hit) {
             is TodoItem -> if (_tools.value.tool == Tool.LASSO && !lassoByTap) selectTemporarily(setOf(hit.id)) else openTodo(hit)
             is TextBox -> {
+                // A tap on a code block's copy symbol copies the code, with any tool.
+                codeToCopyAt(hit, x, y)?.let {
+                    copyText(it)
+                    return
+                }
                 // With a tool other than text, a tap on an anchor or link in text works it.
                 val mark = if (_tools.value.tool == Tool.TEXT) null else linkAt(hit, x, y)
                 when (mark) {
@@ -460,7 +487,8 @@ class CanvasViewModel(
                         if (next != null) {
                             text.startNew(next.x, next.y, next.widthMm, next.slot)
                         } else {
-                            val (left, top, width) = TextBox.placeNew(x, y, pageWidth)
+                            val (sx, sy) = snapGrid().snap(x, y, session.state.value.background, pageWidth)
+                            val (left, top, width) = TextBox.placeNew(sx, sy, pageWidth)
                             text.startNew(left, top, width)
                         }
                     }
@@ -560,3 +588,6 @@ class CanvasViewModel(
         const val MIN_FILE_SIZE_MM = 5f
     }
 }
+
+/** Moves shorter than this (mm) do not snap to the grid. */
+private const val MIN_SNAP_MOVE_MM = 0.5f

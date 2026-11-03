@@ -124,7 +124,7 @@ class PagePainter(private val text: DesktopTextLayout, private val media: MediaC
     ) {
         when (element) {
             is Stroke -> StrokePainter.draw(scope, element)
-            is TextBox -> if (element.id != hiddenTextBox) drawTextBox(scope, element)
+            is TextBox -> if (element.id != hiddenTextBox) drawTextBox(scope, element, doc)
             is ImageElement -> drawImage(scope, element)
             is FileLink -> drawLink(scope, element)
             is TodoItem -> drawTodo(scope, element, doc.isDone(element.taskId))
@@ -295,14 +295,15 @@ class PagePainter(private val text: DesktopTextLayout, private val media: MediaC
         }
     }
 
-    private fun drawTextBox(scope: DrawScope, box: TextBox) = with(scope) {
-        val layout = text.layoutOf(box)
+    private fun drawTextBox(scope: DrawScope, box: TextBox, doc: DocumentState) = with(scope) {
+        val start = com.stemaker.nibsync.text.RichTextLayout.listStart(doc, box)
+        val layout = text.layoutOf(box, start)
         val f = 1f / DesktopTextLayout.LAYOUT_PX_PER_MM
         withTransform({
             translate(box.x, box.y)
             scale(f, f, pivot = Offset.Zero)
         }) {
-            drawText(layout)
+            com.stemaker.nibsync.text.RichTextPainter.draw(this, box.text, layout, start)
         }
     }
 

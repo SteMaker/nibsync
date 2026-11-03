@@ -26,10 +26,11 @@ internal object RichTextConversion {
     /**
      * A [TextParagraph.continued] line becomes a plain paragraph indented like its item's text
      * (the editor has no such lines). The editor counts a list anew after it, so numbered items
-     * behind one get their number as start number.
+     * behind one get their number as start number, as do the first items going on from [start].
      */
-    fun toDocument(text: RichText): RichTextDocument {
-        val numbers = IntArray(MAX_LEVELS)
+    fun toDocument(text: RichText, start: ListStart = ListStart.NONE): RichTextDocument {
+        val numbers = start.array()
+        val goingOn = BooleanArray(MAX_LEVELS) { numbers[it] > 0 }
         var afterContinued = false
         return RichTextDocument(
             text.withoutStrayBreaks().paragraphs.map { p ->
@@ -43,6 +44,7 @@ internal object RichTextConversion {
                     }
                     p.list == ListKind.NONE -> {
                         numbers.fill(0)
+                        goingOn.fill(false)
                         afterContinued = false
                         RichTextBlock(text = p.text, type = RichTextBlockType.Paragraph, spans = spans)
                     }
@@ -53,8 +55,9 @@ internal object RichTextConversion {
                     else -> {
                         numbers.fill(0, level + 1)
                         numbers[level]++
-                        val start = if (afterContinued) numbers[level] else null
-                        RichTextBlock(text = p.text, type = RichTextBlockType.ListItem(ordered = true, indent = p.indent, startNumber = start), spans = spans)
+                        val first = if (afterContinued || goingOn[level]) numbers[level] else null
+                        goingOn[level] = false
+                        RichTextBlock(text = p.text, type = RichTextBlockType.ListItem(ordered = true, indent = p.indent, startNumber = first), spans = spans)
                     }
                 }
             },

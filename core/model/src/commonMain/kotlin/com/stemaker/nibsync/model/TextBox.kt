@@ -39,11 +39,11 @@ data class TextBox(
         /** Boxes are never narrower than this. */
         const val MIN_WIDTH_MM = 10f
 
-        /** Width of a new box made by a click, unless the page ends earlier. */
-        const val DEFAULT_WIDTH_MM = 120f
+        /** Width of a new box made by a click, unless the page's right margin comes earlier. */
+        const val DEFAULT_WIDTH_MM = 180f
 
         /** Free space kept to the right page edge. */
-        const val MARGIN_MM = 5f
+        const val MARGIN_MM = 15f
 
         /** New boxes are at least this wide, moved left if needed. */
         const val MIN_NEW_WIDTH_MM = 30f

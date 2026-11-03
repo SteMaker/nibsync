@@ -109,6 +109,15 @@ leaves it alone. Where lines and dots go is computed platform-neutrally in
 `BackgroundPattern` (rows from one spacing below the top, columns centred on the page); the
 Android view only draws them and skips the pattern when zoomed out below 6 px spacing.
 
+## Grid
+
+Moved selections and new text boxes snap to a grid (`SnapGrid`, a local setting of each
+device: off, like the page (default) or fixed 2.5/5/7/10 mm). "Like the page" uses the rows and
+columns `BackgroundPattern` draws: dots and squares snap both ways, ruled paper only rows,
+blank paper nothing. A selection snaps at its top left corner, text on top at its first line
+(`SnapGrid.pointOf`); moves of less than half a millimetre do not snap, so a tap never shifts
+anything. Blocks dropped into text go where the drop rule puts them.
+
 ## Text boxes
 
 A `TextBox` has a position, a user-chosen width and formatted text (`RichText`: paragraphs
@@ -127,15 +136,32 @@ versions side by side, nothing is lost.
 - The page shows boxes with `TextBoxRenderer`: Compose text layout at 20 px/mm, cached per
   box, painted onto the view canvas between marker and ink strokes. While a box is edited it
   is hidden on the page and the editor is drawn over it at the current zoom.
-- Text tool: tap = new box (`TextBox.placeNew`: 120 mm wide or up to the margin, first line
-  at the tap; a tap beside an open box only ends it), or the tapped box is opened; dragged
+- Normal text is 11 pt (`RichText.DEFAULT_SIZE_PT`; text without a size mark, so text written
+  before at 12 pt shows smaller now). Noto Sans is a wide font: a new box reaching to the
+  15 mm right margin holds about 90 characters per line on A4.
+- Text tool: tap = new box (`TextBox.placeNew`: up to 180 mm wide, ending at the 15 mm right
+  margin, first line at the tap, which snaps to the grid, see "Grid"; a tap beside an open box only ends it), or the tapped box is opened; dragged
   frame = box of that width. The tool bar switches to formatting while a box is open (A−/A+
   step the size through `RichText.SIZES_PT` from the size at the cursor); the text is saved
   1.5 s after typing stops, on "Done", on tool change and when the app goes to the background.
   An emptied box is removed. Erasers ignore text; the lasso selects, moves and copies it.
-- Style presets (`TextPreset`: Normal, Heading 1–3, Code) format whole paragraphs touched by
-  the cursor or selection. They are only a quick way to set size, bold and font, stored as
-  ordinary marks, so there is no paragraph style in the file format.
+- Style presets (`TextPreset`: Normal 11 pt, Heading 1–3 22/16/13 pt, Code) format whole
+  paragraphs touched by the cursor or selection. They are only a quick way to set size, bold
+  and font, stored as ordinary marks, so there is no paragraph style in the file format.
+  A paragraph all bold and at least 13 pt counts as a heading (`TextPreset.isHeading`): its
+  lines are higher with the extra space below (`TextMetrics.headingStyle`), which shows as a
+  small gap after it, on the page and in the editor (`TextEditController.restyleHeadings`,
+  applied on loading, presets and Enter). Enter at the end of a heading goes on in Normal.
+- Code (the mono font) is shaded: whole paragraphs in it, with empty lines between them, are
+  a block shaded across the box with a copy symbol at its top right; a tap on it puts the
+  code on the clipboard with any tool (`RichTextLayout.codeAreas`, drawn by
+  `RichTextPainter`). Code inside other text is shaded line by line; the editor draws that
+  for every code run (`FontRun.drawCustomStyle`).
+- Numbered items below a numbered item show the numbers above them ("3.1.", "3.1.2."). The
+  text blocks of one flow count as one text (`RichTextLayout.listStart`), so a list goes on
+  below a table or picture between its items; the editor gets the same start number. The
+  editor shows nested items with their own number only ("1."), the library numbers each
+  level by itself.
 - Shift+Enter in a list item starts a further line of it (`TextParagraph.continued`, record
   field `"c"`): no bullet, indented like the item's text, numbering goes on; Enter in such a
   line starts the next item. The editor has no such lines: they become plain paragraphs with
@@ -213,9 +239,12 @@ than its rows stretches the last one. Content of a joined area is its top left c
 - `TableEditing` (shared/text) does the editing on both platforms: one cell at a time in a
   `TextEditController`, Tab / Shift+Tab (Tab in the last cell adds a row), rows and columns,
   join right / down, split, header row, column widths and scaling (texts measured anew).
+  Typing in an empty header cell starts bold (`TableText.editor`); header text is shown bold.
 - UI: Insert > Table… (`TableSizeDialog`, grid up to 8 x 8), a tap or click into a cell opens
   it, the tool bar shows "Done", a "Table" menu and the text formatting. Column widths: drag
-  the border (PC) or the handle above it (tablet). Tables lie on the TEXT layer on white, the
+  the border (PC: of the open table, or of any table with the text tool or lasso; the mouse
+  pointer turns into a sideways arrow over it) or the handle above it (tablet; a hovering pen
+  shows the same arrow). Tables lie on the TEXT layer on white, the
   header row tinted; lasso, copy and undo work as for other elements, and on the PC the
   selection's corner scales a table.
 
@@ -287,7 +316,8 @@ cannot be dragged out of the text; a link in text keeps the title it was made wi
 
 Stylus writes (or erases with the eraser selected); fingers scroll and pinch-zoom; a toggle
 enables writing with a finger. Pointers cancelled by the system (palm rejection) cancel the
-stroke or erase gesture.
+stroke or erase gesture. The zoom of each document is kept on the device, not synced
+(`ZoomStore` on Android, `Settings.zoom` on the PC), and restored when it is opened again.
 
 Pens: each pen offers three widths (fine, medium, broad), set per pen in the settings
 ("Pen widths"). `PenPreferences` (core/model) keeps them on the device together with the last

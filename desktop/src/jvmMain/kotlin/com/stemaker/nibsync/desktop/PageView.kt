@@ -10,7 +10,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.pointer.PointerIcon
 import androidx.compose.ui.input.pointer.PointerType
+import androidx.compose.ui.input.pointer.pointerHoverIcon
 import androidx.compose.ui.input.pointer.isPrimaryPressed
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
@@ -52,6 +54,8 @@ fun PageView(
     hiddenTextBox: Any? = null,
     controller: NoteController? = null,
     overlay: PagePainter.Overlay = PagePainter.Overlay(),
+    /** The zoom to start at (the one the document was left at), else a comfortable default. */
+    initialZoom: Float? = null,
 ) {
     val density = LocalDensity.current.density
     // While drawing, check regularly whether the pen is held still (shape recognition).
@@ -66,15 +70,17 @@ fun PageView(
     LaunchedEffect(doc.contentBottomMm) {
         if (doc.contentBottomMm != viewport.contentBottomMm) onViewportChange(viewport.withContentBottom(doc.contentBottomMm))
     }
+    var cursor by remember { mutableStateOf(PageCursor.DEFAULT) }
     Canvas(
         modifier
             .fillMaxSize()
             .testTag("page")
+            .pointerHoverIcon(if (cursor == PageCursor.COLUMN_BORDER) COLUMN_RESIZE else PointerIcon.Default)
             .onSizeChanged { size ->
                 var v = viewport.withViewSize(size.width.toFloat(), size.height.toFloat())
                 if (!initialised && v.hasSize) {
                     // Start at a comfortable size instead of filling a wide monitor with the page.
-                    val zoom = (DEFAULT_PX_PER_MM * v.pageWidthMm / v.viewWidthPx).coerceIn(v.minZoom, v.maxZoom)
+                    val zoom = (initialZoom ?: (DEFAULT_PX_PER_MM * v.pageWidthMm / v.viewWidthPx)).coerceIn(v.minZoom, v.maxZoom)
                     v = v.copy(zoom = zoom).clamped()
                     initialised = true
                 }
@@ -96,7 +102,11 @@ fun PageView(
                             PointerEventType.Press -> if (event.buttons.isPrimaryPressed) {
                                 controller.pointerDown(x, y, now, pressure, tolerance, HANDLE_REACH_DP * density / viewport.scale)
                             }
-                            PointerEventType.Move -> if (event.buttons.isPrimaryPressed) controller.pointerMove(x, y, now, pressure)
+                            PointerEventType.Move -> if (event.buttons.isPrimaryPressed) {
+                                controller.pointerMove(x, y, now, pressure)
+                            } else {
+                                cursor = controller.cursorAt(x, y, HANDLE_REACH_DP * density / viewport.scale)
+                            }
                             PointerEventType.Release -> controller.pointerUp(x, y, now, tolerance, viewport.pageWidthMm)
                             else -> Unit
                         }
@@ -117,6 +127,8 @@ fun PageView(
         painter.draw(this, doc, viewport, hiddenTextBox, overlay)
     }
 }
+
+private val COLUMN_RESIZE = PointerIcon(java.awt.Cursor(java.awt.Cursor.E_RESIZE_CURSOR))
 
 /** A viewport for a page of [pageWidthMm] before the view has a size. */
 fun initialViewport(pageWidthMm: Float, pageHeightMm: Float) =

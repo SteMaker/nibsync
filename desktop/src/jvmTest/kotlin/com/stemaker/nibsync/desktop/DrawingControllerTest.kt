@@ -175,6 +175,42 @@ class DrawingControllerTest {
     }
 
     @Test
+    fun movedPicturesAndNewBoxesSnapToTheDotsOfThePage() = runTest {
+        val c = controller()
+        c.session.setBackground(com.stemaker.nibsync.model.BackgroundSpec(com.stemaker.nibsync.model.BackgroundKind.DOTTED, 5f))
+        c.insert(listOf(ImageDraft(21f, 21f, 40f, 20f, Asset("e".repeat(64), Asset.PNG))))
+        // Dragged by (7.3, 11.2): its corner lands on the dot (30, 30).
+        c.drag(30f, 30f, 37.3f, 41.2f)
+        val moved = c.session.state.value.files.single()
+        assertThat(moved.x).isWithin(0.01f).of(30f)
+        assertThat(moved.y).isWithin(0.01f).of(30f)
+        // A click on free paper starts a box whose first line is on the nearest dot row.
+        c.selectTool(DesktopTool.TEXT)
+        c.clickAt(101.9f, 148.2f, 210f)
+        val e = c.text.editing.value!!
+        assertThat(e.x).isWithin(0.01f).of(100f)
+        assertThat(e.y).isWithin(0.01f).of(150f - com.stemaker.nibsync.model.TextBox.FIRST_LINE_OFFSET_MM)
+        // Off in the settings: nothing snaps.
+        c.text.finish()
+        c.snapGrid = { com.stemaker.nibsync.model.SnapGrid(com.stemaker.nibsync.model.SnapGrid.Mode.OFF) }
+        c.clickAt(101.9f, 148.2f, 210f)
+        assertThat(c.text.editing.value!!.x).isWithin(0.01f).of(101.9f)
+    }
+
+    @Test
+    fun overATableBorderThePointerShowsItCanBeDragged() = runTest {
+        val c = controller()
+        val table = c.table.insert(20f, 100f, rows = 2, columns = 2, header = false, pageWidthMm = 210f)
+        c.table.finish()
+        val border = table.x + table.geometry.columnX[1]
+        assertThat(c.cursorAt(border + 0.5f, table.y + 3f, reach)).isEqualTo(PageCursor.COLUMN_BORDER)
+        assertThat(c.cursorAt(border + 10f, table.y + 3f, reach)).isEqualTo(PageCursor.DEFAULT)
+        // Dragging it changes the column's width without opening the table.
+        c.drag(border, table.y + 3f, border + 10f, table.y + 3f)
+        assertThat(c.session.state.value.tables.single().columns[0].widthMm).isWithin(0.1f).of(table.columns[0].widthMm + 10f)
+    }
+
+    @Test
     fun linksAreSelectedByAClickAndOpenedByADoubleClick() = runTest {
         val c = controller()
         val opened = mutableListOf<FileLink>()

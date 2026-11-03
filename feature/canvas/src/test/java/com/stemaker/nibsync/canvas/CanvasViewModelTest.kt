@@ -299,10 +299,10 @@ class CanvasViewModelTest {
         val vm = viewModel()
         vm.selectLasso()
         vm.selectText()
-        // A tap on free paper starts a box of the default width, its first line at the tap.
+        // A tap on free paper starts a box up to the right margin, its first line at the tap.
         vm.requestText(50f, 250f, null, pageWidthMm = 210f)
         val editing = vm.textEditing.value!!
-        assertThat(editing.widthMm).isEqualTo(com.stemaker.nibsync.model.TextBox.DEFAULT_WIDTH_MM)
+        assertThat(editing.widthMm).isEqualTo(210f - 50f - com.stemaker.nibsync.model.TextBox.MARGIN_MM)
         assertThat(editing.y).isEqualTo(250f - com.stemaker.nibsync.model.TextBox.FIRST_LINE_OFFSET_MM)
         assertThat(vm.tools.value.tool).isEqualTo(Tool.TEXT)
         // The next tap beside it only ends it (left empty: removed) and leaves text mode.
@@ -444,6 +444,21 @@ class CanvasViewModelTest {
         vm.selectLasso()
         vm.tapAt(150f, 200f)
         assertThat(vm.tools.value.tool).isEqualTo(Tool.LASSO)
+    }
+
+    @Test
+    fun movesAndNewBoxesSnapToTheGrid() = runTest {
+        val vm = viewModel()
+        vm.setBackground(com.stemaker.nibsync.model.BackgroundSpec(com.stemaker.nibsync.model.BackgroundKind.LINED, 7f))
+        vm.insert(listOf(com.stemaker.nibsync.model.FileLinkDraft(10f, 10f, 60f, 12f, pdf, "Skript.pdf")))
+        // Ruled paper: only rows; the link's top lands on the line at 21 mm.
+        assertThat(vm.snapMove(3f, 9f)).isEqualTo(3f to 11f)
+        // A tap barely moved: nothing jumps.
+        assertThat(vm.snapMove(0.2f, 0.1f)).isEqualTo(0.2f to 0.1f)
+        vm.clearSelection()
+        vm.selectText()
+        vm.requestText(50f, 40f, null, pageWidthMm = 210f)
+        assertThat(vm.textEditing.value!!.y).isEqualTo(42f - com.stemaker.nibsync.model.TextBox.FIRST_LINE_OFFSET_MM)
     }
 
     @Test

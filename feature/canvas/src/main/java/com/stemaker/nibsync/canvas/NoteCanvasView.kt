@@ -88,6 +88,9 @@ class NoteCanvasView(context: Context) : FrameLayout(context) {
     /** The selection was dragged by (dx, dy) mm; returns what was stored, or null. */
     var onSelectionMoved: (Float, Float) -> CommittedEdit? = { _, _ -> null }
 
+    /** A move of the selection adjusted to the grid (mm). */
+    var snapMove: (Float, Float) -> Pair<Float, Float> = { dx, dy -> dx to dy }
+
     /** Where blocks of the selection would land in text if moved so far (mm); drawn while dragging. */
     var dropFor: (Float, Float) -> com.stemaker.nibsync.text.FlowDrop? = { _, _ -> null }
     private var selectionDrop: com.stemaker.nibsync.text.FlowDrop? = null
@@ -466,9 +469,19 @@ class NoteCanvasView(context: Context) : FrameLayout(context) {
         onViewportChanged(v)
     }
 
+    /** The zoom to start at once the view has a size (where the document was left), else the default. */
+    var initialZoom: Float? = null
+
     override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
         super.onSizeChanged(w, h, oldw, oldh)
-        setViewport(viewport.withViewSize(w.toFloat(), h.toFloat()))
+        val sized = viewport.withViewSize(w.toFloat(), h.toFloat())
+        val zoom = initialZoom
+        if (zoom != null && !viewport.hasSize && sized.hasSize) {
+            initialZoom = null
+            setViewport(sized.copy(zoom = zoom.coerceIn(sized.minZoom, sized.maxZoom)).clamped())
+        } else {
+            setViewport(sized)
+        }
         pendingReveal?.let { revealY(it) }
     }
 
@@ -1113,8 +1126,9 @@ class NoteCanvasView(context: Context) : FrameLayout(context) {
 
     private fun updateMove(event: MotionEvent, pointerIndex: Int) {
         val toDoc = viewport.viewToDocument
-        moveDx = toDoc.mapX(event.getX(pointerIndex)) - moveStartX
-        moveDy = toDoc.mapY(event.getY(pointerIndex)) - moveStartY
+        val (dx, dy) = snapMove(toDoc.mapX(event.getX(pointerIndex)) - moveStartX, toDoc.mapY(event.getY(pointerIndex)) - moveStartY)
+        moveDx = dx
+        moveDy = dy
         selectionDrop = dropFor(moveDx, moveDy)
         invalidate()
     }

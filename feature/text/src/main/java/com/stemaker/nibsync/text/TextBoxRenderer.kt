@@ -1,7 +1,9 @@
 package com.stemaker.nibsync.text
 
 import android.content.Context
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Canvas
+import androidx.compose.ui.graphics.drawscope.CanvasDrawScope
 import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.text.TextMeasurer
 import androidx.compose.ui.text.TextPainter
@@ -22,11 +24,14 @@ import kotlin.math.roundToInt
 class TextBoxRenderer(context: Context) {
     private val density = TextMetrics.densityFor(LAYOUT_PX_PER_MM)
     private val measurer = TextMeasurer(createFontFamilyResolver(context), density, LayoutDirection.Ltr, cacheSize = 0)
-    private val cache = HashMap<StrokeId, Pair<TextBox, TextLayoutResult>>()
+    private val cache = HashMap<StrokeId, Triple<TextBox, ListStart, TextLayoutResult>>()
+
+    /** Lists of a box go on from the text above it in its flow; set by the view. */
+    var listStart: (TextBox) -> ListStart = { ListStart.NONE }
 
     /** Laid-out text for a box of [widthMm], in layout pixels. */
-    fun layout(text: RichText, widthMm: Float): TextLayoutResult {
-        val annotated = RichTextLayout.annotated(text) { prefix ->
+    fun layout(text: RichText, widthMm: Float, start: ListStart = ListStart.NONE): TextLayoutResult {
+        val annotated = RichTextLayout.annotated(text, start) { prefix ->
             measurer.measure(prefix, TextMetrics.baseStyle).size.width / density.density
         }
         val width = (widthMm * LAYOUT_PX_PER_MM).roundToInt().coerceAtLeast(1)
@@ -38,17 +43,29 @@ class TextBoxRenderer(context: Context) {
     fun heightMm(text: RichText, widthMm: Float): Float =
         ceil(layout(text, widthMm).size.height / LAYOUT_PX_PER_MM * 100f) / 100f
 
-    /** Draws [box]; [canvas] must be in page millimetres (see NoteCanvasView). */
     /** The anchor or link in [box] at ([x], [y]) mm, or null. */
-    fun linkAt(box: TextBox, x: Float, y: Float): com.stemaker.nibsync.model.MarkStyle? =
-        RichTextLayout.linkAt(box.text, layoutOf(box), (x - box.x) * LAYOUT_PX_PER_MM, (y - box.y) * LAYOUT_PX_PER_MM)
+    fun linkAt(box: TextBox, x: Float, y: Float): com.stemaker.nibsync.model.MarkStyle? {
+        val start = listStart(box)
+        return RichTextLayout.linkAt(box.text, layoutOf(box, start), (x - box.x) * LAYOUT_PX_PER_MM, (y - box.y) * LAYOUT_PX_PER_MM, start)
+    }
 
+    /** The code of a code block in [box] whose copy symbol is at ([x], [y]) mm, or null. */
+    fun codeToCopyAt(box: TextBox, x: Float, y: Float): String? {
+        val start = listStart(box)
+        return RichTextLayout.codeToCopyAt(box.text, layoutOf(box, start), (x - box.x) * LAYOUT_PX_PER_MM, (y - box.y) * LAYOUT_PX_PER_MM, start)
+    }
+
+    private val drawScope = CanvasDrawScope()
+
+    /** Draws [box]; [canvas] must be in page millimetres (see NoteCanvasView). */
     fun draw(canvas: android.graphics.Canvas, box: TextBox) {
-        val result = layoutOf(box)
+        val start = listStart(box)
+        val result = layoutOf(box, start)
         val save = canvas.save()
         canvas.translate(box.x, box.y)
         canvas.scale(1f / LAYOUT_PX_PER_MM, 1f / LAYOUT_PX_PER_MM)
-        TextPainter.paint(Canvas(canvas), result)
+        val size = Size(result.size.width.toFloat(), result.size.height.toFloat())
+        drawScope.draw(density, LayoutDirection.Ltr, Canvas(canvas), size) { RichTextPainter.draw(this, box.text, result, start) }
         canvas.restoreToCount(save)
     }
 
@@ -78,9 +95,9 @@ class TextBoxRenderer(context: Context) {
         textCache.keys.retainAll(ids)
     }
 
-    private fun layoutOf(box: TextBox): TextLayoutResult {
-        cache[box.id]?.let { (cached, result) -> if (cached == box) return result }
-        return layout(box.text, box.widthMm).also { cache[box.id] = box to it }
+    private fun layoutOf(box: TextBox, start: ListStart): TextLayoutResult {
+        cache[box.id]?.let { (cached, s, result) -> if (cached == box && s == start) return result }
+        return layout(box.text, box.widthMm, start).also { cache[box.id] = Triple(box, start, it) }
     }
 
     companion object {

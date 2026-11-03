@@ -201,6 +201,7 @@ class MainActivity : ComponentActivity() {
                 var showTitle by remember { mutableStateOf(settings.showTitle) }
                 var showCreated by remember { mutableStateOf(settings.showCreated) }
                 var penWidths by remember { mutableStateOf(settings.pens.widths) }
+                var snapGrid by remember { mutableStateOf(settings.snapGrid) }
                 if (showSettings) {
                     SettingsScreen(
                         sync = sync,
@@ -239,6 +240,11 @@ class MainActivity : ComponentActivity() {
                         onPenWidths = {
                             penWidths = it
                             settings.pens = settings.pens.copy(widths = it)
+                        },
+                        snapGrid = snapGrid,
+                        onSnapGrid = {
+                            snapGrid = it
+                            settings.snapGrid = it
                         },
                         onClose = { showSettings = false },
                     )
@@ -414,6 +420,7 @@ class MainActivity : ComponentActivity() {
                 CanvasViewModel(current, GeometricShapeRecognizer(), container.clipboard, ToolState.from(settings.pens))
             }
             LaunchedEffect(vm, penWidths) { vm.setPenWidths(penWidths) }
+            vm.snapGrid = { settings.snapGrid }
             // The pen and its width are remembered for the next document and app start.
             LaunchedEffect(vm) {
                 vm.tools.collect { tools ->

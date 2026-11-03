@@ -4,6 +4,7 @@ import com.stemaker.nibsync.theme.NibSyncPalette
 import com.stemaker.nibsync.theme.ThemeMode
 import com.stemaker.nibsync.model.DocumentId
 import com.stemaker.nibsync.model.PenPreferences
+import com.stemaker.nibsync.model.SnapGrid
 import okio.FileSystem
 import okio.Path
 import java.util.Properties
@@ -70,6 +71,23 @@ class Settings(private val fs: FileSystem, private val file: Path) {
             save()
         }
 
+    /** The grid moved and new objects snap to. */
+    var snapGrid: SnapGrid
+        get() = SnapGrid.fromSetting(props.getProperty(SNAP_GRID))
+        set(value) {
+            props.setProperty(SNAP_GRID, value.toSetting())
+            save()
+        }
+
+    /** The zoom a document was last shown at on this PC, or null. */
+    fun zoom(id: DocumentId): Float? = props.getProperty(ZOOM_PREFIX + id.value)?.toFloatOrNull()
+
+    fun setZoom(id: DocumentId, zoom: Float) {
+        if (props.getProperty(ZOOM_PREFIX + id.value) == zoom.toString()) return
+        props.setProperty(ZOOM_PREFIX + id.value, zoom.toString())
+        save()
+    }
+
     private fun save() {
         file.parent?.let(fs::createDirectories)
         fs.write(file) { props.store(outputStream(), "NibSync") }
@@ -77,6 +95,8 @@ class Settings(private val fs: FileSystem, private val file: Path) {
 
     private companion object {
         const val LAST_DOCUMENT = "lastDocument"
+        const val ZOOM_PREFIX = "zoom."
+        const val SNAP_GRID = "snapGrid"
         const val LAST_BOOK_ACCOUNT = "lastBookAccount"
         const val SHOW_TITLE = "showTitle"
         const val THEME_MODE = "themeMode"

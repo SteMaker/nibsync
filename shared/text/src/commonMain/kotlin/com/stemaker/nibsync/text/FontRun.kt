@@ -1,6 +1,9 @@
 package com.stemaker.nibsync.text
 
+import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.TextLayoutResult
+import androidx.compose.ui.text.TextRange
 import com.mohamedrejeb.richeditor.annotation.ExperimentalRichTextApi
 import com.mohamedrejeb.richeditor.model.RichSpanStyle
 import com.mohamedrejeb.richeditor.model.RichTextConfig
@@ -29,6 +32,14 @@ internal class LinkRun(val style: MarkStyle) : RichSpanStyle {
 @OptIn(ExperimentalRichTextApi::class)
 internal class FontRun(val font: TextFont) : RichSpanStyle {
     override fun getSpanStyle(config: RichTextConfig): SpanStyle = SpanStyle(fontFamily = TextFonts.family(font))
+
+    /** Code is shaded as on the page; the editor shades it line by line. */
+    override fun DrawScope.drawCustomStyle(layoutResult: TextLayoutResult, textRange: TextRange, richTextConfig: RichTextConfig, topPadding: Float, startPadding: Float) {
+        if (font != TextFont.MONO) return
+        for (r in RichTextLayout.inlineRects(layoutResult, textRange.start, textRange.end)) {
+            with(RichTextPainter) { drawCode(r.translate(startPadding, topPadding)) }
+        }
+    }
 
     override fun equals(other: Any?): Boolean = other is FontRun && other.font == font
 

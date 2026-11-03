@@ -75,7 +75,9 @@ class TextBoxEditing(private val session: DocumentSession, private val ids: IdGe
     }
 
     private fun start(boxId: StrokeId?, x: Float, y: Float, widthMm: Float, text: RichText, slot: FlowSlot?) {
-        _editing.value = TextEditing(++key, boxId, x, y, widthMm, TextEditController.create(text), slot)
+        val box = boxId?.let { session.state.value.element(it) } as? TextBox
+        val listStart = box?.let { RichTextLayout.listStart(session.state.value, it) } ?: ListStart.NONE
+        _editing.value = TextEditing(++key, boxId, x, y, widthMm, TextEditController.create(text, listStart), slot)
     }
 
     // On the storage grid, so an unchanged box compares equal to what was loaded.

@@ -1,6 +1,8 @@
 package com.stemaker.nibsync.text
 
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.ParagraphStyle
+import androidx.compose.ui.text.style.LineHeightStyle
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
@@ -60,6 +62,19 @@ object TextMetrics {
         fontSize = RichText.DEFAULT_SIZE_PT.sp,
         color = TEXT_COLOR,
     )
+
+    /**
+     * A heading paragraph: its lines a little higher, the extra space below the text, and the
+     * first line's top trimmed, so the heading keeps its place and the gap shows after it. In
+     * points, as the paragraph's base size is that of normal text.
+     */
+    fun headingStyle(sizePt: Float) = ParagraphStyle(
+        lineHeight = (sizePt * (HEADING_LINE_EM + TextPreset.HEADING_GAP_EM)).sp,
+        lineHeightStyle = LineHeightStyle(LineHeightStyle.Alignment.Top, LineHeightStyle.Trim.FirstLineTop),
+    )
+
+    /** Line height of the embedded sans font, in units of its size. */
+    private const val HEADING_LINE_EM = 1.36f
 
     /** A density for a page shown at [pxPerMm]: one point becomes `pxPerMm * MM_PER_PT` pixels. */
     fun densityFor(pxPerMm: Float): Density = Density(density = pxPerMm * RichText.MM_PER_PT, fontScale = 1f)

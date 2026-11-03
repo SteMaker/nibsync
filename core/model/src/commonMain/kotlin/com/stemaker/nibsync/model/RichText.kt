@@ -22,10 +22,10 @@ data class RichText(val paragraphs: List<TextParagraph>) {
     val isBlank: Boolean get() = paragraphs.all { it.text.isBlank() }
 
     companion object {
-        const val DEFAULT_SIZE_PT = 12f
+        const val DEFAULT_SIZE_PT = 11f
 
         /** Sizes offered in the UI; any positive size is valid in files. */
-        val SIZES_PT = listOf(8f, 10f, 12f, 14f, 18f, 24f, 32f)
+        val SIZES_PT = listOf(8f, 9f, 10f, 11f, 12f, 13f, 14f, 16f, 18f, 22f, 24f, 32f)
 
         /** One millimetre per point: 1 pt = 1/72 inch. */
         const val MM_PER_PT = 25.4f / 72f

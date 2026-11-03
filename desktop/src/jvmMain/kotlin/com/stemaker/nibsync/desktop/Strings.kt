@@ -153,6 +153,13 @@ class Strings(private val german: Boolean = Locale.getDefault().language == "de"
         if (german) "NibSync ist auf einen Fehler gestoßen. Die Details stehen in $path" else "NibSync ran into an error. The details are in $path"
     val settingsDisplay = if (german) "Anzeige" else "Display"
     val settingsPens = if (german) "Stiftstärken" else "Pen widths"
+    val settingsGrid = if (german) "Raster" else "Grid"
+    val gridHint = if (german) "Verschobene Objekte und neue Textboxen rasten hier ein." else "Moved objects and new text boxes snap to it."
+    fun grid(grid: com.stemaker.nibsync.model.SnapGrid) = when (grid.mode) {
+        com.stemaker.nibsync.model.SnapGrid.Mode.OFF -> if (german) "Aus" else "Off"
+        com.stemaker.nibsync.model.SnapGrid.Mode.PAGE -> if (german) "Wie das Blatt" else "Like the page"
+        com.stemaker.nibsync.model.SnapGrid.Mode.FIXED -> com.stemaker.nibsync.model.PenWidths.format(grid.spacingMm).let { if (german) it.replace(".", ",") else it } + " mm"
+    }
     val penWidthsHint = if (german) "Feine, mittlere und breite Stärke in mm, wie rechts neben der Seite angeboten." else "Fine, medium and broad width in mm, as offered beside the page."
     val penWidthNames = if (german) listOf("Fein", "Mittel", "Breit") else listOf("Fine", "Medium", "Broad")
     val penWidthsReset = if (german) "Standardwerte" else "Reset to defaults"

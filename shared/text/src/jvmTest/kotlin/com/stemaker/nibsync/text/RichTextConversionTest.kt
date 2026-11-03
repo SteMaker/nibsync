@@ -17,7 +17,7 @@ class RichTextConversionTest {
         listOf(
             TextParagraph(
                 "Titel fett",
-                marks = listOf(TextMark(0, 10, MarkStyle.Size(18f)), TextMark(6, 10, MarkStyle.Bold)),
+                marks = listOf(TextMark(0, 10, MarkStyle.Size(16f)), TextMark(6, 10, MarkStyle.Bold)),
             ),
             TextParagraph("Erster Punkt", ListKind.BULLET),
             TextParagraph("Unterpunkt", ListKind.NUMBERED, indent = 1, marks = listOf(TextMark(0, 5, MarkStyle.Italic))),
@@ -215,7 +215,7 @@ class RichTextConversionTest {
         assertThat(controller.preset).isEqualTo(TextPreset.HEADING_1)
         assertThat(controller.text.paragraphs[0].marks).containsExactly(
             TextMark(0, 5, MarkStyle.Bold),
-            TextMark(0, 5, MarkStyle.Size(24f)),
+            TextMark(0, 5, MarkStyle.Size(22f)),
             TextMark(0, 5, MarkStyle.Font(TextFont.SANS)),
         )
         assertThat(controller.text.paragraphs[1].marks).containsExactly(TextMark(9, 15, MarkStyle.Italic))
@@ -227,13 +227,13 @@ class RichTextConversionTest {
         assertThat(p[1].marks).contains(TextMark(0, 15, MarkStyle.Font(TextFont.MONO)))
         assertThat(p[1].marks).contains(TextMark(9, 15, MarkStyle.Italic))
         assertThat(p[2].marks).contains(TextMark(0, 5, MarkStyle.Font(TextFont.MONO)))
-        assertThat(p[0].marks).contains(TextMark(0, 5, MarkStyle.Size(24f)))
+        assertThat(p[0].marks).contains(TextMark(0, 5, MarkStyle.Size(22f)))
 
         // Back to normal: no bold, the default size and font.
         controller.state.selection = TextRange(1)
         controller.applyPreset(TextPreset.NORMAL)
         assertThat(controller.preset).isEqualTo(TextPreset.NORMAL)
-        assertThat(controller.text.paragraphs[0].marks.map { it.style }).containsNoneOf(MarkStyle.Bold, MarkStyle.Size(24f))
+        assertThat(controller.text.paragraphs[0].marks.map { it.style }).containsNoneOf(MarkStyle.Bold, MarkStyle.Size(22f))
     }
 
     @Test
@@ -247,6 +247,6 @@ class RichTextConversionTest {
         controller.state.addTextAfterSelection("Punkt")
         val item = controller.text.paragraphs[1]
         assertThat(item.list).isEqualTo(ListKind.BULLET)
-        assertThat(item.marks.map { it.style }).containsNoneOf(MarkStyle.Bold, MarkStyle.Size(18f))
+        assertThat(item.marks.map { it.style }).containsNoneOf(MarkStyle.Bold, MarkStyle.Size(16f))
     }
 }

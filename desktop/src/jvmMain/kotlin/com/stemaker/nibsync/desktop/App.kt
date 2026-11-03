@@ -61,9 +61,14 @@ import com.stemaker.nibsync.text.DocumentHeader
 import com.stemaker.nibsync.text.DocumentHeaderState
 import com.stemaker.nibsync.text.endsTitleEditing
 import com.stemaker.nibsync.text.DocumentPath
+import com.stemaker.nibsync.text.RichTextLayout
 import com.stemaker.nibsync.library.TodoCollector
 import androidx.compose.runtime.mutableIntStateOf
 import kotlinx.coroutines.flow.debounce
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.drop
+import kotlinx.coroutines.flow.filter
+import kotlinx.coroutines.flow.map
 import com.stemaker.nibsync.model.DocumentId
 import com.stemaker.nibsync.sync.client.SyncController
 import java.io.File
@@ -107,6 +112,7 @@ fun App(
             var showTitle by remember { mutableStateOf(settings.showTitle) }
             var showCreated by remember { mutableStateOf(settings.showCreated) }
             var penWidths by remember { mutableStateOf(settings.pens.widths) }
+            var snapGrid by remember { mutableStateOf(settings.snapGrid) }
             val appScope = rememberCoroutineScope()
             val accounts = sync?.accounts?.collectAsState()?.value.orEmpty()
             val bookAccounts = sync?.books?.map?.collectAsState()?.value.orEmpty()
@@ -134,6 +140,8 @@ fun App(
                     onThemeMode = { themeMode = it; settings.themeMode = it },
                     palette = chosenPalette,
                     onPalette = { chosenPalette = it; settings.palette = it },
+                    snapGrid = snapGrid,
+                    onSnapGrid = { snapGrid = it; settings.snapGrid = it },
                 )
                 SettingsDialog(sync, display, strings, openBrowser, cloudLogin = cloudLogin, onClose = { showSettings = false })
             }
@@ -340,7 +348,10 @@ private fun DocumentPane(
     var message by remember(id) { mutableStateOf<String?>(null) }
     val controller = remember(s) {
         NoteController(s, textLayout::heightMm, GeometricShapeRecognizer(), clipboard, DesktopToolState.from(settings.pens)).apply {
-            linkAt = textLayout::linkAt
+            linkAt = { box, x, y -> textLayout.linkAt(box, x, y, RichTextLayout.listStart(s.state.value, box)) }
+            codeToCopyAt = { box, x, y -> textLayout.codeToCopyAt(box, x, y, RichTextLayout.listStart(s.state.value, box)) }
+            snapGrid = { settings.snapGrid }
+            copyText = { code -> java.awt.Toolkit.getDefaultToolkit().systemClipboard.setContents(java.awt.datatransfer.StringSelection(code), null) }
             openFile = { link -> if (!DesktopMedia.open(container.repository, id, link)) message = strings.mediaNotSynced }
             copyAssets = { from, to, assets -> DesktopMedia.copyAssets(container.repository, from, to, assets) }
         }
@@ -387,6 +398,11 @@ private fun DocumentPane(
     val canUndo by s.canUndo.collectAsState()
     val canRedo by s.canRedo.collectAsState()
     var viewport by remember(id) { mutableStateOf(initialViewport(doc.meta.format.widthMm, doc.meta.format.pageHeightMm)) }
+    // The zoom stays per document on this PC (not synced).
+    val savedZoom = remember(id) { settings.zoom(id) }
+    LaunchedEffect(id) {
+        snapshotFlow { viewport }.filter { it.hasSize }.map { it.zoom }.distinctUntilChanged().drop(1).debounce(ZOOM_SAVE_DELAY_MS).collect { settings.setZoom(id, it) }
+    }
     LaunchedEffect(revealYMm, viewport.hasSize) {
         if (revealYMm == null || !viewport.hasSize) return@LaunchedEffect
         viewport = viewport.withContentBottom(doc.contentBottomMm).copy(scrollYMm = maxOf(0f, revealYMm - REVEAL_MARGIN_MM)).clamped()
@@ -549,6 +565,7 @@ private fun DocumentPane(
                     doc,
                     painter,
                     viewport,
+                    initialZoom = savedZoom,
                     onViewportChange = { viewport = it },
                     hiddenTextBox = editing?.boxId,
                     controller = controller,
@@ -623,6 +640,9 @@ class HeaderInfo(
 
 /** Space above a to-do revealed from the list. */
 private const val REVEAL_MARGIN_MM = 15f
+
+/** The zoom is stored once it has stayed this long (ms). */
+private const val ZOOM_SAVE_DELAY_MS = 500L
 
 /** Edits are collected this long before the to-do list is rebuilt. */
 private const val TODO_REFRESH_MS = 800L

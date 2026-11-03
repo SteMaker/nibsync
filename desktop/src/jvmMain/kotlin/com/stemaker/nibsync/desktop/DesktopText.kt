@@ -8,6 +8,7 @@ import androidx.compose.ui.unit.LayoutDirection
 import com.stemaker.nibsync.model.RichText
 import com.stemaker.nibsync.model.StrokeId
 import com.stemaker.nibsync.model.TextBox
+import com.stemaker.nibsync.text.ListStart
 import com.stemaker.nibsync.text.RichTextLayout
 import com.stemaker.nibsync.text.TextMetrics
 import kotlin.math.ceil
@@ -20,10 +21,10 @@ import kotlin.math.roundToInt
 class DesktopTextLayout {
     private val density = TextMetrics.densityFor(LAYOUT_PX_PER_MM)
     private val measurer = TextMeasurer(createFontFamilyResolver(), density, LayoutDirection.Ltr, cacheSize = 0)
-    private val cache = HashMap<StrokeId, Pair<TextBox, TextLayoutResult>>()
+    private val cache = HashMap<StrokeId, Triple<TextBox, ListStart, TextLayoutResult>>()
 
-    fun layout(text: RichText, widthMm: Float): TextLayoutResult {
-        val annotated = RichTextLayout.annotated(text) { prefix -> measurer.measure(prefix, TextMetrics.baseStyle).size.width / density.density }
+    fun layout(text: RichText, widthMm: Float, start: ListStart = ListStart.NONE): TextLayoutResult {
+        val annotated = RichTextLayout.annotated(text, start) { prefix -> measurer.measure(prefix, TextMetrics.baseStyle).size.width / density.density }
         val width = (widthMm * LAYOUT_PX_PER_MM).roundToInt().coerceAtLeast(1)
         // A fixed width, like the editor: with only a maximum width, Compose on the desktop
         // wraps indented (list) paragraphs far too early.
@@ -35,12 +36,17 @@ class DesktopTextLayout {
         ceil(layout(text, widthMm).size.height / LAYOUT_PX_PER_MM * 100f) / 100f
 
     /** The anchor or link in [box] at ([x], [y]) mm, or null. */
-    fun linkAt(box: TextBox, x: Float, y: Float): com.stemaker.nibsync.model.MarkStyle? =
-        com.stemaker.nibsync.text.RichTextLayout.linkAt(box.text, layoutOf(box), (x - box.x) * LAYOUT_PX_PER_MM, (y - box.y) * LAYOUT_PX_PER_MM)
+    fun linkAt(box: TextBox, x: Float, y: Float, start: ListStart = ListStart.NONE): com.stemaker.nibsync.model.MarkStyle? =
+        RichTextLayout.linkAt(box.text, layoutOf(box, start), (x - box.x) * LAYOUT_PX_PER_MM, (y - box.y) * LAYOUT_PX_PER_MM, start)
 
-    fun layoutOf(box: TextBox): TextLayoutResult {
-        cache[box.id]?.let { (cached, result) -> if (cached == box) return result }
-        return layout(box.text, box.widthMm).also { cache[box.id] = box to it }
+    /** The code of a code block in [box] whose copy symbol is at ([x], [y]) mm, or null. */
+    fun codeToCopyAt(box: TextBox, x: Float, y: Float, start: ListStart = ListStart.NONE): String? =
+        RichTextLayout.codeToCopyAt(box.text, layoutOf(box, start), (x - box.x) * LAYOUT_PX_PER_MM, (y - box.y) * LAYOUT_PX_PER_MM, start)
+
+    /** [box] laid out, its lists going on from [start]; cached per box. */
+    fun layoutOf(box: TextBox, start: ListStart = ListStart.NONE): TextLayoutResult {
+        cache[box.id]?.let { (cached, s, result) -> if (cached == box && s == start) return result }
+        return layout(box.text, box.widthMm, start).also { cache[box.id] = Triple(box, start, it) }
     }
 
     private val todoCache = HashMap<StrokeId, Triple<RichText, Float, TextLayoutResult>>()

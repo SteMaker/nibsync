@@ -39,6 +39,12 @@ object TableText {
         return if (table.header && area.row == 0) bold(text) else text
     }
 
+    /** An editor for a cell's text; in an empty header cell typing starts bold. */
+    fun editor(table: TableElement, area: TableGeometry.Area): TextEditController {
+        val text = shown(table, area)
+        return TextEditController.create(text).also { if (table.header && area.row == 0 && text.isBlank && !it.isBold) it.toggleBold() }
+    }
+
     private fun bold(text: RichText) = RichText(
         text.paragraphs.map { p ->
             if (p.text.isEmpty() || p.marks.any { it.style == MarkStyle.Bold && it.start == 0 && it.end == p.text.length }) p
@@ -118,7 +124,7 @@ class TableEditing(private val session: DocumentSession, private val ids: IdGene
         save()
         val area = table.geometry.areaOf(cell) ?: return
         val anchor = table.geometry.key(area)
-        _editing.value = TableEdit(++key, table.tableId, anchor, TextEditController.create(TableText.shown(table, area)))
+        _editing.value = TableEdit(++key, table.tableId, anchor, TableText.editor(table, area))
     }
 
     /** Stores the edited cell if it changed. Called while typing, when leaving the cell and when done. */
@@ -315,7 +321,7 @@ class TableEditing(private val session: DocumentSession, private val ids: IdGene
     private fun reopen(table: TableElement, cell: CellKey) {
         val area = table.geometry.areaOf(cell) ?: return
         val anchor = table.geometry.key(area)
-        _editing.value = TableEdit(++key, table.tableId, anchor, TextEditController.create(TableText.shown(table, area)))
+        _editing.value = TableEdit(++key, table.tableId, anchor, TableText.editor(table, area))
     }
 
     /** Cells whose height changes in [table] (other width or header style), measured anew. */

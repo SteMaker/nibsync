@@ -49,6 +49,15 @@ class TableEditingTest {
     }
 
     @Test
+    fun typingInAHeaderCellIsBoldOthersAreNot() {
+        val (_, t) = editing()
+        t.insert(20f, 30f, rows = 2, columns = 2, header = true, pageWidthMm = 210f)
+        assertThat(t.editing.value!!.controller.isBold).isTrue()
+        t.move(CellMove.DOWN)
+        assertThat(t.editing.value!!.controller.isBold).isFalse()
+    }
+
+    @Test
     fun rowsAndColumnsAreInsertedAndDeletedAroundTheCell() {
         val (s, t) = editing()
         t.insert(20f, 30f, rows = 2, columns = 2, header = true, pageWidthMm = 210f)

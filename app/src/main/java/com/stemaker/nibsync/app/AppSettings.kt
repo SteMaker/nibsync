@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.core.content.edit
 import com.stemaker.nibsync.model.DocumentId
 import com.stemaker.nibsync.model.PenPreferences
+import com.stemaker.nibsync.model.SnapGrid
 import com.stemaker.nibsync.theme.NibSyncPalette
 import com.stemaker.nibsync.theme.ThemeMode
 
@@ -56,7 +57,13 @@ class AppSettings(context: Context) {
         get() = NibSyncPalette.of(prefs.getString(KEY_PALETTE, null))
         set(value) = prefs.edit { putString(KEY_PALETTE, value.name) }
 
+    /** The grid moved objects and new text boxes snap to. */
+    var snapGrid: SnapGrid
+        get() = SnapGrid.fromSetting(prefs.getString(KEY_SNAP_GRID, null))
+        set(value) = prefs.edit { putString(KEY_SNAP_GRID, value.toSetting()) }
+
     private companion object {
+        const val KEY_SNAP_GRID = "snapGrid"
         const val KEY_THEME_MODE = "themeMode"
         const val KEY_PALETTE = "palette"
         const val KEY_LAST_BOOK_ACCOUNT = "lastBookAccount"

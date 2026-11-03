@@ -26,13 +26,13 @@ class NoteControllerTest {
         assertThat(e.boxId).isNull()
         assertThat(e.x).isEqualTo(30f)
         assertThat(e.y).isEqualTo(37.5f)
-        assertThat(e.widthMm).isEqualTo(120f)
-        // Further right the box ends at the margin.
+        // Up to the right margin.
+        assertThat(e.widthMm).isEqualTo(165f)
         c.clickAt(150f, 40f, pageWidthMm = 210f)
-        assertThat(c.text.editing.value!!.widthMm).isEqualTo(55f)
+        assertThat(c.text.editing.value!!.widthMm).isEqualTo(45f)
         // At the edge it moves left instead of getting too narrow.
         c.clickAt(200f, 40f, pageWidthMm = 210f)
-        assertThat(c.text.editing.value!!.x).isEqualTo(175f)
+        assertThat(c.text.editing.value!!.x).isEqualTo(165f)
         assertThat(c.text.editing.value!!.widthMm).isEqualTo(30f)
     }
 

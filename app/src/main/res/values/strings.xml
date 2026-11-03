@@ -49,6 +49,11 @@
     <string name="remove_account_text">Its books stay on this device but are no longer synced. Nothing changes on the server or on other devices.</string>
     <string name="show_title">Document title at the top of the page</string>
     <string name="show_created">Date and time created below it</string>
+    <string name="settings_grid">Grid</string>
+    <string name="grid_hint">Moved objects and new text boxes snap to it.</string>
+    <string name="grid_off">Off</string>
+    <string name="grid_page">Like the page</string>
+    <string name="grid_mm">%1$.1f mm</string>
     <string name="settings_pens">Pen widths</string>
     <string name="pen_widths_hint">Fine, medium and broad width in mm, as offered in the tool bar.</string>
     <string name="pen_widths_ballpoint">Ballpoint pen</string>

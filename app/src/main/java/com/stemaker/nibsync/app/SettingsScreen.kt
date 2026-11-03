@@ -1,5 +1,9 @@
 package com.stemaker.nibsync.app
 
+import com.stemaker.nibsync.model.SnapGrid
+import androidx.compose.material3.SingleChoiceSegmentedButtonRow
+import androidx.compose.material3.SegmentedButtonDefaults
+import androidx.compose.material3.SegmentedButton
 import com.stemaker.nibsync.theme.AppearanceSettings
 import com.stemaker.nibsync.theme.NibSyncPalette
 import com.stemaker.nibsync.theme.ThemeMode
@@ -58,6 +62,7 @@ object SettingsTags {
     const val SHOW_CREATED = "settings-show-created"
     fun penWidth(family: BrushFamily, index: Int) = "settings-pen-width-${family.name}-$index"
     const val PEN_WIDTHS_RESET = "settings-pen-widths-reset"
+    fun grid(grid: SnapGrid) = "settings-grid-${grid.toSetting()}"
 }
 
 /** App settings, grouped in sections; new settings get their own section or line here. */
@@ -80,6 +85,8 @@ fun SettingsScreen(
     onPalette: (NibSyncPalette) -> Unit,
     penWidths: Map<BrushFamily, List<Float>>,
     onPenWidths: (Map<BrushFamily, List<Float>>) -> Unit,
+    snapGrid: SnapGrid,
+    onSnapGrid: (SnapGrid) -> Unit,
     onClose: () -> Unit,
 ) {
     Dialog(onDismissRequest = onClose, properties = DialogProperties(usePlatformDefaultWidth = false)) {
@@ -120,8 +127,36 @@ fun SettingsScreen(
                         SwitchLine(stringResource(R.string.show_created), showCreated, onShowCreated, SettingsTags.SHOW_CREATED)
                     }
                     HorizontalDivider()
+                    Section(stringResource(R.string.settings_grid)) { SnapGridSettings(snapGrid, onSnapGrid) }
+                    HorizontalDivider()
                     Section(stringResource(R.string.settings_pens)) { PenWidthSettings(penWidths, onPenWidths) }
                 }
+            }
+        }
+    }
+}
+
+/** Off, the page's own lines and dots, or a fixed grid size. */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun SnapGridSettings(grid: SnapGrid, onChange: (SnapGrid) -> Unit) {
+    Text(stringResource(R.string.grid_hint), style = MaterialTheme.typography.bodyMedium)
+    val choices = listOf(SnapGrid(SnapGrid.Mode.OFF), SnapGrid()) + SnapGrid.FIXED_SIZES_MM.map { SnapGrid(SnapGrid.Mode.FIXED, it) }
+    SingleChoiceSegmentedButtonRow {
+        choices.forEachIndexed { i, choice ->
+            SegmentedButton(
+                selected = choice.toSetting() == grid.toSetting(),
+                onClick = { onChange(choice) },
+                shape = SegmentedButtonDefaults.itemShape(i, choices.size),
+                modifier = Modifier.testTag(SettingsTags.grid(choice)),
+            ) {
+                Text(
+                    when (choice.mode) {
+                        SnapGrid.Mode.OFF -> stringResource(R.string.grid_off)
+                        SnapGrid.Mode.PAGE -> stringResource(R.string.grid_page)
+                        SnapGrid.Mode.FIXED -> stringResource(R.string.grid_mm, choice.spacingMm)
+                    },
+                )
             }
         }
     }

@@ -40,6 +40,7 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.input.pointer.pointerHoverIcon
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.unit.IntOffset
 import com.stemaker.nibsync.model.geometry.Viewport
@@ -48,6 +49,10 @@ import com.stemaker.nibsync.text.TextEditing
 import com.stemaker.nibsync.text.TextFormatActions
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.drop
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.filter
+import kotlinx.coroutines.flow.filterNotNull
+import kotlinx.coroutines.flow.map
 import kotlin.math.roundToInt
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -213,6 +218,13 @@ fun NoteScreen(
     val tableEditing by viewModel.tableEditing.collectAsStateWithLifecycle()
     var choosingTableSize by remember { mutableStateOf(false) }
     var viewport by remember { mutableStateOf<Viewport?>(null) }
+    // The zoom stays per document on this device (not synced).
+    val zoomContext = androidx.compose.ui.platform.LocalContext.current
+    LaunchedEffect(document.meta.id) {
+        val store = ZoomStore(zoomContext)
+        snapshotFlow { viewport }.filterNotNull().filter { it.hasSize }.map { it.zoom }.distinctUntilChanged().drop(1)
+            .debounce(ZOOM_SAVE_DELAY_MS).collect { store.setZoom(document.meta.id, it) }
+    }
     val doneTasks = remember(document) { document.todos.filter { document.isDone(it.taskId) }.mapTo(HashSet()) { it.taskId } }
 
     // Store a typed to-do while typing, too.
@@ -352,6 +364,7 @@ fun NoteScreen(
                     modifier = Modifier.fillMaxSize().testTag(NoteScreenTags.CANVAS),
                     factory = { context ->
                         NoteCanvasView(context).also {
+                            it.initialZoom = ZoomStore(context).zoom(document.meta.id)
                             it.onTextFrame = { x, y, width -> viewModel.requestText(x, y, width, it.viewport.pageWidthMm) }
                             it.onPageTapped = viewModel::tapAt
                             it.onPageLongPressed = viewModel::longPressAt
@@ -360,12 +373,19 @@ fun NoteScreen(
                             it.onViewportChanged = { v -> viewport = v }
                             viewModel.measureText = it.textRenderer::heightMm
                             viewModel.linkAt = it.textRenderer::linkAt
+                            viewModel.codeToCopyAt = it.textRenderer::codeToCopyAt
+                            viewModel.copyText = { code ->
+                                val clipboard = it.context.getSystemService(android.content.ClipboardManager::class.java)
+                                clipboard.setPrimaryClip(android.content.ClipData.newPlainText("code", code))
+                            }
+                            it.textRenderer.listStart = viewModel::listStart
                             it.onStrokeDrafted = viewModel::commitStroke
                             it.onShapeRequested = viewModel::commitShape
                             it.onEraseFinished = viewModel::commitErase
                             it.onLassoFinished = viewModel::selectByLasso
                             it.onSelectionMoved = viewModel::moveSelection
                             it.dropFor = viewModel::dropFor
+                            it.snapMove = viewModel::snapMove
                             it.onSelectionCleared = viewModel::clearSelection
                             it.onTodoChecked = viewModel::toggleTodo
                             it.onTodoInk = viewModel::commitTodoInk
@@ -1181,6 +1201,8 @@ private fun TableCellOverlay(
                 .size(24.dp, 22.dp)
                 .background(accent, RoundedCornerShape(6.dp))
                 .testTag(NoteScreenTags.columnHandle(i))
+                // A pen or mouse hovering it shows that it drags sideways.
+                .pointerHoverIcon(androidx.compose.ui.input.pointer.PointerIcon(android.view.PointerIcon.TYPE_HORIZONTAL_DOUBLE_ARROW))
                 .pointerInput(table.id, i) {
                     detectHorizontalDragGestures(
                         onDragEnd = {

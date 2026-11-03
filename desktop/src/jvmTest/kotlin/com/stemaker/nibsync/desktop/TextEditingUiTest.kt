@@ -126,7 +126,7 @@ class TextEditingUiTest {
         waitUntil(timeoutMillis = 5000) { onAllNodesWithTag(TextTags.EDITOR).fetchSemanticsNodes().isNotEmpty() }
         val editor = onNodeWithTag(TextTags.EDITOR)
         editor.performTextInput("klein gross")
-        // "gross" two steps larger (12 -> 14 -> 18 pt), "klein" one step smaller (10 pt).
+        // "gross" two steps larger (11 -> 12 -> 13 pt), "klein" one step smaller (10 pt).
         editor.performTextInputSelection(TextRange(6, 11))
         onNodeWithTag(TextTags.GROW).performScrollTo().performClick()
         onNodeWithTag(TextTags.GROW).performScrollTo().performClick()
@@ -137,7 +137,7 @@ class TextEditingUiTest {
         waitUntil(timeoutMillis = 5000) { onAllNodesWithTag(TextTags.EDITOR).fetchSemanticsNodes().isEmpty() }
 
         val marks = session.state.value.textBoxes.single().text.paragraphs.single().marks
-        assertThat(marks).contains(TextMark(6, 11, MarkStyle.Size(18f)))
+        assertThat(marks).contains(TextMark(6, 11, MarkStyle.Size(13f)))
         assertThat(marks).contains(TextMark(0, 5, MarkStyle.Size(10f)))
         runBlocking { container.closeAll() }
     }
@@ -225,7 +225,7 @@ class TextEditingUiTest {
 
         val p = session.state.value.textBoxes.single().text.paragraphs
         assertThat(p.map { it.text }).containsExactly("Titel", "Punkt", "weiter", "Zwei").inOrder()
-        assertThat(p[0].marks).containsAtLeast(TextMark(0, 5, MarkStyle.Bold), TextMark(0, 5, MarkStyle.Size(18f)))
+        assertThat(p[0].marks).containsAtLeast(TextMark(0, 5, MarkStyle.Bold), TextMark(0, 5, MarkStyle.Size(16f)))
         assertThat(p.map { it.list }).containsExactly(ListKind.NONE, ListKind.BULLET, ListKind.BULLET, ListKind.BULLET).inOrder()
         assertThat(p.map { it.continued }).containsExactly(false, false, true, false).inOrder()
         assertThat(p[1].marks.map { it.style }).doesNotContain(MarkStyle.Bold)

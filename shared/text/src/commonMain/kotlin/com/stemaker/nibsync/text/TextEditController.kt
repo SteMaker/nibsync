@@ -6,11 +6,13 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.remember
+import androidx.compose.ui.text.ParagraphStyle
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.TextUnitType
+import androidx.compose.ui.unit.isSpecified
 import androidx.compose.ui.unit.sp
 import com.mohamedrejeb.richeditor.annotation.ExperimentalRichTextApi
 import com.mohamedrejeb.richeditor.model.RichTextState
@@ -81,6 +83,47 @@ class TextEditController internal constructor(internal val state: RichTextState)
             state.addRichSpan(FontRun(preset.font))
         }
         if (touched.singleOrNull()?.let { it.first == it.second } != true) state.selection = selection
+        restyleHeadings()
+    }
+
+    /**
+     * Gives heading paragraphs ([TextPreset.isHeading]) the space below them that the page shows,
+     * and takes it from all others. The editor keeps paragraph styles itself, so this runs
+     * whenever headings can have changed: new content, a preset, Enter after a heading.
+     */
+    internal fun restyleHeadings() {
+        val paragraphs = text.paragraphs
+        val ranges = textRanges()
+        if (ranges.size != paragraphs.size) return
+        val selection = state.selection
+        val pending = state.currentSpanStyle
+        val pendingRich = state.currentRichSpanStyle
+        var changed = false
+        paragraphs.forEachIndexed { i, p ->
+            val (start, end) = ranges[i]
+            val current = state.getParagraphStyle(TextRange(start, end))
+            val heading = TextPreset.headingSizePt(p)?.let(TextMetrics::headingStyle)
+            if (heading != null && current.lineHeight == heading.lineHeight) return@forEachIndexed
+            if (heading == null && !current.lineHeight.isSpecified) return@forEachIndexed
+            state.selection = TextRange(start, end)
+            if (current.lineHeight.isSpecified) {
+                state.removeParagraphStyle(ParagraphStyle(lineHeight = current.lineHeight, lineHeightStyle = current.lineHeightStyle))
+            }
+            if (heading != null) state.addParagraphStyle(heading)
+            changed = true
+        }
+        if (!changed) return
+        state.selection = selection
+        if (selection.collapsed) restoreTypingStyle(pending, pendingRich)
+    }
+
+    /** Sets the style for typing at the cursor back to [span] and [rich]. */
+    private fun restoreTypingStyle(span: SpanStyle, rich: com.mohamedrejeb.richeditor.model.RichSpanStyle) {
+        state.addSpanStyle(span)
+        if (rich is FontRun) state.addRichSpan(rich)
+        // Adding cannot take away bold or italics the editor took over from the text before.
+        if (isBold != (span.fontWeight == FontWeight.Bold)) toggleBold()
+        if (isItalic != (span.fontStyle == FontStyle.Italic)) toggleItalic()
     }
 
     fun toggleBulletList() = keepingPendingStyle { state.toggleUnorderedList() }
@@ -98,13 +141,7 @@ class TextEditController internal constructor(internal val state: RichTextState)
         val rich = state.currentRichSpanStyle
         change()
         if (!collapsed) return
-        pendingStyle = {
-            state.addSpanStyle(span)
-            if (rich is FontRun) state.addRichSpan(rich)
-            // Adding cannot take away bold or italics the editor took over from the text before.
-            if (isBold != (span.fontWeight == FontWeight.Bold)) toggleBold()
-            if (isItalic != (span.fontStyle == FontStyle.Italic)) toggleItalic()
-        }
+        pendingStyle = { restoreTypingStyle(span, rich) }
         pendingStyle?.invoke()
         // The text field moves the cursor behind the new list prefix a frame later, which
         // drops the style again; TextBoxEditor calls [reapplyPendingStyle] after that.
@@ -122,9 +159,13 @@ class TextEditController internal constructor(internal val state: RichTextState)
         pendingStyle = null
     }
 
+    /** Numbers the lists go on with, from text above in the same flow. */
+    private var listStart = ListStart.NONE
+
     /** Replaces the whole content (the editor's own undo history starts over). */
     fun setContent(text: RichText) {
-        state.setRichTextDocument(RichTextConversion.toDocument(text))
+        state.setRichTextDocument(RichTextConversion.toDocument(text, listStart))
+        restyleHeadings()
     }
 
     /**
@@ -187,6 +228,10 @@ class TextEditController internal constructor(internal val state: RichTextState)
         val (index, offset) = paragraphAt(state.selection.start) ?: return false
         val content = text
         val p = content.paragraphs.getOrNull(index) ?: return false
+        if (!soft && offset >= p.text.length && TextPreset.isHeading(p)) {
+            afterHeading(content, index)
+            return true
+        }
         if (if (soft) p.list == ListKind.NONE else !p.continued) return false
         val span = state.currentSpanStyle
         val rich = state.currentRichSpanStyle
@@ -206,6 +251,15 @@ class TextEditController internal constructor(internal val state: RichTextState)
         state.addSpanStyle(span)
         if (rich is FontRun) state.addRichSpan(rich)
         return true
+    }
+
+    /** Enter at the end of heading [index]: a new paragraph below it, in normal text. */
+    private fun afterHeading(content: RichText, index: Int) {
+        val paragraphs = content.paragraphs.toMutableList()
+        paragraphs.add(index + 1, TextParagraph(""))
+        setContent(RichText(paragraphs))
+        state.selection = TextRange(textStart(index + 1) ?: return)
+        applyPreset(TextPreset.NORMAL)
     }
 
     /** Puts [text] with the anchor or link [style] at the cursor, replacing a selection. */
@@ -276,12 +330,16 @@ class TextEditController internal constructor(internal val state: RichTextState)
     companion object {
         private val LIST_MARKER = Regex("\\S+ ")
 
-        fun create(initial: RichText): TextEditController {
+        /** An editor for [initial], its numbered lists going on from [listStart]. */
+        fun create(initial: RichText, listStart: ListStart = ListStart.NONE): TextEditController {
             val state = RichTextState()
             // Lists as the page renderer draws them (RichTextLayout).
             state.config.listIndent = TextMetrics.LIST_INDENT_PT
             state.config.orderedListStyleType = OrderedListStyleType.Decimal
-            return TextEditController(state).also { it.setContent(initial) }
+            return TextEditController(state).also {
+                it.listStart = listStart
+                it.setContent(initial)
+            }
         }
     }
 }
