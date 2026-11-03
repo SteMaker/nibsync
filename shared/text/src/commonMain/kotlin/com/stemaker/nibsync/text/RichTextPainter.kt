@@ -20,23 +20,44 @@ object RichTextPainter {
             if (area.text != null) drawCopySymbol(RichTextLayout.copyButton(area, layout))
         }
         for ((task, r) in RichTextLayout.taskBoxes(text, layout, start)) drawCheckBox(r, done(task.taskId))
+        for (r in RichTextLayout.anchorBoxes(text, layout, start)) drawAnchorFlag(r)
         drawText(layout)
     }
 
-    /** A to-do's check box, ticked if [done]. */
+    /** A to-do's check circle, as on a to-do on its own: a red ring, or green with a tick when [done]. */
     internal fun DrawScope.drawCheckBox(r: Rect, done: Boolean) {
-        val s = r.width
-        drawRoundRect(TextMetrics.TEXT_COLOR, Offset(r.left, r.top), r.size, CornerRadius(s * 0.18f), style = Stroke(width = s * 0.1f))
+        val center = Offset((r.left + r.right) / 2, (r.top + r.bottom) / 2)
+        val rim = r.width * 0.16f
+        val radius = r.width / 2 - rim / 2
         if (done) {
+            drawCircle(DONE_COLOR, radius + rim / 2, center)
             val tick = androidx.compose.ui.graphics.Path().apply {
-                moveTo(r.left + s * 0.2f, r.top + s * 0.52f)
-                lineTo(r.left + s * 0.42f, r.top + s * 0.74f)
-                lineTo(r.left + s * 0.82f, r.top + s * 0.26f)
+                moveTo(center.x - radius * 0.5f, center.y + radius * 0.02f)
+                lineTo(center.x - radius * 0.12f, center.y + radius * 0.42f)
+                lineTo(center.x + radius * 0.55f, center.y - radius * 0.38f)
             }
-            drawPath(tick, DONE_COLOR, style = Stroke(width = s * 0.14f))
+            drawPath(tick, androidx.compose.ui.graphics.Color.White, style = Stroke(width = rim * 0.9f, cap = androidx.compose.ui.graphics.StrokeCap.Round, join = androidx.compose.ui.graphics.StrokeJoin.Round))
+        } else {
+            drawCircle(OPEN_COLOR, radius, center, style = Stroke(width = rim))
         }
     }
 
+    /** An anchor in text: a small flag on a pole, like an anchor on the page, over its sign [r]. */
+    internal fun DrawScope.drawAnchorFlag(r: Rect) {
+        val h = r.height * 0.8f
+        val top = r.top + (r.height - h) / 2
+        val pole = r.left + r.width * 0.3f
+        drawLine(RichTextLayout.ANCHOR_COLOR, Offset(pole, top), Offset(pole, top + h), strokeWidth = h * 0.09f)
+        val flag = androidx.compose.ui.graphics.Path().apply {
+            moveTo(pole, top)
+            lineTo(pole + h * 0.5f, top + h * 0.2f)
+            lineTo(pole, top + h * 0.42f)
+            close()
+        }
+        drawPath(flag, RichTextLayout.ANCHOR_COLOR)
+    }
+
+    private val OPEN_COLOR = androidx.compose.ui.graphics.Color(0xffd32f2f)
     private val DONE_COLOR = androidx.compose.ui.graphics.Color(0xff2e7d32)
 
     internal fun DrawScope.drawCode(r: Rect) {

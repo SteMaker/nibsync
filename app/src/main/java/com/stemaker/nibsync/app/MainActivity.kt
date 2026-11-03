@@ -390,7 +390,10 @@ class MainActivity : ComponentActivity() {
                                 showCreated = showCreated,
                                 onRename = node?.let { n -> { title: String -> scope.launch { container.library.rename(n.id, title) }; Unit } },
                             )
-                            DocumentPane(docId, documentTitle, openLibrary, showPageBreaks, drawWithFinger, header, penWidths)
+                            // A fresh page view per document, so it starts at that document's zoom.
+                            androidx.compose.runtime.key(docId) {
+                                DocumentPane(docId, documentTitle, openLibrary, showPageBreaks, drawWithFinger, header, penWidths)
+                            }
                         }
                     }
                 }

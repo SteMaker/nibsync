@@ -579,6 +579,9 @@ class NoteCanvasView(context: Context) : FrameLayout(context) {
                 drawTextBoxes(this, visible, moving)
                 drawTables(this, visible, moving)
             }
+            // Floating pictures, files and tables lie over everything but to-dos.
+            drawFiles(this, null, visible, moving, floating = true)
+            drawTables(this, visible, moving, floating = true)
             drawTodos(this, visible, moving)
         }
         textFrame?.let { f ->
@@ -609,9 +612,10 @@ class NoteCanvasView(context: Context) : FrameLayout(context) {
         }
     }
 
-    private fun drawFiles(canvas: Canvas, layer: Layer, visible: com.stemaker.nibsync.model.geometry.Rect, moving: Boolean) {
+    /** Files of [layer] (any if null), the [floating] ones or those in text. */
+    private fun drawFiles(canvas: Canvas, layer: Layer?, visible: com.stemaker.nibsync.model.geometry.Rect, moving: Boolean, floating: Boolean = false) {
         for (f in files) {
-            if (f.layer != layer) continue
+            if ((layer != null && f.layer != layer) || f.slot.floating != floating) continue
             val selected = f.id in selection
             when {
                 moving && selected -> canvas.withTranslation(moveDx, moveDy) { mediaRenderer.draw(this, f, viewport.scale) }
@@ -641,8 +645,9 @@ class NoteCanvasView(context: Context) : FrameLayout(context) {
         }
     }
 
-    private fun drawTables(canvas: Canvas, visible: com.stemaker.nibsync.model.geometry.Rect, moving: Boolean) {
+    private fun drawTables(canvas: Canvas, visible: com.stemaker.nibsync.model.geometry.Rect, moving: Boolean, floating: Boolean = false) {
         for (table in tables) {
+            if (table.slot.floating != floating) continue
             val hidden = editingTableCell?.takeIf { it.first == table.tableId }?.second
             if (moving && table.id in selection) {
                 canvas.withTranslation(moveDx, moveDy) { tableRenderer.draw(this, table, hidden) }

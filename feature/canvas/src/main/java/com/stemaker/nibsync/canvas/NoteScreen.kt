@@ -236,6 +236,12 @@ fun NoteScreen(
         snapshotFlow { viewport }.filterNotNull().filter { it.hasSize }.map { it.zoom }.distinctUntilChanged().drop(1)
             .debounce(ZOOM_SAVE_DELAY_MS).collect { store.setZoom(document.meta.id, it) }
     }
+    // Leaving the document right after zooming: kept too.
+    val lastViewport by rememberUpdatedState(viewport)
+    val zoomDocument = document.meta.id
+    androidx.compose.runtime.DisposableEffect(zoomDocument) {
+        onDispose { lastViewport?.takeIf { it.hasSize }?.let { ZoomStore(zoomContext).setZoom(zoomDocument, it.zoom) } }
+    }
     val doneTasks = remember(document) { document.todos.filter { document.isDone(it.taskId) }.mapTo(HashSet()) { it.taskId } }
 
     // Store a typed to-do while typing, too.
@@ -342,6 +348,9 @@ fun NoteScreen(
             onTextDone = viewModel::doneText,
             inkTodoOpen = todoEditing?.isInk == true,
             onDeleteTodo = viewModel::deleteTodo,
+            onInsertTodoHere = viewModel::insertTodoHere,
+            openBlockFloating = if (tableEditing != null || todoEditing != null) viewModel.openBlockFloating() else null,
+            onToggleOpenBlock = viewModel::toggleOpenBlockFloating,
         )
         // With the on-screen keyboard up, the cursor of the edited text is kept visible: the
         // window either gets smaller, or (edge-to-edge) the keyboard covers the lower part of
@@ -676,6 +685,17 @@ private fun BoxFrameOverlay(
     }
 }
 
+/** The open table or to-do: into the text if it [floating]s, else out of it to float. */
+@Composable
+private fun FloatingToggle(floating: Boolean, onToggle: () -> Unit) {
+    val label = stringResource(if (floating) R.string.into_text else R.string.float_free)
+    WithTooltip(label) {
+        IconButton(onClick = onToggle, modifier = Modifier.testTag(if (floating) NoteScreenTags.INTO_TEXT else NoteScreenTags.FLOAT)) {
+            Icon(if (floating) Icons.AutoMirrored.Filled.WrapText else Icons.Filled.Layers, contentDescription = label)
+        }
+    }
+}
+
 /** Idle time after typing before the text box is stored. */
 private const val TEXT_SAVE_DELAY_MS = 1500L
 
@@ -713,6 +733,10 @@ private fun Toolbar(
     onTextDone: () -> Unit,
     inkTodoOpen: Boolean,
     onDeleteTodo: () -> Unit,
+    onInsertTodoHere: () -> Unit = {},
+    /** The open table or to-do: floating (true), in text (false) or none (null), and the switch. */
+    openBlockFloating: Boolean? = null,
+    onToggleOpenBlock: () -> Unit = {},
 ) {
     Surface(tonalElevation = 3.dp, modifier = Modifier.fillMaxWidth().testTag(NoteScreenTags.TOOLBAR)) {
         // Tools stay in place; only the middle part (options of the active tool, text
@@ -732,11 +756,12 @@ private fun Toolbar(
                 }
                 Divider()
                 ScrollingRow(Modifier.weight(1f)) {
+                    if (openBlockFloating != null) FloatingToggle(openBlockFloating, onToggleOpenBlock)
                     // A to-do at the cursor: a paragraph with a check box, in text and in table cells.
                     if (table != null || textBoxOpen) {
                         val todoLabel = stringResource(R.string.insert_todo_here)
                         WithTooltip(todoLabel) {
-                            IconButton(onClick = { textEditing.insertTask(com.stemaker.nibsync.model.IdGenerator().newStrokeId()) }, modifier = Modifier.testTag(NoteScreenTags.INSERT_TODO_HERE)) {
+                            IconButton(onClick = onInsertTodoHere, modifier = Modifier.testTag(NoteScreenTags.INSERT_TODO_HERE)) {
                                 Icon(Icons.Filled.CheckBox, contentDescription = todoLabel)
                             }
                         }
@@ -888,6 +913,7 @@ private fun Toolbar(
                                 Divider()
                                 PenOptions(tools, onColor, onSize)
                             }
+                            if (inkTodoOpen && openBlockFloating != null) FloatingToggle(openBlockFloating, onToggleOpenBlock)
                             if (inkTodoOpen) {
                                 val label = stringResource(R.string.delete_todo)
                                 WithTooltip(label) {

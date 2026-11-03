@@ -222,4 +222,46 @@ class BoxEditingTest {
         assertThat((session.state.value.element(out) as TableElement).y).isEqualTo(y)
         assertThat(session.state.value.textBoxes.single().text.plainText).isEqualTo("eins\nzwei\ndrei\nvier\nfünf")
     }
+
+    @Test
+    fun aToDoGoesInAtTheCursorAsAParagraphAndCanFloat() {
+        val todos = TodoEditing(session).also { it.measureText = lines }
+        text.startNew(20f, 20f, 120f)
+        text.editing.value!!.controller.setContent(RichText.plain("oben\nunten"))
+        text.editing.value!!.controller.placeCursor(0, 4)
+        val item = todos.insertInto(text)!!
+        assertThat(todos.editing.value!!.itemId).isEqualTo(item.id)
+        todos.editing.value!!.text!!.setContent(RichText.plain("Anrufen"))
+        todos.finish()
+        assertThat(blocks().map { it::class.simpleName }).containsExactly("TextBox", "TodoItem", "TextBox").inOrder()
+        val inText = blocks()[1] as com.stemaker.nibsync.model.TodoItem
+        assertThat(inText.widthMm).isEqualTo(120f)
+        // Floating it stays where it is, over everything; the text closes up.
+        val out = flows.setFloating(setOf(inText.id), true).single()
+        val floating = session.state.value.element(out) as com.stemaker.nibsync.model.TodoItem
+        assertThat(floating.y).isEqualTo(inText.y)
+        assertThat(floating.taskId).isEqualTo(inText.taskId)
+        assertThat(session.state.value.elements.last().id).isEqualTo(out)
+        assertThat(session.state.value.textBoxes.single().text.plainText).isEqualTo("oben\nunten")
+    }
+
+    @Test
+    fun aFloatingPictureGoesIntoTheTextWhereTheDropLineShowsBesideAPicture() {
+        text.startNew(20f, 20f, 120f)
+        text.editing.value!!.controller.setContent(RichText.plain("oben"))
+        text.editing.value!!.controller.placeCursorAtEnd()
+        val first = text.insertBlocksAtCursor(listOf(picture(40f, 30f))).single()
+        val floating = flows.place(listOf(picture(30f, 30f))).single()
+        // Moved onto the right part of the picture in the text: still floating, the line shows beside it.
+        val dx = first.bounds.right - 4f - (floating.bounds.left + floating.bounds.right) / 2
+        val dy = (first.bounds.top + first.bounds.bottom) / 2 - (floating.bounds.top + floating.bounds.bottom) / 2
+        assertThat(flows.dropFor(setOf(floating.id), dx, dy)!!.left).isGreaterThan(first.bounds.right)
+        val moved = flows.moveSelection(setOf(floating.id), dx, dy).single()
+        assertThat((session.state.value.element(moved) as ImageElement).slot.floating).isTrue()
+        // Into the text: beside the picture, as the line showed.
+        flows.setFloating(setOf(moved), false)
+        val pictures = session.state.value.flows.single().blocks.filterIsInstance<ImageElement>()
+        assertThat(pictures).hasSize(2)
+        assertThat(pictures[0].y).isEqualTo(pictures[1].y)
+    }
 }

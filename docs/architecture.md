@@ -182,9 +182,13 @@ versions side by side, nothing is lost.
 
 ## To-dos
 
-**To-dos in text** (also in table cells): a paragraph starting with a `MarkStyle.Task` (mark kind `"t"`)
+**To-dos as paragraphs:** "To-do here" in open text puts a to-do element at the cursor as a block of
+the box, as wide as the text (`TodoEditing.insertInto`); it looks like one on the page and can float
+(see "Text flow"). In a table cell, where no block can go, it is a to-do paragraph instead:
+
+**To-dos in text** (table cells): a paragraph starting with a `MarkStyle.Task` (mark kind `"t"`)
 on `Task.SIGN`, three en spaces (the fonts have no box glyph): the check box is drawn over them on
-the page (`RichTextPainter`, ticked by the document's done register for its task, the same
+the page as the to-do element's check circle (`RichTextPainter`, ticked by the document's done register for its task, the same
 `SetTodoDone` as for to-do elements) and in the editor (`LinkRun`, never ticked there). "To-do here" in
 the text tool bar puts one at the cursor (`TextEditController.insertTask`); Enter at its end starts the
 next, Enter in an empty one ends the list; deleting the box (one letter) makes it plain text. A tap on
@@ -309,7 +313,11 @@ draws or hits them.
   do not continue it, a drag just moves it. The selection bar switches: "Put into the text" inserts a
   floating block where it lies (by the drop rule; on free space it becomes a box of its own and pushes);
   "Let it float freely" takes a block out of its text exactly where it is, the text closes up under it
-  (`FlowEditing.setFloating`). Inserted while text is open, a block goes in at the cursor.
+  (`FlowEditing.setFloating`), at the place the drop line showed while dragging it (also beside a
+  picture). An open table or to-do has the same switch in the tool bar. Inserted while text is open,
+  a block goes in at the cursor. Floating blocks come last in `DocumentState.elements`: drawn on
+  top and hit first (Android draws them in a last pass). The rule holds for all blocks; handwriting
+  always lies freely on the page.
 - **Rows of pictures:** pictures with the same `order` and a `FlowSlot.beside` key (record field `"fb"`,
   pictures only) stand side by side, left to right by that key (`Flow.rowsOf`; a row needs two). Each
   keeps its own size, top aligned; the highest sets the row's height. Wider together than the flow's
@@ -348,7 +356,8 @@ a tap on an anchor selects it, a second tap renames it. PC: a click selects, a d
 follows the link or renames the anchor.
 
 In text they are letters: `MarkStyle.Anchor` on the character `§`, `MarkStyle.NoteLink` on its
-title (record marks `"a"` and `"l"`). They go along with the text and are one unit in the editor
+title (record marks `"a"` and `"l"`). The `§` is drawn invisible, with a small flag over it like a free
+anchor's (`RichTextPainter.drawAnchorFlag`, page and editor). They go along with the text and are one unit in the editor
 (`LinkRun`, atomic, typed text stays outside). Tool bar "Insert ... here" puts them at the cursor;
 an anchor or link inserted or dragged onto a text goes in front of (anchor) or behind (link) the
 paragraph there; elsewhere it stays a free `LinkElement`, so handwriting has anchors too.
@@ -363,7 +372,8 @@ cannot be dragged out of the text; a link in text keeps the title it was made wi
 Stylus writes (or erases with the eraser selected); fingers scroll and pinch-zoom; a toggle
 enables writing with a finger. Pointers cancelled by the system (palm rejection) cancel the
 stroke or erase gesture. The zoom of each document is kept on the device, not synced
-(`ZoomStore` on Android, `Settings.zoom` on the PC), and restored when it is opened again.
+(`ZoomStore` on Android, `Settings.zoom` on the PC), and restored when it is opened again: the page
+view is made anew for each document (`key`), and the zoom is also stored when leaving it.
 
 Pens: each pen offers three widths (fine, medium, broad), set per pen in the settings
 ("Pen widths"). `PenPreferences` (core/model) keeps them on the device together with the last

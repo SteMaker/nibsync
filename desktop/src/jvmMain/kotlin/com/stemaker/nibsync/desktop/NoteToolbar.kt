@@ -177,6 +177,10 @@ class ToolbarTools(
     val canFloat: Boolean = false,
     val canSink: Boolean = false,
     val onFloating: (Boolean) -> Unit = {},
+    val onInsertTodoHere: () -> Unit = {},
+    /** The open table or to-do: floating (true), in text (false) or none (null), and the switch. */
+    val openBlockFloating: Boolean? = null,
+    val onToggleOpenBlock: () -> Unit = {},
 )
 
 /** Tool bar above the page: undo/redo, and text formatting while a box is open. */
@@ -235,7 +239,7 @@ fun NoteToolbar(
                 Action(strings.indent, Icons.AutoMirrored.Filled.FormatIndentIncrease, editing.canIndent, TextTags.INDENT, editing::indent)
                 Divider()
                 // A to-do at the cursor: a paragraph with a check box, in text and in table cells.
-                Action(strings.insertTodoHere, Icons.Filled.CheckBox, true, ToolbarTags.INSERT_TODO_HERE) { editing.insertTask(com.stemaker.nibsync.model.IdGenerator().newStrokeId()) }
+                if (tools != null) Action(strings.insertTodoHere, Icons.Filled.CheckBox, true, ToolbarTags.INSERT_TODO_HERE, tools.onInsertTodoHere)
                 if (table != null) {
                     TableMenu(strings, table)
                     Divider()
@@ -249,6 +253,15 @@ fun NoteToolbar(
                     Divider()
                 }
                 Action(if (table != null) strings.deleteTable else strings.deleteTextBox, Icons.Filled.Delete, true, TextTags.DELETE, onDeleteText)
+            }
+            // The open table or to-do: float it, or put it into the text.
+            tools?.openBlockFloating?.let { floating ->
+                Divider()
+                if (floating) {
+                    Action(strings.intoText, Icons.AutoMirrored.Filled.WrapText, true, ToolbarTags.INTO_TEXT, tools.onToggleOpenBlock)
+                } else {
+                    Action(strings.floatFree, Icons.Filled.Layers, true, ToolbarTags.FLOAT, tools.onToggleOpenBlock)
+                }
             }
             end()
         }

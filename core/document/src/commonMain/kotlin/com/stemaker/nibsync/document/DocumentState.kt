@@ -95,13 +95,15 @@ class DocumentState private constructor(
     }
 
     /**
-     * All visible elements, back to front: by layer, then by the stamp of the op that added them.
+     * All visible elements, back to front: by layer, then by the stamp of the op that added them;
+     * floating blocks after all others.
      * Tables carry their current cells (the added content overlaid with [DocumentOp.SetTableCells]),
      * blocks their place in their flow.
      */
     val elements: List<PageElement> by lazy {
+        // Floating blocks lie over everything else.
         entries.values
-            .sortedWith(compareBy<Entry> { it.element.layer.zIndex }.thenBy { it.addedAt })
+            .sortedWith(compareBy<Entry> { (it.element as? FlowBlock)?.slot?.floating == true }.thenBy { it.element.layer.zIndex }.thenBy { it.addedAt })
             .map { placed[it.element.id] ?: it.element }
     }
 

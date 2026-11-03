@@ -21,9 +21,14 @@ internal class LinkRun(val style: MarkStyle) : RichSpanStyle {
 
     override fun getSpanStyle(config: RichTextConfig): SpanStyle = if (style is MarkStyle.Task) SpanStyle() else RichTextLayout.linkStyle(style)
 
-    /** A to-do's check box, as on the page (not ticked here: the editor does not know). */
+    /** A to-do's check circle or an anchor's flag, as on the page (a to-do is not ticked here: the editor does not know). */
     override fun DrawScope.drawCustomStyle(layoutResult: TextLayoutResult, textRange: TextRange, richTextConfig: RichTextConfig, topPadding: Float, startPadding: Float) {
-        if (style !is MarkStyle.Task || textRange.start >= layoutResult.layoutInput.text.length) return
+        if (textRange.start >= layoutResult.layoutInput.text.length) return
+        if (style is MarkStyle.Anchor) {
+            with(RichTextPainter) { drawAnchorFlag(layoutResult.getBoundingBox(textRange.start).translate(startPadding, topPadding)) }
+            return
+        }
+        if (style !is MarkStyle.Task) return
         val line = layoutResult.getLineForOffset(textRange.start)
         val top = layoutResult.getLineTop(line)
         val bottom = layoutResult.getLineBottom(line)

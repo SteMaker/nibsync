@@ -216,6 +216,18 @@ object RichTextLayout {
         }
     }
 
+    /** Where each anchor of [text] is in its [layout] (px): the box of its sign, drawn as a flag. */
+    fun anchorBoxes(text: RichText, layout: TextLayoutResult, start: ListStart = ListStart.NONE): List<Rect> {
+        val starts = textStarts(text, prefixes(text, start))
+        val length = layout.layoutInput.text.length
+        return text.paragraphs.flatMapIndexed { i, p ->
+            p.marks.filter { it.style is MarkStyle.Anchor }.mapNotNull { m ->
+                val at = starts[i] + m.start
+                if (at >= length) null else layout.getBoundingBox(at)
+            }
+        }
+    }
+
     /** The to-do whose check box is at ([x], [y]) px in [layout], or null. */
     fun taskAt(text: RichText, layout: TextLayoutResult, x: Float, y: Float, start: ListStart = ListStart.NONE): MarkStyle.Task? =
         taskBoxes(text, layout, start).firstOrNull { (_, r) -> r.inflate(r.width * 0.4f).contains(Offset(x, y)) }?.first
@@ -265,7 +277,8 @@ object RichTextLayout {
 
     /** How an anchor or link in the text looks. */
     internal fun linkStyle(style: MarkStyle): SpanStyle =
-        if (style is MarkStyle.Anchor) SpanStyle(color = ANCHOR_COLOR, fontWeight = FontWeight.Bold) else SpanStyle(color = LINK_COLOR, textDecoration = TextDecoration.Underline)
+        // The anchor's sign is only room for the flag drawn over it.
+        if (style is MarkStyle.Anchor) SpanStyle(color = Color.Transparent) else SpanStyle(color = LINK_COLOR, textDecoration = TextDecoration.Underline)
 
     const val MAX_LEVELS = 8
     private const val CODE_PAD_EM = 0.15f
@@ -274,6 +287,6 @@ object RichTextLayout {
     /** Behind code (the page and the editor). */
     val CODE_BACKGROUND = Color(0xffeef0f3)
     val COPY_SYMBOL = Color(0xff6b7280)
-    private val ANCHOR_COLOR = Color(0xff00796b)
+    internal val ANCHOR_COLOR = Color(0xff00796b)
     private val LINK_COLOR = Color(0xff1565c0)
 }

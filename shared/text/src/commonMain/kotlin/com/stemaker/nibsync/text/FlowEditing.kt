@@ -350,9 +350,10 @@ class FlowEditing(private val session: DocumentSession, private val ids: IdGener
                 removeBlocks(blocks.map { it.id }, measureText, pull = true)
                 for (d in drafts) replaceElements(emptySet(), listOf(d.inSlot(FlowSlot(ids.newStrokeId(), FlowSlot.FIRST, floating = true)))).mapTo(result) { it.id }
             } else {
+                // Where the line shown while dragging it says: between paragraphs, or beside a picture.
+                val drops = blocks.map { dropOf(listOf(it), 0f, 0f) }
                 replaceElements(blocks.map { it.id }, emptyList())
-                for (d in drafts) {
-                    val drop = dropAt(d.x + d.widthMm / 2, d.y)
+                for ((d, drop) in drafts.zip(drops)) {
                     val placed = if (drop != null) insert(drop, listOf(d)) else newFlow(listOf(d)).also { pushBelow((it.first() as FlowBlock).slot.flowId, it.mapTo(HashSet()) { e -> e.id }) }
                     placed.mapTo(result) { it.id }
                 }

@@ -229,6 +229,39 @@ class CanvasViewModel(
         return snapGrid().snapMove(x, y, dx, dy, state.background, state.meta.format.widthMm)
     }
 
+    /**
+     * "To-do here": in a table cell a to-do paragraph (a box of its own cannot go there), in text a
+     * to-do as a paragraph of the box, opened for typing.
+     */
+    fun insertTodoHere() {
+        val cell = tables.editing.value
+        if (cell != null) {
+            cell.controller.insertTask(com.stemaker.nibsync.model.IdGenerator().newStrokeId())
+            return
+        }
+        todo.insertInto(text)
+    }
+
+    /** The table or to-do being edited, if it can float or go into text: true if it floats now. */
+    fun openBlockFloating(): Boolean? = openBlock()?.slot?.floating
+
+    private fun openBlock(): com.stemaker.nibsync.model.FlowBlock? =
+        tables.table() ?: todo.editing.value?.itemId?.let { session.state.value.element(it) as? com.stemaker.nibsync.model.FlowBlock }
+
+    /** Lets the open table or to-do float, or puts it into the text where it lies; editing ends. */
+    fun toggleOpenBlockFloating() {
+        val block = openBlock() ?: return
+        finishText()
+        // Stored anew on finishing (a new id): found again by its table or task.
+        val state = session.state.value
+        val current = when (block) {
+            is com.stemaker.nibsync.model.TableElement -> state.tables.firstOrNull { it.tableId == block.tableId }
+            is com.stemaker.nibsync.model.TodoItem -> state.todos.firstOrNull { it.taskId == block.taskId }
+            else -> block.takeIf { it.id in state }
+        } ?: return
+        flows.setFloating(setOf(current.id), !block.slot.floating)
+    }
+
     /** Whether the selection can be made [floating] (or be put into text). */
     fun canSetFloating(floating: Boolean): Boolean = flows.canSetFloating(_selection.value, floating)
 

@@ -297,10 +297,13 @@ fun App(
                                 showCreated = showCreated,
                                 onRename = node?.let { n -> { title: String -> appScope.launch { container.library.rename(n.id, title) }; Unit } },
                             )
-                            DocumentPane(
-                                container, id, strings, keys, sync, clipboard, header, settings, penWidths, tree, ::followLink,
-                                reveal?.takeIf { it.first == id }?.second,
-                            ) { reveal = null }
+                            // A fresh page per document, so it starts at that document's zoom.
+                            androidx.compose.runtime.key(id) {
+                                DocumentPane(
+                                    container, id, strings, keys, sync, clipboard, header, settings, penWidths, tree, ::followLink,
+                                    reveal?.takeIf { it.first == id }?.second,
+                                ) { reveal = null }
+                            }
                         }
                     }
                 }
@@ -410,6 +413,11 @@ private fun DocumentPane(
     LaunchedEffect(id) {
         snapshotFlow { viewport }.filter { it.hasSize }.map { it.zoom }.distinctUntilChanged().drop(1).debounce(ZOOM_SAVE_DELAY_MS).collect { settings.setZoom(id, it) }
     }
+    // Leaving the document right after zooming: kept too.
+    val lastViewport by androidx.compose.runtime.rememberUpdatedState(viewport)
+    androidx.compose.runtime.DisposableEffect(id) {
+        onDispose { if (lastViewport.hasSize && savedZoom != lastViewport.zoom) settings.setZoom(id, lastViewport.zoom) }
+    }
     LaunchedEffect(revealYMm, viewport.hasSize) {
         if (revealYMm == null || !viewport.hasSize) return@LaunchedEffect
         viewport = viewport.withContentBottom(doc.contentBottomMm).copy(scrollYMm = maxOf(0f, revealYMm - REVEAL_MARGIN_MM)).clamped()
@@ -477,6 +485,9 @@ private fun DocumentPane(
             canFloat = controller.canSetFloating(selection, true),
             canSink = controller.canSetFloating(selection, false),
             onFloating = controller::setFloating,
+            onInsertTodoHere = controller::insertTodoHere,
+            openBlockFloating = if (tableEdit != null || todoEdit != null) controller.openBlockFloating() else null,
+            onToggleOpenBlock = controller::toggleOpenBlockFloating,
             onPaste = ::pasteHere,
             onTodo = controller::selectTodo,
             onTodoInk = controller::selectTodoInk,

@@ -659,6 +659,39 @@ class NoteController(
 
     fun cutSelection(): Boolean = copySelection() && deleteSelection()
 
+    /**
+     * "To-do here": in a table cell a to-do paragraph (a box of its own cannot go there), in text a
+     * to-do as a paragraph of the box, opened for typing.
+     */
+    fun insertTodoHere() {
+        val cell = table.editing.value
+        if (cell != null) {
+            cell.controller.insertTask(com.stemaker.nibsync.model.IdGenerator().newStrokeId())
+            return
+        }
+        todo.insertInto(text)
+    }
+
+    /** The table or to-do being edited, if it can float or go into text: true if it floats now. */
+    fun openBlockFloating(): Boolean? = openBlock()?.slot?.floating
+
+    private fun openBlock(): FlowBlock? = table.table() ?: todo.editing.value?.itemId?.let { session.state.value.element(it) as? FlowBlock }
+
+    /** Lets the open table or to-do float, or puts it into the text where it lies; editing ends. */
+    fun toggleOpenBlockFloating() {
+        val block = openBlock() ?: return
+        table.finish()
+        todo.finish()
+        // Stored anew on finishing (a new id): found again by its table or task.
+        val state = session.state.value
+        val current = when (block) {
+            is com.stemaker.nibsync.model.TableElement -> state.tables.firstOrNull { it.tableId == block.tableId }
+            is com.stemaker.nibsync.model.TodoItem -> state.todos.firstOrNull { it.taskId == block.taskId }
+            else -> block.takeIf { it.id in state }
+        } ?: return
+        flows.setFloating(setOf(current.id), !block.slot.floating)
+    }
+
     /** Whether tables, pictures, files or to-dos in [selection] can be made [floating] (or put into text). */
     fun canSetFloating(selection: Set<StrokeId>, floating: Boolean): Boolean = flows.canSetFloating(selection, floating)
 

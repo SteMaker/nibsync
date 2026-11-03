@@ -102,6 +102,21 @@ class TodoEditing(private val session: DocumentSession, private val ids: IdGener
         )
     }
 
+    /**
+     * Puts a new typed to-do at the cursor of the open text [text] as a paragraph of its box (like a
+     * table, see [TextBoxEditing.insertBlocksAtCursor]), as wide as the text, and opens it for typing.
+     * Left empty it goes away again and the text closes up.
+     */
+    fun insertInto(text: TextBoxEditing): TodoItem? {
+        val e = text.editing.value ?: return null
+        finish()
+        val draft = TodoDraft(e.x, e.y, e.widthMm, TodoItem.MIN_HEIGHT_MM, TodoContent.Text(RichText.EMPTY))
+        val item = text.insertBlocksAtCursor(listOf(draft), goOn = false).single() as TodoItem
+        text.finish()
+        open(item)
+        return item
+    }
+
     /** Whether ([x], [y]) mm is inside the edited to-do. */
     fun contains(x: Float, y: Float): Boolean = _editing.value?.frame?.contains(x, y) == true
 
