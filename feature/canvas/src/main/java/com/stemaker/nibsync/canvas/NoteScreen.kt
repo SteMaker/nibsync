@@ -169,6 +169,7 @@ object NoteScreenTags {
     const val RESIZE_TEXT = "resize-text"
     const val DELETE_SELECTION = "delete-selection"
     const val INDENT_SELECTION = "indent-selection"
+    const val BOX_FRAME = "box-frame"
     const val OUTDENT_SELECTION = "outdent-selection"
     const val COPY_SELECTION = "copy-selection"
     const val PASTE = "paste"
@@ -422,14 +423,23 @@ fun NoteScreen(
                 )
                 val editing = textEditing
                 val v = viewport ?: canvasView?.viewport
+                // The open box framed as one, with its handles.
+                if ((editing != null || tableEditing != null) && v != null && v.hasSize) {
+                    viewModel.openBox()?.let { flow ->
+                        val b = flow.bounds
+                        val frame = if (editing == null) b else com.stemaker.nibsync.model.geometry.Rect(
+                            minOf(b.left + editing.movedX, editing.x), b.top + editing.movedY,
+                            maxOf(b.right + editing.movedX, editing.x + editing.widthMm), maxOf(b.bottom + editing.movedY, editing.y + 6f),
+                        )
+                        BoxFrameOverlay(frame, v, live = editing != null, onMove = viewModel::moveBox, onResize = viewModel::resizeBox)
+                    }
+                }
                 if (editing != null && v != null && v.hasSize) {
                     TextBoxOverlay(
                         editing = editing,
                         viewport = v,
-                        onMove = viewModel::moveText,
-                        onResize = viewModel::resizeText,
-                        onGestureEnd = viewModel::saveText,
                         onCursor = { top, bottom -> cursorMm = editing.y + top to editing.y + bottom },
+                        onBoundary = { viewModel.boundary(it, inCell = false) },
                     )
                 }
                 val todo = todoEditing
@@ -449,6 +459,7 @@ fun NoteScreen(
                         tableEdit, editedTable, v,
                         onMove = { viewModel.tables.move(it) },
                         onColumnWidth = viewModel::setColumnWidth,
+                        onBoundary = { viewModel.boundary(it, inCell = true) },
                         onCursor = { top, bottom ->
                             val area = editedTable.geometry.areaOf(tableEdit.cell)
                             if (area != null) {
@@ -555,33 +566,58 @@ private fun TodoOverlay(
     }
 }
 
-/**
- * The editor over the edited box, at the page zoom, with handles to move it (top left) and
- * to change its width (right edge).
- */
+/** The editor over the edited text, at the page zoom; the box's frame has the handles. */
 @Composable
 private fun TextBoxOverlay(
     editing: TextEditing,
     viewport: Viewport,
-    onMove: (Float, Float) -> Unit,
-    onResize: (Float) -> Unit,
-    onGestureEnd: () -> Unit,
     onCursor: (Float, Float) -> Unit,
+    onBoundary: (com.stemaker.nibsync.text.Boundary) -> Boolean,
 ) {
     val t = viewport.documentToView
-    val scale by rememberUpdatedState(viewport.scale)
     val focus = remember(editing.key) { FocusRequester() }
     LaunchedEffect(editing.key) { focus.requestFocus() }
-    val accent = MaterialTheme.colorScheme.primary
-    val resizeLabel = stringResource(R.string.resize_text_box)
     Box(Modifier.offset { IntOffset(t.mapX(editing.x).roundToInt(), t.mapY(editing.y).roundToInt()) }) {
         TextBoxEditor(
             controller = editing.controller,
             widthMm = editing.widthMm,
             pxPerMm = viewport.scale,
-            modifier = Modifier.focusRequester(focus).border(1.dp, accent.copy(alpha = 0.6f)),
+            modifier = Modifier.focusRequester(focus),
             onCursor = onCursor,
+            onBoundary = onBoundary,
         )
+    }
+}
+
+/**
+ * The frame around the open box ([bounds], mm) with a handle to move it (top left) and one to
+ * change its width (right edge). With open text ([live]) the editor follows at once, else the
+ * frame shows where the box goes and it follows when the drag ends.
+ */
+@Composable
+private fun BoxFrameOverlay(
+    bounds: com.stemaker.nibsync.model.geometry.Rect,
+    viewport: Viewport,
+    live: Boolean,
+    onMove: (Float, Float, Boolean) -> Unit,
+    onResize: (Float, Boolean) -> Unit,
+) {
+    val t = viewport.documentToView
+    val scale by rememberUpdatedState(viewport.scale)
+    val density = androidx.compose.ui.platform.LocalDensity.current
+    val accent = MaterialTheme.colorScheme.primary
+    val resizeLabel = stringResource(R.string.resize_text_box)
+    var move by remember { mutableStateOf(androidx.compose.ui.geometry.Offset.Zero) }
+    var widen by remember { mutableStateOf(0f) }
+    val shown = if (live) bounds else com.stemaker.nibsync.model.geometry.Rect(bounds.left + move.x, bounds.top + move.y, bounds.right + move.x + widen, bounds.bottom + move.y)
+    val pad = 1.5f
+    Box(
+        Modifier
+            .offset { IntOffset(t.mapX(shown.left - pad).roundToInt(), t.mapY(shown.top - pad).roundToInt()) }
+            .size(with(density) { ((shown.width + 2 * pad) * viewport.scale).toDp() }, with(density) { ((shown.height + 2 * pad) * viewport.scale).toDp() })
+            .border(1.dp, accent.copy(alpha = 0.6f), RoundedCornerShape(4.dp))
+            .testTag(NoteScreenTags.BOX_FRAME),
+    ) {
         Icon(
             Icons.Filled.OpenWith,
             contentDescription = stringResource(R.string.move_text_box),
@@ -592,25 +628,33 @@ private fun TextBoxOverlay(
                 .background(accent, CircleShape)
                 .padding(4.dp)
                 .testTag(NoteScreenTags.MOVE_TEXT)
-                .pointerInput(editing.key) {
-                    detectDragGestures(onDragEnd = onGestureEnd) { change, drag ->
+                .pointerInput(bounds) {
+                    detectDragGestures(onDragEnd = {
+                        onMove(move.x, move.y, true)
+                        move = androidx.compose.ui.geometry.Offset.Zero
+                    }) { change, drag ->
                         change.consume()
-                        onMove(drag.x / scale, drag.y / scale)
+                        move += drag / scale
+                        onMove(drag.x / scale, drag.y / scale, false)
                     }
                 },
         )
         Box(
             Modifier
                 .align(Alignment.CenterEnd)
-                .offset(x = 10.dp)
+                .offset(x = 6.dp)
                 .size(width = 10.dp, height = 32.dp)
                 .background(accent, RoundedCornerShape(5.dp))
                 .semantics { contentDescription = resizeLabel }
                 .testTag(NoteScreenTags.RESIZE_TEXT)
-                .pointerInput(editing.key) {
-                    detectHorizontalDragGestures(onDragEnd = onGestureEnd) { change, dx ->
+                .pointerInput(bounds) {
+                    detectHorizontalDragGestures(onDragEnd = {
+                        onResize(widen, true)
+                        widen = 0f
+                    }) { change, dx ->
                         change.consume()
-                        onResize(dx / scale)
+                        widen += dx / scale
+                        onResize(dx / scale, false)
                     }
                 },
         )
@@ -1189,6 +1233,7 @@ private fun TableCellOverlay(
     onMove: (com.stemaker.nibsync.text.CellMove) -> Unit,
     onColumnWidth: (com.stemaker.nibsync.model.StrokeId, Float) -> Unit,
     onCursor: (Float, Float) -> Unit,
+    onBoundary: (com.stemaker.nibsync.text.Boundary) -> Boolean = { false },
 ) {
     val area = table.geometry.areaOf(edit.cell) ?: return
     val content = com.stemaker.nibsync.text.TableText.contentRect(table, area)
@@ -1219,6 +1264,7 @@ private fun TableCellOverlay(
                     true
                 },
             onCursor = onCursor,
+            onBoundary = onBoundary,
         )
     }
     // A handle above each column border: dragging it changes that column's width.

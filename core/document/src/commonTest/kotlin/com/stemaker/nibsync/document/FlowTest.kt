@@ -101,12 +101,12 @@ class FlowTest {
     }
 
     @Test
-    fun selectingTextTakesItsFlowAlongAPictureAlone() = runTest {
+    fun selectingAnyPartOfABoxTakesTheWholeBox() = runTest {
         val s = session()
         val (text, picture) = s.replaceElements(emptySet(), listOf(box("c"), image("n")))
         val aroundText = floatArrayOf(10f, 10f, 110f, 10f, 110f, 31f, 10f, 31f)
         assertEquals(setOf(text.id, picture.id), Lasso.select(s.state.value.elements, aroundText))
         val aroundPicture = floatArrayOf(10f, 32f, 110f, 32f, 110f, 70f, 10f, 70f)
-        assertEquals(setOf(picture.id), Lasso.select(s.state.value.elements, aroundPicture))
+        assertEquals(setOf(text.id, picture.id), Lasso.select(s.state.value.elements, aroundPicture))
     }
 }

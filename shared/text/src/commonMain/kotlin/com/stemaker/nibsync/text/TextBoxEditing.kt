@@ -60,11 +60,12 @@ class TextBoxEditing(private val session: DocumentSession, private val ids: IdGe
     private var saved: TextBoxDraft? = null
     private var key = 0L
 
-    /** Starts editing [box] (ends editing another box first). */
-    fun open(box: TextBox) {
+    /** Starts editing [box] (ends editing another box first); [cursor] places the cursor. */
+    fun open(box: TextBox, cursor: (TextEditController) -> Unit = {}) {
         finish()
         saved = TextBoxDraft(q(box.x), q(box.y), box.widthMm, box.heightMm, box.text, box.slot)
         start(box.id, box.x, box.y, box.widthMm, box.text, box.slot)
+        _editing.value?.controller?.let(cursor)
     }
 
     /** Starts a new, empty box, in the place [slot] of a flow if given; it is stored once it has text. */
@@ -135,9 +136,10 @@ class TextBoxEditing(private val session: DocumentSession, private val ids: IdGe
     /**
      * Puts [blocks] at the cursor of the open box: the text before the cursor stays in the box, the
      * blocks come right below it, the rest of the text in a new box under them, all in one flow, and
-     * what is below moves down; one undo step. Ends editing and returns the blocks, none if no box is open.
+     * what is below moves down; one undo step. Returns the blocks, none if no box is open. Typing goes
+     * on in the text after them if [goOn] and there is some, else editing ends.
      */
-    fun insertBlocksAtCursor(blocks: List<BlockDraft>): List<FlowBlock> {
+    fun insertBlocksAtCursor(blocks: List<BlockDraft>, goOn: Boolean = true): List<FlowBlock> {
         val e = _editing.value ?: return emptyList()
         val (before, after) = e.controller.splitAtCursor()
         discard()
@@ -150,10 +152,13 @@ class TextBoxEditing(private val session: DocumentSession, private val ids: IdGe
         val first = if (before.isBlank) null else box(before, old?.slot ?: slot())
         val placed = blocks.map { b -> b.fittedTo(e.widthMm).let { it.translated(e.x - it.x, e.y - it.y) }.inSlot(slot()) }
         val last = if (after.isBlank) null else box(after, slot())
-        return session.edit {
+        val (inserted, rest) = session.edit {
             val added = flowing(flowId) { replaceElements(listOfNotNull(e.boxId), listOfNotNull(first) + placed + listOfNotNull(last)) }
-            added.subList(if (first == null) 0 else 1, (if (first == null) 0 else 1) + placed.size).map { state.element(it.id) as FlowBlock }
+            val from = if (first == null) 0 else 1
+            added.subList(from, from + placed.size).map { state.element(it.id) as FlowBlock } to (if (last == null) null else added.last().id)
         }
+        if (goOn) (rest?.let { session.state.value.element(it) } as? TextBox)?.let { open(it) { c -> c.placeCursorAtStart() } }
+        return inserted
     }
 
     /** Puts an anchor or link at the cursor of the open box, as a letter of the text. Returns false for no open box or another draft. */

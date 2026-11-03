@@ -38,6 +38,8 @@ fun TextBoxEditor(
     pxPerMm: Float,
     modifier: Modifier = Modifier,
     onCursor: ((topMm: Float, bottomMm: Float) -> Unit)? = null,
+    /** A key that would leave the text (see [Boundary]); true if it was handled there. */
+    onBoundary: ((Boundary) -> Boolean)? = null,
 ) {
     var layout by remember(controller) { mutableStateOf<TextLayoutResult?>(null) }
     val scale by rememberUpdatedState(pxPerMm)
@@ -75,12 +77,35 @@ fun TextBoxEditor(
         BasicRichTextEditor(
             state = controller.state,
             modifier = modifier.width(width).testTag(TextTags.EDITOR).onPreviewKeyEvent { e ->
-                e.type == KeyEventType.KeyDown && (e.key == Key.Enter || e.key == Key.NumPadEnter) && controller.lineBreak(soft = e.isShiftPressed)
+                if (e.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
+                if (e.key == Key.Enter || e.key == Key.NumPadEnter) return@onPreviewKeyEvent controller.lineBreak(soft = e.isShiftPressed)
+                val boundary = if (e.isShiftPressed) null else boundaryOf(e.key, controller, layout)
+                boundary != null && onBoundary?.invoke(boundary) == true
             },
             textStyle = TextMetrics.baseStyle,
             cursorBrush = SolidColor(TextMetrics.TEXT_COLOR),
             onTextLayout = { layout = it },
         )
+    }
+}
+
+/**
+ * Keys at the edge of a text that leave it for the block before or after it in its box: up in
+ * the first line, down in the last, left at the start, right at the end, Backspace at the
+ * start, Delete at the end.
+ */
+enum class Boundary { UP, DOWN, LEFT, RIGHT, BACKSPACE, DELETE }
+
+private fun boundaryOf(key: Key, controller: TextEditController, layout: TextLayoutResult?): Boundary? {
+    fun line(): Int? = layout?.let { l -> runCatching { l.getLineForOffset(controller.state.selection.end.coerceIn(0, l.layoutInput.text.length)) }.getOrNull() }
+    return when (key) {
+        Key.DirectionUp -> Boundary.UP.takeIf { controller.state.selection.collapsed && line() == 0 }
+        Key.DirectionDown -> Boundary.DOWN.takeIf { controller.state.selection.collapsed && layout != null && line() == layout.lineCount - 1 }
+        Key.DirectionLeft -> Boundary.LEFT.takeIf { controller.isAtStart }
+        Key.DirectionRight -> Boundary.RIGHT.takeIf { controller.isAtEnd }
+        Key.Backspace -> Boundary.BACKSPACE.takeIf { controller.isAtStart }
+        Key.Delete -> Boundary.DELETE.takeIf { controller.isAtEnd }
+        else -> null
     }
 }
 

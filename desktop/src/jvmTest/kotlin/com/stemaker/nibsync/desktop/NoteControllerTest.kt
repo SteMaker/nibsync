@@ -19,6 +19,31 @@ class NoteControllerTest {
     private fun NoteController.type(text: String) = this.text.editing.value!!.controller.setContent(RichText.plain(text))
 
     @Test
+    fun aPictureInsertedAtTheCursorIsAParagraphTheCursorGoesThrough() = runTest {
+        val c = controller()
+        c.clickAt(30f, 40f, pageWidthMm = 210f)
+        c.type("oben\nunten")
+        c.text.editing.value!!.controller.placeCursor(0, 4)
+        c.insert(listOf(com.stemaker.nibsync.model.ImageDraft(0f, 0f, 60f, 30f, com.stemaker.nibsync.model.Asset("e".repeat(64), com.stemaker.nibsync.model.Asset.PNG))))
+        // Typing goes on after the picture, nothing is selected.
+        assertThat(c.selection.value).isEmpty()
+        assertThat(c.text.editing.value!!.controller.text.plainText).isEqualTo("unten")
+        // Backspace at its start selects the picture; Enter on it goes into the text below.
+        assertThat(c.boundary(com.stemaker.nibsync.text.Boundary.BACKSPACE, inCell = false)).isTrue()
+        val picture = c.session.state.value.files.single()
+        assertThat(c.selection.value).containsExactly(picture.id)
+        assertThat(c.blockKey(com.stemaker.nibsync.text.BlockKey.ENTER)).isTrue()
+        assertThat(c.selection.value).isEmpty()
+        assertThat(c.tools.value.tool).isEqualTo(DesktopTool.TEXT)
+        assertThat(c.text.editing.value!!.controller.text.plainText).isEqualTo("unten")
+        // The whole box gets narrower: text and picture.
+        c.resizeBox(-100f, done = false)
+        c.resizeBox(-100f, done = true)
+        val flow = c.session.state.value.flows.single()
+        assertThat(flow.blocks.map { it.widthMm }).containsExactly(65f, 60f, 65f).inOrder()
+    }
+
+    @Test
     fun clickOnFreePaperStartsABoxAtTheClick() = runTest {
         val c = controller()
         c.clickAt(30f, 40f, pageWidthMm = 210f)

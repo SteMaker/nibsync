@@ -583,6 +583,18 @@ private fun DocumentPane(
                         flow = flowPreview,
                     ),
                 )
+                // The open box framed as one, with its handles; its text grows with typing.
+                if (viewport.hasSize && (editing != null || tableEdit != null)) {
+                    controller.box.openFlow()?.let { flow ->
+                        val b = flow.bounds
+                        val e = editing
+                        val grown = maxOf(0f, flowPreview?.dy ?: 0f)
+                        val frame = if (e == null) b.copy(bottom = b.bottom + grown) else com.stemaker.nibsync.model.geometry.Rect(
+                            minOf(b.left + e.movedX, e.x), b.top + e.movedY, maxOf(b.right + e.movedX, e.x + e.widthMm), b.bottom + e.movedY + grown,
+                        )
+                        BoxFrameOverlay(frame, viewport, strings, controller)
+                    }
+                }
                 editing?.let { e ->
                     if (viewport.hasSize) TextBoxOverlay(e, viewport, strings, controller)
                 }
@@ -651,6 +663,17 @@ private const val ZOOM_SAVE_DELAY_MS = 500L
 private const val TODO_REFRESH_MS = 800L
 
 /** Shortcuts that work anywhere in the window; text editing keys stay with the editor. */
+private fun blockKeyOf(key: Key): com.stemaker.nibsync.text.BlockKey? = when (key) {
+    Key.DirectionUp -> com.stemaker.nibsync.text.BlockKey.UP
+    Key.DirectionDown -> com.stemaker.nibsync.text.BlockKey.DOWN
+    Key.DirectionLeft -> com.stemaker.nibsync.text.BlockKey.LEFT
+    Key.DirectionRight -> com.stemaker.nibsync.text.BlockKey.RIGHT
+    Key.Enter, Key.NumPadEnter -> com.stemaker.nibsync.text.BlockKey.ENTER
+    Key.Backspace -> com.stemaker.nibsync.text.BlockKey.BACKSPACE
+    Key.Delete -> com.stemaker.nibsync.text.BlockKey.DELETE
+    else -> null
+}
+
 private fun handleKey(event: KeyEvent, controller: NoteController, paste: () -> Unit): Boolean {
     if (event.type != KeyEventType.KeyDown) return false
     val todo = controller.todo.editing.value
@@ -688,6 +711,8 @@ private fun handleKey(event: KeyEvent, controller: NoteController, paste: () -> 
             controller.escape()
             true
         }
+        // A selected picture, file, to-do or table in a box: the cursor goes on from it.
+        !event.isShiftPressed && !event.isCtrlPressed && blockKeyOf(event.key)?.let(controller::blockKey) == true -> true
         event.key == Key.Delete || event.key == Key.Backspace -> controller.deleteSelection()
         event.isCtrlPressed && (event.key == Key.Z || event.key == Key.Y) -> {
             if (event.key == Key.Z && !event.isShiftPressed) controller.undo() else controller.redo()

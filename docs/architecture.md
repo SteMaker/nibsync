@@ -272,10 +272,22 @@ draws or hits them.
   boundary, splitting the text box there (`dropAt`, on a block: before or after it by the nearer
   half); dropped elsewhere it is a box of its own. While dragging, the line of the `FlowDrop` shows the
   place. A block taken out or deleted joins the text around it again (`joinText`). Selecting text
-  selects its whole flow (`Lasso.select`), a table, picture, file or to-do just itself. Pictures
+  selects its whole flow (`Lasso.select`), as does lassoing any other block; a tap selects a table,
+  picture, file or to-do alone. Pictures
   wider than the box are scaled to it. Pasted blocks of one flow stay together (`place`).
 - At the cursor of an open text box (`TextBoxEditing.insertBlocksAtCursor`, tool bar "Insert ... here",
-  also the picture dialog): text before the cursor, the blocks, the rest in a new text block.
+  also the picture dialog): text before the cursor, the blocks, the rest in a new text block, where
+  typing goes on.
+- **A flow is one box to the user** (`BoxEditing`, shared/text). While its text or a table cell is
+  open, a frame goes around the whole flow with one handle to move it and one to set its width
+  (`setWidth`: all text gets it, wider tables, pictures and files are scaled down, one undo step). The
+  cursor goes through the blocks: arrow keys at a text's or table's edge go into the paragraph before
+  or after it (a table: its first or last cell, arrows move from cell to cell inside); a picture, file
+  or to-do is selected as a whole. On a selected block (PC keys): arrows go on, Enter starts text below
+  it (or goes into the text there), Backspace / Delete remove it and the text around it closes up with
+  the cursor at the joint; Backspace at the start of text after a block, Delete at the end before
+  one, select it. The text editor reports such keys as `Boundary`. The lasso takes the whole box
+  whatever part it catches; a tap selects a single picture or table to take it out.
 - Blocks other than text can be indented in steps of `Flow.INDENT_MM`, a list level (`FlowSlot.indent`,
   record field `"fi"`, 0 to 7). Dropped below a list item a block gets the indent of the item's text,
   below an indented block that block's; so a picture or table belongs to a bullet, and numbering goes
@@ -283,7 +295,7 @@ draws or hits them.
   edge (`Flow.x`); a block's stored x is that edge, its shown x adds its indent. Tables keep their
   width when indented.
 - A text tool tap up to 12 mm below a flow that does not end in text continues it (`continuation`).
-- The handle of an open text box or to-do moves its flow, not into other text: it lands below it (`dragFlow`).
+- The handle of an open box or to-do moves its flow, not into other text: it lands below it (`dragFlow`).
 - While typing, the editors' `flowPreview()` says what will move and how far (later blocks and what
   is below the flow), so the content follows the growing editor before the save.
 - Editing stays one block at a time: the cursor does not walk over a table; there is no wrapping beside

@@ -35,6 +35,7 @@ import com.stemaker.nibsync.model.StrokeDraft
 import com.stemaker.nibsync.model.SnapGrid
 import com.stemaker.nibsync.model.StrokeId
 import com.stemaker.nibsync.model.StrokePoint
+import com.stemaker.nibsync.model.FlowBlock
 import com.stemaker.nibsync.model.TextBox
 import com.stemaker.nibsync.model.assets
 import com.stemaker.nibsync.model.geometry.Rect
@@ -86,6 +87,9 @@ class NoteController(
 
     /** Blocks in the text: dropping, placing, removing. */
     val flows = FlowEditing(session).also { it.measureText = measureText }
+
+    /** The open box as one thing: the cursor goes through its text, tables and pictures. */
+    val box = com.stemaker.nibsync.text.BoxEditing(session, text, table, flows)
 
     private val _tools = MutableStateFlow(initialTools)
     val tools: StateFlow<DesktopToolState> = _tools.asStateFlow()
@@ -498,6 +502,52 @@ class NoteController(
         table.insert(cx - width / 2, top, rows, columns, header, pageWidthMm)
     }
 
+    /**
+     * A key at the edge of the open text ([inCell]: table cell) goes on in the paragraph before or
+     * after it in the box; a picture, file or to-do there gets selected. False if not handled.
+     */
+    fun boundary(boundary: com.stemaker.nibsync.text.Boundary, inCell: Boolean): Boolean {
+        val result = (if (inCell) box.fromCell(boundary) else box.fromText(boundary)) ?: return false
+        result.singleOrNull()?.let(::selectByClick)
+        return true
+    }
+
+    /** A key on the one selected table, picture, file or to-do of a box; false if not handled. */
+    fun blockKey(key: com.stemaker.nibsync.text.BlockKey): Boolean {
+        val id = _selection.value.singleOrNull() ?: return false
+        val state = session.state.value
+        if (state.element(id) !is FlowBlock || state.element(id) is TextBox) return false
+        if ((state.flowOf(id)?.blocks?.size ?: 0) < 2) return false
+        val result = box.fromBlock(id, key) ?: return false
+        if (result.isEmpty()) {
+            clearSelection()
+            endTemporarySelection()
+        } else {
+            selectByClick(result.single())
+        }
+        return true
+    }
+
+    /** Moves the open box by its handle: live with open text, else when the drag ends ([done]). */
+    fun moveBox(dx: Float, dy: Float, done: Boolean) {
+        if (text.editing.value != null) {
+            if (!done) text.move(dx, dy) else text.save()
+            return
+        }
+        if (done) box.openFlow()?.let { flows.moveBy(it.id, dx, dy) }
+    }
+
+    /** Sets the open box's width (its right edge was dragged): live for open text, all of it when [done]. */
+    fun resizeBox(dw: Float, done: Boolean) {
+        val flow = box.openFlow() ?: return
+        val e = text.editing.value
+        if (!done) {
+            if (e != null) text.resize(dw)
+            return
+        }
+        box.setWidth(flow.id, if (e != null) e.widthMm else box.widthOf(flow) + dw)
+    }
+
     private fun selectByClick(id: StrokeId) {
         text.finish()
         todo.finish()
@@ -627,6 +677,8 @@ class NoteController(
             table.finish()
             flows.place(drafts)
         }
+        // Inserted at the cursor with text after it: typing goes on there.
+        if (text.editing.value != null) return
         val tool = _tools.value.tool
         if (tool != DesktopTool.LASSO) {
             toolBeforeSelection = tool

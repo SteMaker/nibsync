@@ -297,6 +297,25 @@ class TextEditController internal constructor(internal val state: RichTextState)
 
     private fun TextMark.shifted(by: Int) = TextMark(start + by, end + by, style)
 
+    /** Puts the cursor at [offset] in the text of paragraph [paragraph] (both clamped). */
+    fun placeCursor(paragraph: Int, offset: Int) {
+        val ranges = textRanges()
+        val (start, end) = ranges.getOrNull(paragraph.coerceIn(0, maxOf(0, ranges.lastIndex))) ?: return
+        state.selection = TextRange((start + offset).coerceIn(start, end))
+    }
+
+    fun placeCursorAtStart() = placeCursor(0, 0)
+
+    fun placeCursorAtEnd() = placeCursor(Int.MAX_VALUE, Int.MAX_VALUE)
+
+    /** True if the cursor (no selection) is before the first character. */
+    val isAtStart: Boolean
+        get() = state.selection.collapsed && textRanges().firstOrNull()?.let { state.selection.start <= it.first } ?: true
+
+    /** True if the cursor (no selection) is behind the last character. */
+    val isAtEnd: Boolean
+        get() = state.selection.collapsed && textRanges().lastOrNull()?.let { state.selection.end >= it.second } ?: true
+
     /** Paragraph index and offset in its text of position [offset] of the editor's text. */
     private fun paragraphAt(offset: Int): Pair<Int, Int>? {
         val i = textRanges().indexOfFirst { offset in it.first..it.second }

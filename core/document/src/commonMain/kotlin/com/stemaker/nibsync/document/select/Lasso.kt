@@ -36,8 +36,9 @@ object Lasso {
         if (polygon.size < 6 || area(polygon) < MIN_AREA_MM2) return emptySet()
         val box = bounds(polygon)
         val selected = strokes.filter { e -> e.bounds.intersects(box) && insideShare(e, polygon) >= INSIDE_SHARE }
-        // Text is what holds a flow together: selecting it takes the whole flow along.
-        val flows = selected.filterIsInstance<TextBox>().mapTo(HashSet()) { it.slot.flowId }
+        // A box is one thing: any part of it takes the whole box along. A single picture or table
+        // is taken out of it by a tap (selecting just that), not by the lasso.
+        val flows = selected.filterIsInstance<FlowBlock>().mapTo(HashSet()) { it.slot.flowId }
         val rest = strokes.filter { it is FlowBlock && it.slot.flowId in flows }
         return (selected + rest).mapTo(LinkedHashSet()) { it.id }
     }

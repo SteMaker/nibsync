@@ -151,6 +151,8 @@ class CanvasViewModel(
             finishText()
             flows.place(drafts)
         }
+        // Inserted at the cursor with text after it: typing goes on there.
+        if (text.editing.value != null) return added
         selectTemporarily(added.mapTo(LinkedHashSet()) { it.id })
         return added
     }
@@ -584,6 +586,42 @@ class CanvasViewModel(
 
     /** Changes the width of the edited box while its edge is dragged. */
     fun resizeText(dw: Float) = text.resize(dw)
+
+    /** The open box as one thing: the cursor goes through its text, tables and pictures. */
+    val box by lazy { com.stemaker.nibsync.text.BoxEditing(session, text, tables, flows) }
+
+    /** The box of the open text or table cell, or null. */
+    fun openBox(): com.stemaker.nibsync.model.Flow? = box.openFlow()
+
+    /**
+     * A key at the edge of the open text ([inCell]: table cell) goes on in the paragraph before or
+     * after it in the box; a picture, file or to-do there gets selected. False if not handled.
+     */
+    fun boundary(boundary: com.stemaker.nibsync.text.Boundary, inCell: Boolean): Boolean {
+        val result = (if (inCell) box.fromCell(boundary) else box.fromText(boundary)) ?: return false
+        if (result.isNotEmpty()) selectTemporarily(result)
+        return true
+    }
+
+    /** Moves the open box by its handle: live with open text, else when the drag ends ([done]). */
+    fun moveBox(dx: Float, dy: Float, done: Boolean) {
+        if (text.editing.value != null) {
+            if (!done) text.move(dx, dy) else text.save()
+            return
+        }
+        if (done) box.openFlow()?.let { flows.moveBy(it.id, dx, dy) }
+    }
+
+    /** Sets the open box's width (its right edge was dragged): live for open text, all of it when [done]. */
+    fun resizeBox(dw: Float, done: Boolean) {
+        val flow = box.openFlow() ?: return
+        val e = text.editing.value
+        if (!done) {
+            if (e != null) text.resize(dw)
+            return
+        }
+        box.setWidth(flow.id, if (e != null) e.widthMm else box.widthOf(flow) + dw)
+    }
 
     private companion object {
         /** How many of the latest strokes a multi-stroke shape (arrow head + shaft) may join. */

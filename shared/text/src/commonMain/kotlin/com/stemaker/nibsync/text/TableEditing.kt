@@ -112,7 +112,7 @@ class TableEditing(private val session: DocumentSession, private val ids: IdGene
     fun insertInto(text: TextBoxEditing, rows: Int, columns: Int, header: Boolean): TableElement? {
         val e = text.editing.value ?: return null
         finish()
-        val table = text.insertBlocksAtCursor(listOf(draft(e.x, e.y, e.widthMm, rows, columns, header))).single() as TableElement
+        val table = text.insertBlocksAtCursor(listOf(draft(e.x, e.y, e.widthMm, rows, columns, header)), goOn = false).single() as TableElement
         open(table, CellKey(table.rows.first().rowId, table.columns.first().colId))
         return table
     }
@@ -271,6 +271,14 @@ class TableEditing(private val session: DocumentSession, private val ids: IdGene
         val w = maxOf(TableElement.MIN_COLUMN_MM, widthMm)
         val changed = table.copy(columns = table.columns.map { if (it.colId == colId) it.copy(widthMm = w) else it })
         return replace(table, changed)
+    }
+
+    /** [table] scaled to [widthMm] (all columns in proportion), and its cells measured anew; for a change in a larger step. */
+    internal fun scaled(table: TableElement, widthMm: Float): Pair<TableDraft, List<CellUpdate>> {
+        val minWidth = table.columns.size * TableElement.MIN_COLUMN_MM
+        val scale = maxOf(minWidth, widthMm) / table.widthMm
+        val changed = table.copy(columns = table.columns.map { it.copy(widthMm = maxOf(TableElement.MIN_COLUMN_MM, it.widthMm * scale)) })
+        return changed.toDraft() to remeasured(changed)
     }
 
     /** Scales the table to [widthMm] (all columns in proportion); texts wrap anew. */

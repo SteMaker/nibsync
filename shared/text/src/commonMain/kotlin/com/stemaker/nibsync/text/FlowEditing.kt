@@ -298,6 +298,9 @@ class FlowEditing(private val session: DocumentSession, private val ids: IdGener
         flowing(element.slot.flowId) { replaceElements(listOf(element.id), listOf(draft.inSlot(element.slot))).single() }
     }
 
+    /** Moves the box [flowId] by ([dx], [dy]) mm by its handle, not onto other text (one undo step). */
+    fun moveBy(flowId: StrokeId, dx: Float, dy: Float) = session.edit { dragFlow(flowId, dx, dy) }
+
     /** Removes the elements [ids] and, if [pull], moves what was below their flows up; see [removeBlocks]. */
     fun remove(ids: Collection<StrokeId>, pull: Boolean = true) = session.edit { removeBlocks(ids, measureText, pull) }
 
